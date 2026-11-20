@@ -259,7 +259,15 @@ class VictoriaClient:
         many checks (the agent report) can collect and flush them in one write instead of one POST
         per check (5.20). duration_ms None writes no duration line (a push check without measured
         values)."""
-        status_map = {"ok": 0, "warning": 1, "critical": 2, "unknown": 3, "info": 4}
+        # not_collected counts as ok, as in apply_result: nothing measured, nothing wrong.
+        status_map = {
+            "ok": 0,
+            "not_collected": 0,
+            "warning": 1,
+            "critical": 2,
+            "unknown": 3,
+            "info": 4,
+        }
         status_val = status_map.get(status, 3)
         ts = int(time.time())
 

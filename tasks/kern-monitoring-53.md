@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engin
 Doku: keine (internes Sperrverhalten)
 Abhängt von: T1
 
-### T3 — R-1650: Verlauf faltet nur Alert-Log-Zeilen, not_collected als ok an VictoriaMetrics  [ ]
+### T3 — R-1650: Verlauf faltet nur Alert-Log-Zeilen, not_collected als ok an VictoriaMetrics  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/history.py, apps/monitoring/app/core/victoria.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_victoria.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @dea3eebe1 2026-11-20T08:52:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-53/T3.verdict.json)
 Änderung: Die 60-s-Faltung in `server_events` greift nur noch für `origin == 'alert_log'`. `build_check_result_lines` schreibt `not_collected` als 0. Ein Test je Punkt schlägt zuerst fehl.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_victoria.py
 Doku: → T6

@@ -250,11 +250,14 @@ def server_events(db: Session, server_id: str, start: int, end: int) -> list[dic
     events: list[dict] = []
     last_seen: dict[tuple, datetime] = {}
     for change, check_name in rows:
-        key = (change.check_id, change.old_status, change.new_status)
-        seen = last_seen.get(key)
-        if seen is not None and seen - change.at < _SAME_EVENT:
-            continue
-        last_seen[key] = change.at
+        # Only the alert-log rows repeat one change (a row per notified rule); a state row
+        # is a transition of its own, even a minute after the same one.
+        if change.origin == "alert_log":
+            key = (change.check_id, change.old_status, change.new_status)
+            seen = last_seen.get(key)
+            if seen is not None and seen - change.at < _SAME_EVENT:
+                continue
+            last_seen[key] = change.at
         events.append(
             {
                 "at": _epoch(change.at),

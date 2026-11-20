@@ -100,6 +100,18 @@ class TestFormatLine:
         assert not [line for line in lines if line.startswith("monitor_x,")]
         assert len([line for line in lines if line.startswith("monitor_y,")]) == 1
 
+    def test_check_status_not_collected_is_written_as_ok(self):
+        # apply_result keeps not_collected as ok; the series must not show it as unknown (3).
+        from app.core.victoria import VictoriaClient
+
+        lines = VictoriaClient().build_check_result_lines(
+            "c1", "agent_resources", "s1", "chk", "not_collected", None
+        )
+        assert [line for line in lines if line.startswith("monitor_check_status,")]
+        assert all(
+            " value=0i " in line for line in lines if line.startswith("monitor_check_status,")
+        )
+
     def test_float_no_i_suffix(self):
         assert format_line("m", {"host": "srv"}, 1.5, 100) == "m,host=srv value=1.5 100"
 
