@@ -1,5 +1,5 @@
 # Windows-Agent: signiertes Self-Update über :8445 — Task-Ledger
-Status: bereit · Branch: feature/windows-self-update · Review: pro Task
+Status: erledigt · Branch: feature/windows-self-update · Review: pro Task
 Spec: docs/features/windows-self-update.md (Roadmap R-1581)
 Heavy: windows — Tausch, Health-Check und Rollback sind Windows-Code; Beweis über die Windows-Jobs der PR-CI; den Gateway-Teil prüft der integration-stack-Job der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
