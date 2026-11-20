@@ -10,8 +10,10 @@ Heavy: none — Kommentar, Doku, Changelog-Fragmente und ein Test, kein Stack-, 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1643: WWN-Text eingrenzen (Kommentar, Doku, Changelog)  [ ]
+### T1 — R-1643: WWN-Text eingrenzen (Kommentar, Doku, Changelog)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-agent-11.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @15cc456d4 2026-11-20T12:12:06+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer branch kern-agent-11 2026-11-19. Dedup-Key: REF:agent:apps/agent/internal/monitor/smart.go:smartWWN
 Änderung: Kommentar an `smartWWN`, `agent.html` (DE+EN) und das Fragment sagen nicht mehr "in der Form von lsblk", sondern: wie `smartctl` sie liefert, ähnlich `lsblk -o WWN`; bei NVMe mit NGUID kann `lsblk` eine andere Kennung zeigen (nicht verifiziert, welche der Kernel wählt). Kein Codeverhalten.
 Verify: bash scripts/dev/verify.sh agent --strict

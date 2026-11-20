@@ -324,8 +324,9 @@ type smartctlJSON struct {
 // 0x plus 32 hex digits.
 const maxWWNLen = 64
 
-// smartWWN renders the disk's world wide name the way lsblk -o WWN does: 0x plus 16 hex digits
-// for ATA, eui. plus 16 hex digits for NVMe, the SCSI logical unit id as smartctl prints it.
+// smartWWN renders the disk's world wide name as smartctl reports it: 0x plus 16 hex digits for ATA, eui. plus
+// 16 hex digits (the EUI-64) for NVMe, the SCSI logical unit id as smartctl prints it. lsblk -o WWN looks alike, but
+// on an NVMe disk with an NGUID it may show another id (not verified which one the kernel picks).
 // Empty when smartctl reports no id, an all-zero one or an implausible SCSI text.
 func smartWWN(raw *smartctlJSON) string {
 	if w := raw.WWN; w != nil {
