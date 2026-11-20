@@ -393,7 +393,7 @@ if [ -n "$CA_FP" ]; then
         # the server's repo: running this script again installs the same one.
         warn "compare the fingerprint the agent prints with the SHA-256 of the gateway certificate (not the CA),"
         warn "on the server: openssl x509 -noout -fingerprint -sha256 -in <gateway certificate>;"
-        warn "or update the AdminHelper server, which ships the agent, and provision again with a new token."
+        warn "or update the AdminHelper server, which ships the agent, and provision again with a new token and --ca-fp."
         PROV_ARGS+=(--insecure)
     fi
 else
