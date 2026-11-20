@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-16 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-16 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-16 · Review: pro Task
 Spec: docs/features/klein-nachlese-16.md (Roadmap R-1657, R-1661)
 Heavy: none — Kommentar, Monitoring-Unit-Tests, Spec-Text
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Semantik: keine Stelle in docs/ — Windows vergleicht Dienstnamen ohne Groß-/K
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py tests/test_template_overrides.py tests/test_agent_ping_checker.py
 Doku: keine (interne Korrektur, Windows kennt keine Alias-Einträge im Bericht)
 
-### T3 — R-1661: Spec kern-monitoring-51 auf den Stillstand-Abzug  [ ]
+### T3 — R-1661: Spec kern-monitoring-51 auf den Stillstand-Abzug  [x]
 Komponente: monitoring · Dateien: docs/features/kern-monitoring-51.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ddd9a7cef 2026-11-20T01:22:39+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: reviewer kern-monitoring-51 branch, 2026-11-19
 Semantik: keine Stelle in docs/ — die Spec selbst ist der Fund
 Änderung: Die Abschnitte Problem, Ziel, Trade-offs und Risiken beschreiben für `agent_ping` den Abzug der Stillstandszeit (Zeit zwischen letztem Check und Start, ab dem Zeitstempel) statt der Kappung auf den Dienststart.
