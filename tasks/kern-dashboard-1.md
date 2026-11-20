@@ -1,5 +1,5 @@
 # Desktop-Dashboard: keine Nullen und kein Leerzustand bei Laden oder Fehler — Task-Ledger
-Status: bereit · Branch: feature/kern-dashboard-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-dashboard-1 · Review: am Ende
 Spec: Roadmap R-0781
 Heavy: none — nur pages/Dashboard.svelte und seine vitest-Dateien; keine Desktop-E2E-Spec prüft Kacheln oder den Leerzustand (grep apps/desktop/e2e)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -16,3 +16,10 @@ Dedup-Key: bug:desktop-ui:Dashboard.svelte:empty-under-error
 Semantik: keine Stelle in docs/ — gesucht in docs/developer/desktop.html (Dashboard „Übersicht/Status nach Login“) und docs/user; Vorbild im Code: Kachel Probleme zeigt „-“, „zero problems would read as a healthy monitoring“ (Dashboard.svelte:59)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard
 Doku: changelog.d/kern-dashboard-1.md (Doku-Seiten beschreiben die Kacheln nicht)
+
+### T2 — R-0781: Kachel-Hinweise im selben Zustand, behaltene Liste zählt  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Dashboard.svelte, apps/desktop/ui/src/pages/Dashboard.load.test.ts, apps/desktop/ui/src/pages/Dashboard.layout.test.ts
+Änderung: Abschlussprüfung (request_changes, 2× wichtig): Die Hinweise „SSH · RDP · Web“ und „mit Agent“ entfallen, solange die Kachel „-“ zeigt; behält ein gescheiterter Abruf die Liste derselben Quelle (stores/connections.ts reloadForMode, keep), zählt die Kachel sie weiter, „-“ nur ohne Einträge. Tests erst rot.
+Beweis: reviewer kern-dashboard-1 branch @0e5bf8f01, Dashboard.svelte:63, :98-103, :110
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard
+Doku: keine (changelog.d/kern-dashboard-1.md aus T1 deckt es)
