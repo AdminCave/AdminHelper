@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker
 from app.models import MonitorCheck, MonitorObjectState, MonitorState
-from app.objects import NOT_COLLECTED, object_key
+from app.objects import NOT_COLLECTED, object_key, read_objects
 
 T0 = datetime(2026, 11, 19, 12, 0, 0)
 MIN = timedelta(minutes=1)
@@ -222,3 +223,38 @@ def test_objects_need_the_internal_key(client_db, monkeypatch):
     assert client.get("/objects", headers={"X-Internal-Key": "wrong"}).status_code == 401
     # Paired: the right key passes.
     assert client.get("/objects", headers={"X-Internal-Key": "internal-secret"}).status_code == 200
+
+
+def test_compose_containers_and_cluster_guests_get_host_kind_and_stable_id_keys():
+    docker = {
+        "docker": {
+            "available": True,
+            "error": None,
+            "containers": [
+                {
+                    "id": "abc123def456",
+                    "name": "shop-web-2",
+                    "state": "running",
+                    "compose_project": "shop",
+                    "compose_service": "web",
+                    "compose_number": 2,
+                }
+            ],
+        }
+    }
+    proxmox = {
+        "proxmox": {
+            "available": True,
+            "error": None,
+            "cluster_name": "pve-c1",
+            "vms": [{"vmid": 100, "status": "stopped"}],
+        }
+    }
+    _, _, containers = DockerHealthChecker().evaluate({}, docker)
+    _, _, guests = ProxmoxBackupChecker().evaluate({}, proxmox)
+    _, by_key = read_objects(containers["_objects"], "srv-1")
+    assert list(by_key) == ["srv-1/container/shop/web/2"]
+    assert by_key["srv-1/container/shop/web/2"]["stable"] is True
+    _, by_key = read_objects(guests["_objects"], "srv-1")
+    assert list(by_key) == ["srv-1/guest-backup/pve-c1/100"]
+    assert by_key["srv-1/guest-backup/pve-c1/100"]["stable"] is True

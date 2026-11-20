@@ -365,14 +365,14 @@ def test_proxmox_zero_vms_is_ok_with_empty_list():
     }
 
 
-def _guest_object(vmid, label, status, reason):
+def _guest_object(vmid, label, status, reason, cluster=None):
     return {
         "kind": "guest-backup",
-        "id": str(vmid),
+        "id": f"{cluster}/{vmid}" if cluster else str(vmid),
         "name": label,
         "status": status,
         "reason": reason,
-        "stable": False,
+        "stable": cluster is not None,
     }
 
 
@@ -451,6 +451,27 @@ def _guest(vmid):
 def test_proxmox_guest_objects_are_complete_only_for_the_whole_list(vms, complete):
     _, _, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox(*vms))
     assert _object_result(metrics)[0] is complete
+
+
+def test_proxmox_a_guest_in_a_named_cluster_is_keyed_by_cluster_and_vmid(monkeypatch):
+    # ADR 0004 §4: a VMID is unique only within its cluster; with the cluster in it the key
+    # holds when the guest moves to another node of the cluster.
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: 1_000_000.0)
+    vm = {"vmid": 100, "name": "web", "status": "running", "last_backup_ts": 1_000_000.0}
+    _, _, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox(vm, cluster_name="pve-c1"))
+    assert _object_result(metrics)[1] == [
+        _guest_object(100, "VM 100 (web)", "ok", "Backup up to date", cluster="pve-c1")
+    ]
+
+
+@pytest.mark.parametrize("cluster", ["", 7, None])
+def test_proxmox_without_a_usable_cluster_name_the_key_stays_the_vmid(monkeypatch, cluster):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: 1_000_000.0)
+    vm = {"vmid": 100, "name": "web", "status": "running", "last_backup_ts": 1_000_000.0}
+    _, _, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox(vm, cluster_name=cluster))
+    assert _object_result(metrics)[1] == [
+        _guest_object(100, "VM 100 (web)", "ok", "Backup up to date")
+    ]
 
 
 def test_proxmox_without_vm_data_names_no_objects():
@@ -993,14 +1014,14 @@ def test_docker_ignored_container_is_skipped():
     assert _rows(metrics) == []
 
 
-def _container_object(name, status, reason):
+def _container_object(name, status, reason, ident=None):
     return {
         "kind": "container",
-        "id": name,
+        "id": ident or name,
         "name": name,
         "status": status,
         "reason": reason,
-        "stable": False,
+        "stable": ident is not None,
     }
 
 
@@ -1045,6 +1066,48 @@ def test_docker_ignored_containers_name_no_object():
 def test_docker_container_with_an_empty_name_is_an_object_named_by_a_question_mark():
     _, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(name="")))
     assert _object_result(metrics)[1] == [_container_object("?", "ok", "Running")]
+
+
+def test_docker_a_compose_container_is_keyed_by_project_service_and_number():
+    # ADR 0004 §4: the key outlives a recreation, which gives the container a new ID and
+    # may give it a new name; the name stays what the object shows.
+    c = _ctr(name="shop-web-2", compose_project="shop", compose_service="web", compose_number=2)
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert _object_result(metrics)[1] == [
+        _container_object("shop-web-2", "ok", "Running", ident="shop/web/2")
+    ]
+
+
+@pytest.mark.parametrize(
+    "compose",
+    [
+        pytest.param({"compose_project": "shop", "compose_service": "web"}, id="no-number"),
+        pytest.param(
+            {"compose_project": "shop", "compose_service": "web", "compose_number": 0}, id="zero"
+        ),
+        pytest.param(
+            {"compose_project": "shop", "compose_service": "web", "compose_number": "2"},
+            id="number-as-text",
+        ),
+        pytest.param({"compose_service": "web", "compose_number": 2}, id="no-project"),
+        pytest.param(
+            {"compose_project": "shop", "compose_service": "", "compose_number": 2},
+            id="empty-service",
+        ),
+        # The parts are joined with "/": a part with one would no longer split back (R-1663).
+        pytest.param(
+            {"compose_project": "a/b", "compose_service": "web", "compose_number": 2},
+            id="slash-in-project",
+        ),
+        pytest.param(
+            {"compose_project": "shop", "compose_service": "b/web", "compose_number": 2},
+            id="slash-in-service",
+        ),
+    ],
+)
+def test_docker_without_the_whole_compose_identity_the_key_stays_the_name(compose):
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(**compose)))
+    assert _object_result(metrics)[1] == [_container_object("web", "ok", "Running")]
 
 
 def _numbered(i):

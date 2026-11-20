@@ -12,6 +12,7 @@ import json
 import uuid
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -414,7 +415,7 @@ def test_sync_keeps_a_check_the_user_disabled_disabled(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.toggle_check(cid, db)
+    checks_router.toggle_check(cid, BackgroundTasks(), db)
     db.scheduled.clear()
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "severity": "warning"}])
@@ -461,7 +462,7 @@ def test_deleted_template_check_is_not_created_again_by_the_sync(db):
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     apply_template(db, tpl, "srv-2", "db01.example", "DB 01")
     deleted_id = db.query(MonitorCheck).filter_by(server_id="srv-1").one().id
-    checks_router.delete_check(deleted_id, db)
+    checks_router.delete_check(deleted_id, BackgroundTasks(), db)
     assert _tombstones(db) == [("srv-1", "ping")]
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "interval": "1m"}])
@@ -495,8 +496,8 @@ def test_deleting_a_manual_or_unassigned_check_leaves_no_tombstone(db):
     )
     db.commit()
 
-    checks_router.delete_check("manual-1", db)
-    checks_router.delete_check("orphan-1", db)
+    checks_router.delete_check("manual-1", BackgroundTasks(), db)
+    checks_router.delete_check("orphan-1", BackgroundTasks(), db)
 
     assert db.query(MonitorCheck).count() == 0
     assert _tombstones(db) == []
@@ -524,7 +525,7 @@ def test_remove_and_assign_again_creates_a_deleted_check_again(db):
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     apply_template(db, tpl, "srv-2", "db01.example", "DB 01")
     for check in db.query(MonitorCheck).all():
-        checks_router.delete_check(check.id, db)
+        checks_router.delete_check(check.id, BackgroundTasks(), db)
     assert _tombstones(db) == [("srv-1", "ping"), ("srv-2", "ping")]
 
     remove_template(db, tpl.id, "srv-1")
@@ -546,7 +547,7 @@ def test_cleanup_server_removes_the_servers_tombstones(db):
         apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     apply_template(db, tpl_a, "srv-2", "db01.example", "DB 01")
     for check in db.query(MonitorCheck).all():
-        checks_router.delete_check(check.id, db)
+        checks_router.delete_check(check.id, BackgroundTasks(), db)
     assert len(_tombstones(db)) == 3
 
     cleanup_server(db, "srv-1")
