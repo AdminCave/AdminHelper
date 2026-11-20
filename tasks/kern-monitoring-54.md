@@ -1,5 +1,5 @@
 # Compose-Kennung nur aus eindeutigen Teilen — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-54 · Review: am Ende
+Status: erledigt · Branch: feature/kern-monitoring-54 · Review: am Ende
 Spec: docs/features/kern-monitoring-54.md (Roadmap R-1663)
 Heavy: none — reine Bewertungslogik des Monitoring-Dienstes, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
