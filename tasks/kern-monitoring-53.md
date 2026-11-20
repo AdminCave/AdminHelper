@@ -1,5 +1,5 @@
 # Monitoring-Nachlese: Objektzeilen unter Sperre, stabile Schlüssel, Verlauf, Hub im Hintergrund — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-53 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-53 · Review: pro Task
 Spec: docs/features/kern-monitoring-53.md (Roadmap R-1651, R-1653, R-1650, R-1642, R-1660)
 Heavy: none — nur Bewertung, Sperren und Routen im Monitoring-Dienst, kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -46,8 +46,10 @@ Review: approve (.ah-out/review/kern-monitoring-53/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_hub.py tests/test_bell_removed_checks.py tests/test_openapi_snapshot.py
 Doku: → T6
 
-### T6 — Doku und Changelog  [ ]
+### T6 — Doku und Changelog  [x]
 Komponente: monitoring · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/adr/0004-monitoring-neuordnung.md, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-53.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @41fcbafb7 2026-11-20T08:59:24+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Schlüsseltabelle bekommt die Einträge container und guest-backup, mit Rückfall. Das ADR vermerkt den Host im Gast-Backup-Schlüssel. Die Entwickler-Doku erhält einen Satz zur Faltung im Verlauf, die Admin-Doku einen zur Neuanlage. Dazu das Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_objects_api.py
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-53.md
