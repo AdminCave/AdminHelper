@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/kern-monitoring-53/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_victoria.py
 Doku: → T6
 
-### T4 — R-1642: Container und Gast-Backups stabil schlüsseln  [ ]
+### T4 — R-1642: Container und Gast-Backups stabil schlüsseln  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py, apps/monitoring/tests/test_objects_api.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @65369be00 2026-11-20T08:55:08+01:00
+Review: approve (.ah-out/review/kern-monitoring-53/T4.verdict.json)
 Änderung: Container mit Compose-Projekt, Dienst und Nummer bekommen die id `<projekt>/<dienst>/<nummer>`, Gast-Backups mit `cluster_name` die id `<cluster>/<vmid>`, beide `stable: true`. Ohne diese Felder gilt der heutige Rückfall (Name bzw. VMID, `stable: false`). Tests decken beide Wege ab.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py tests/test_objects_api.py
 Doku: → T6
