@@ -5,8 +5,10 @@ Heavy: windows — Tausch, Health-Check und Rollback sind Windows-Code; Beweis �
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — selfupdate: minisign-Prüfung, signierte Liste, Versionsvergleich, Download  [ ]
-Komponente: agent · Dateien: apps/agent/internal/selfupdate/minisign.go, apps/agent/internal/selfupdate/minisign_test.go, apps/agent/internal/selfupdate/fetch.go, apps/agent/internal/selfupdate/fetch_test.go, apps/agent/internal/selfupdate/testdata/, apps/agent/go.mod, apps/agent/go.sum, THIRD_PARTY_LICENSES.md
+### T1 — selfupdate: minisign-Prüfung, signierte Liste, Versionsvergleich, Download  [x]
+Komponente: agent · Dateien: apps/agent/internal/selfupdate/minisign.go, apps/agent/internal/selfupdate/minisign_test.go, apps/agent/internal/selfupdate/fetch.go, apps/agent/internal/selfupdate/fetch_test.go, apps/agent/go.mod, apps/agent/go.sum, THIRD_PARTY_LICENSES.md, apps/agent/internal/selfupdate/testdata/adminhelper-agent.exe, apps/agent/internal/selfupdate/testdata/frpc.exe, apps/agent/internal/selfupdate/testdata/SHA256SUMS, apps/agent/internal/selfupdate/testdata/SHA256SUMS.legacy.minisig, apps/agent/internal/selfupdate/testdata/SHA256SUMS.minisig, apps/agent/internal/selfupdate/testdata/SHA256SUMS.othercomment.minisig, apps/agent/internal/selfupdate/testdata/SHA256SUMS.wrongkey.minisig, apps/agent/internal/selfupdate/testdata/test.pub, apps/agent/internal/selfupdate/testdata/VERSION
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @9f78af5fc 2026-11-20T18:19:46+01:00
+Review: approve (.ah-out/review/windows-self-update/T1.verdict.json)
 Änderung: Neues Paket (SPDX-Header). Die minisign-Prüfung nimmt nur `ED` (Ed25519 über BLAKE2b-512) mit passender Key-ID und prüft die globale Signatur über Signatur und Trusted Comment; Legacy `Ed` wird abgelehnt. Der Schlüssel ist eine Konstante, ein Test hält sie im Gleichlauf mit `MINISIGN_PUBKEY` in `scripts/update.sh:48`. `Check` lädt `/windows/SHA256SUMS` und `.minisig` von `https://<host>:8445` mit der gepinnten Gateway-CA, prüft sie und liest `VERSION`. Ist sie echt größer als die eigene (keine dev-Builds, keine gemerkte Fehlversion), lädt es beide .exe in einen Staging-Ordner und prüft deren SHA-256. Fixtures erzeugt das echte minisign 0.12 (gültig, gefälscht, falscher Schlüssel, Legacy), Server per httptest.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/...
 Doku: → T5
