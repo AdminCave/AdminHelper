@@ -628,6 +628,56 @@ func TestServiceHealthSystemctlError(t *testing.T) {
 	}
 }
 
+func TestServiceHealthFailedListError(t *testing.T) {
+	// A failed list-units --state=failed leaves the failed units unknown: an empty failed list would
+	// read as "all services OK" on the server. The report says so in the same short reason as a failed
+	// list-units, and keeps the counts list-units gave.
+	for name, tc := range map[string]struct {
+		err  error
+		want string
+	}{
+		"exit status": {exitError(t, "exit 1"), "systemctl list-units --state=failed: exit status 1"},
+		"timed out":   {context.DeadlineExceeded, "systemctl list-units --state=failed: timed out after 15s"},
+		"not found": {&exec.Error{Name: "systemctl", Err: exec.ErrNotFound},
+			"systemctl list-units --state=failed: systemctl did not start"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubCollector(t, map[string]systemctlReply{
+				listUnitsArgs:     {out: collectorListUnits},
+				listUnitFilesArgs: {out: collectorListUnitFiles},
+				listFailedArgs:    {err: tc.err},
+				recheckShow:       {out: showBlocks257},
+				aliasShow:         {out: aliasBlocks},
+				factShow:          {},
+			})
+			got := collectServiceHealth(context.Background())
+			if got["error"] != tc.want {
+				t.Errorf("error = %q, want %q", got["error"], tc.want)
+			}
+			if !reflect.DeepEqual(got["failed"], []string{}) {
+				t.Errorf("failed = %q, want []", got["failed"])
+			}
+			if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
+				t.Errorf("counts = %v, want the counts of list-units", got["counts"])
+			}
+		})
+	}
+}
+
+func TestServiceHealthBothListsFailKeepListUnitsError(t *testing.T) {
+	// When list-units fails too, its reason stands: without it nothing in the report holds.
+	stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {err: exitError(t, "exit 1")},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs:    {err: exitError(t, "exit 1")},
+		aliasShow:         {out: aliasBlocks},
+	})
+	got := collectServiceHealth(context.Background())
+	if want := "systemctl list-units failed: exit status 1"; got["error"] != want {
+		t.Errorf("error = %q, want %q", got["error"], want)
+	}
+}
+
 // aliasOf maps every inventory entry that carries alias_of to it.
 func aliasOf(entries []ServiceEntry) map[string]string {
 	m := map[string]string{}
