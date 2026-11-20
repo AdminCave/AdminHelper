@@ -544,6 +544,8 @@ def _compose_ident(c: dict) -> str | None:
     number = _whole_number(c.get("compose_number"))
     if project is None or service is None or number is None or number < 1:
         return None
+    if "/" in project or "/" in service:  # the key would no longer split back (R-1663)
+        return None
     return f"{project}/{service}/{number}"
 
 
