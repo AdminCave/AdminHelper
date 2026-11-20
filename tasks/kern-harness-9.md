@@ -1,5 +1,5 @@
 # Gegenprobe mit gescheitertem tauri build ist keine — Task-Ledger
-Status: geplant · Branch: feature/kern-harness-9 · Review: am Ende
+Status: aktiv · Branch: feature/kern-harness-9 · Review: am Ende
 Spec: Roadmap R-1667
 Heavy: none — heavy.sh ist ein Wrapper; heavy_test.sh prüft ihn hermetisch mit Shims, kein Stack-/Gateway-/PKI-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
