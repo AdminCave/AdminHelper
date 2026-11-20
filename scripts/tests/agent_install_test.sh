@@ -193,6 +193,9 @@ grep -qF "openssl x509 -noout -fingerprint -sha256" <<<"$out" \
 # The agent comes from the server's repo: rerunning the script would install the same old one.
 grep -qi "update the AdminHelper server" <<<"$out" && ! grep -qi "update the agent" <<<"$out" \
     && ok "TOFU warning names the server update as the way out" || bad "TOFU warning sends the admin in a circle"
+# Without --ca-fp the new provisioning is trust-on-first-use again (R-1648).
+grep -qiE "provision again.*--ca-fp" <<<"$out" \
+    && ok "TOFU warning says to provision again with --ca-fp" || bad "TOFU warning leaves --ca-fp out of the way out"
 
 echo "── token over stdin: the agent reads it from stdin, never as an argument ──"
 fresh_env; export AH_PKG_MGR=apt
