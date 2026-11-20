@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-systemctl daemon-reload
+systemctl daemon-reload >/dev/null 2>&1 || true
 mkdir -p /etc/frp/pki
 # 700 on /etc/frp too, not just pki — frpc.toml holds the FRP auth token, and the rpm
 # already ships %attr(700) on the dir. Without this the deb left /etc/frp world-readable (3.41).
@@ -16,7 +16,7 @@ for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer sr
         rm -f "/etc/systemd/system/${unit}"
     fi
 done
-systemctl daemon-reload
+systemctl daemon-reload >/dev/null 2>&1 || true
 
 # Timer aktivieren: laeuft ohne Config harmlos (Sync/Push skippen still).
 # frpc.service nur reaktivieren, wenn bereits provisioniert (frpc.toml existiert).
