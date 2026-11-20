@@ -1,5 +1,5 @@
 # Agent: gescheiterte Abfrage der fehlgeschlagenen Units melden — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-14 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-14 · Review: am Ende
 Spec: docs/features/kern-agent-14.md (Roadmap R-1644)
 Heavy: linux-full — Änderung in apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
