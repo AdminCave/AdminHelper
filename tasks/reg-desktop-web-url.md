@@ -1,5 +1,5 @@
 # Web-Tunnel-URL ohne Pfad bleibt ohne Pfad — Task-Ledger
-Status: geplant · Branch: feature/reg-desktop-web-url · Review: am Ende
+Status: aktiv · Branch: feature/reg-desktop-web-url · Review: am Ende
 Spec: Roadmap R-1665
 Heavy: linux-full — Desktop-Journey über den Tunnel; Beweis vor dem Merge: bash scripts/tests/run.sh all --strict --step "desktop_e2e_connect_tunnel"
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
