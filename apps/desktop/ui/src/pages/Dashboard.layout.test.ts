@@ -149,6 +149,7 @@ describe('Dashboard layout', () => {
     // Before the first monitoring answer there is no number to show (R-0781 for servers).
     expect(value(container, 'problems')).toBe('-');
     expect(value(container, 'servers')).toBe('-');
+    expect(container.textContent).not.toContain(tNow('dashboard.serversHint', { count: 0 }));
     expect(container.textContent).toContain(tNow('dashboard.noTunnels'));
 
     checks.set([
@@ -231,6 +232,7 @@ describe('Dashboard layout', () => {
 
     expect(value(container, 'problems')).toBe('-');
     expect(value(container, 'servers')).toBe('-');
+    expect(container.textContent).not.toContain(tNow('dashboard.serversHint', { count: 0 }));
     const mon = container.querySelector<HTMLElement>('[data-panel="monitoring"]')!;
     expect(mon.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
       tNow('error.monitoring', { message: 'connection refused' }),

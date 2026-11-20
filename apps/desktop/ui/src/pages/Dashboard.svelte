@@ -59,10 +59,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let problems = $derived(summary.critical + summary.warning);
   // A failed load leaves no checks behind: zero problems would read as a healthy monitoring.
   let monitoringKnown = $derived($monitoringHasLoaded && !$monitoringError);
-  // The same for connections: a pending or failed fetch has no count yet (R-0781).
-  let connectionsKnown = $derived(
-    !$connectionsStore.error && !($loading && $kindCounts.total === 0),
-  );
+  // The same for connections: a pending or failed fetch without a list has no count (R-0781);
+  // a failed reload that kept the list of the same source still counts it.
+  let connectionsKnown = $derived($kindCounts.total > 0 || (!$loading && !$connectionsStore.error));
   let agentServers = $derived(
     new Set(enabledChecks.filter((c) => c.checkType === 'agent_ping').map((c) => c.serverId)).size,
   );
@@ -96,18 +95,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="dash-card-label">{$t('dashboard.total')}</div>
       <div class="dash-card-value">{connectionsKnown ? $kindCounts.total : '-'}</div>
       <div class="dash-card-hint">
-        {$t('dashboard.kindHint', {
-          ssh: $kindCounts.ssh,
-          rdp: $kindCounts.rdp,
-          web: $kindCounts.web,
-        })}
+        {#if connectionsKnown}
+          {$t('dashboard.kindHint', {
+            ssh: $kindCounts.ssh,
+            rdp: $kindCounts.rdp,
+            web: $kindCounts.web,
+          })}
+        {/if}
       </div>
     </div>
     {#if monitoringShown}
       <div class="dash-card" data-card="servers">
         <div class="dash-card-label">{$t('dashboard.servers')}</div>
         <div class="dash-card-value">{monitoringKnown ? $monitoringServers.length : '-'}</div>
-        <div class="dash-card-hint">{$t('dashboard.serversHint', { count: agentServers })}</div>
+        <div class="dash-card-hint">
+          {#if monitoringKnown}{$t('dashboard.serversHint', { count: agentServers })}{/if}
+        </div>
       </div>
       <div class="dash-card" data-card="problems" class:has-problems={problems > 0}>
         <div class="dash-card-label">{$t('dashboard.problems')}</div>

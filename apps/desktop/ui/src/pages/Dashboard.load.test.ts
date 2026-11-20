@@ -49,10 +49,14 @@ vi.mock('$lib/stores/tunnel', async () => {
 });
 
 import { setLanguage, tNow } from '$lib/i18n';
-import { clearInMemory } from '$lib/stores/connections';
+import { clearInMemory, loadForCurrentMode } from '$lib/stores/connections';
 import Dashboard from './Dashboard.svelte';
 
 const OFFLINE = new Error('offline');
+
+function cardHint(card: string): string {
+  return document.querySelector(`[data-card="${card}"] .dash-card-hint`)?.textContent?.trim() ?? '';
+}
 
 function cardValue(card: string): string {
   return (
@@ -84,6 +88,23 @@ describe('Dashboard while loading and after a failed fetch', () => {
     // Nothing came back: neither "no connections used" nor a count of zero (R-0781).
     expect(screen.queryByText(tNow('dashboard.empty'))).toBeNull();
     expect(cardValue('connections')).toBe('-');
+    expect(cardHint('connections')).toBe('');
+  });
+
+  it('keeps counting the list a failed reload of the same source kept', async () => {
+    h.fetchJwt.mockResolvedValueOnce([
+      { id: 'c1', name: 'nas', kind: 'ssh', host: 'nas.example' },
+      { id: 'c2', name: 'wiki', kind: 'web', url: 'https://wiki.example' },
+    ]);
+    render(Dashboard);
+    await waitFor(() => expect(cardValue('connections')).toBe('2'));
+
+    h.fetchJwt.mockRejectedValueOnce(OFFLINE);
+    await loadForCurrentMode();
+
+    expect(await screen.findByRole('alert')).not.toBeNull();
+    expect(cardValue('connections')).toBe('2');
+    expect(cardHint('connections')).toBe(tNow('dashboard.kindHint', { ssh: 1, rdp: 0, web: 1 }));
   });
 
   it('shows that it loads instead of "no connections used" while the fetch is pending', async () => {
@@ -100,6 +121,7 @@ describe('Dashboard while loading and after a failed fetch', () => {
     expect(screen.queryByText(tNow('dashboard.empty'))).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(cardValue('connections')).toBe('-');
+    expect(cardHint('connections')).toBe('');
 
     finish([]);
     await waitFor(() => expect(screen.queryByText(tNow('loading.generic'))).toBeNull());
