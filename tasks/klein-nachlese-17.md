@@ -19,8 +19,10 @@ Beweis: reviewer branch kern-agent-11 2026-11-19. Dedup-Key: REF:agent:apps/agen
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html DE+EN, changelog.d/kern-agent-11.md
 
-### T2 — R-1662, R-1664: Monitoring-Doku, Fragmente, Testhygiene  [ ]
+### T2 — R-1662, R-1664: Monitoring-Doku, Fragmente, Testhygiene  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_check_engine_concurrency.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-53.md, changelog.d/ops-13.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f9eae893d 2026-11-20T12:13:50+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer kern-monitoring-53 2026-11-20, reviewer ops-13 2026-11-20. Dedup-Key: ref:nachlese:kern-monitoring-53, ref:nachlese:ops-13
 Änderung: `monitoring.html` DE+EN: `history.server_events` faltet `alert_log`-Zeilen desselben Checks mit gleichem Wechsel innerhalb von 60 s (nicht desselben Objekts); beide Fragmente ohne Umlaute; im Test `first` in `try/finally` schließen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_concurrency.py
