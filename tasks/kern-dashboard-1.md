@@ -1,5 +1,5 @@
 # Desktop-Dashboard: keine Nullen und kein Leerzustand bei Laden oder Fehler — Task-Ledger
-Status: geplant · Branch: feature/kern-dashboard-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-dashboard-1 · Review: am Ende
 Spec: Roadmap R-0781
 Heavy: none — nur pages/Dashboard.svelte und seine vitest-Dateien; keine Desktop-E2E-Spec prüft Kacheln oder den Leerzustand (grep apps/desktop/e2e)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
