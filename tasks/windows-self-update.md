@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/windows-self-update/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: → T5
 
-### T4 — Release: signierter windows/-Satz im Agent-Repo-Asset  [ ]
+### T4 — Release: signierter windows/-Satz im Agent-Repo-Asset  [x]
 Komponente: scripts · Dateien: apps/agent/build-windows-update.sh, scripts/tests/windows_update_set_test.sh, scripts/tests/run.sh, .github/workflows/release.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a0a1b0553 2026-11-20T18:30:47+01:00
+Review: approve (.ah-out/review/windows-self-update/T4.verdict.json)
 Änderung: `build-windows-update.sh` (SPDX) legt aus Agent-.exe, frpc.exe und Version `windows/` an (`VERSION`, beide .exe, `SHA256SUMS`) und signiert mit minisign. Der Trusted Comment trägt das Tag. Danach prüft es gegen den Schlüssel aus `scripts/update.sh`. `release.yml` ruft es in einem Schritt vor „Build signed agent repo“ mit `MINISIGN_SECRET_KEY` (Schlüsseldatei nur im Schritt, per trap gelöscht) und kopiert `windows/` neben `freebsd/` ins Repo. Der Test signiert mit einem Wegwerf-Schlüssel und prüft Inhalt, `minisign -V` und den Abbruch bei falschem Schlüssel.
 Verify: bash scripts/dev/verify.sh scripts --strict -- windows_update_set_test
 Doku: → T5

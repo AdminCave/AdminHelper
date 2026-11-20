@@ -477,6 +477,28 @@ jobs:
       # not the pinned one fails the release. Generate a PASSPHRASE-LESS key once, store
       # `gpg --export-secret-keys --armor <KEYID> | base64 -w0` as the secret, and
       # pin the public key in the docs + client setup snippet (docs/.../cicd).
+      # The Windows agent updates itself from :8445/windows/ (R-1581): the agent and the frpc it
+      # pins, VERSION and a minisign-signed SHA256SUMS whose trusted comment binds the version.
+      # Same key as SHA256SUMS of the release, verified against the pin in scripts/update.sh,
+      # which the agent carries too; the key file lives only for this step.
+      - name: Build signed Windows update set
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
+            echo "::error::MINISIGN_SECRET_KEY missing - the Windows update set must be signed."
+            exit 1
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+          KEYDIR="$(mktemp -d)"; chmod 700 "$KEYDIR"
+          trap 'rm -rf "$KEYDIR"' EXIT
+          printf '%s' "$MINISIGN_SECRET_KEY" | base64 -d > "$KEYDIR/minisign.key" 2>/dev/null \
+            || { echo "::error::MINISIGN_SECRET_KEY must be the base64 of the key file: base64 -w0 minisign.key"; exit 1; }
+          VERSION="${GITHUB_REF_NAME#v}" MINISIGN_KEY="$KEYDIR/minisign.key" OUT_DIR=windows-out \
+            AGENT_EXE=artifacts/agent/adminhelper-agent-windows-x86_64.exe \
+            FRPC_EXE=artifacts/agent/frpc-windows-x86_64.exe \
+            bash apps/agent/build-windows-update.sh
       - name: Build signed agent repo (apt + rpm)
         env:
           REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
@@ -509,6 +531,8 @@ jobs:
             bash apps/agent/build-repo.sh
           # The FreeBSD pkg repo of the step before; the :8445 repo plane serves /freebsd/.
           cp -a pkg-out/freebsd repo/freebsd
+          # The signed Windows update set of the step before; served as /windows/.
+          cp -a windows-out repo/windows
           tar czf "release/adminhelper-agent-repo-${TAG}.tar.gz" -C repo .
           # Also publish the archive keyring as its OWN asset — a second, independent
           # channel so an admin can fetch it and fingerprint-verify it against
