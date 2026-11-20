@@ -1,5 +1,5 @@
 # Windows-Agent: signiertes Self-Update über :8445 — Task-Ledger
-Status: aktiv · Branch: feature/windows-self-update · Review: pro Task
+Status: bereit · Branch: feature/windows-self-update · Review: pro Task
 Spec: docs/features/windows-self-update.md (Roadmap R-1581)
 Heavy: windows — Tausch, Health-Check und Rollback sind Windows-Code; Beweis über die Windows-Jobs der PR-CI; den Gateway-Teil prüft der integration-stack-Job der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -47,8 +47,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T6 — Doku: Pin-Stellen des minisign-Schlüssels, Schlüsselwechsel, Update-Ordner  [ ]
+### T6 — Doku: Pin-Stellen des minisign-Schlüssels, Schlüsselwechsel, Update-Ordner  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @447cc379a 2026-11-20T19:10:56+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschlussprüfung (reviewer branch, wichtig): Die Anleitung zum Scharfschalten nennt `ReleasePublicKey` in `apps/agent/internal/selfupdate/minisign.go` als dritte Pin-Stelle, dazu den Hinweis, dass ein Schlüsselwechsel installierte Windows-Agents bis zu einem Update von Hand von weiteren Updates abschneidet. Nit: Im Update-Ordner landen nur die beiden .exe, nicht `VERSION` und `SHA256SUMS`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task

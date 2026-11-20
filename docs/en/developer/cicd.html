@@ -585,7 +585,9 @@ A release image <code>X.Y.Z</code> is verified against exactly the identity <cod
 #    (single line, paste-safe — a raw multi-line key gets mangled otherwise):
 #    base64 -w0 minisign.key | gh secret set MINISIGN_SECRET_KEY
 # 2) pin the public key (the "RW…" line from minisign.pub) into
-#    MINISIGN_PUBKEY in scripts/install.sh AND scripts/update.sh</code></pre>
+#    MINISIGN_PUBKEY in scripts/install.sh AND scripts/update.sh,
+#    plus ReleasePublicKey in apps/agent/internal/selfupdate/minisign.go
+#    (TestReleaseKeyMatchesUpdateScript keeps it in step with update.sh)</code></pre>
             </div>
           </div>
 
@@ -631,7 +633,7 @@ openssl pkey -in adminhelper-pkg.key -pubout -out apps/agent/freebsd/adminhelper
 sha256sum apps/agent/freebsd/adminhelper-pkg.pub   # new value for this page and agent-deployment.html</code></pre>
 
           <h2 id="windows-update-set">Windows update set (self-update of the Windows agent)</h2>
-          <p>The step &ldquo;Build signed Windows update set&rdquo; in <code>release.yml</code> runs <code>apps/agent/build-windows-update.sh</code>: it lays out <code>windows/</code> with <code>VERSION</code>, <code>adminhelper-agent.exe</code>, <code>frpc.exe</code> (the pinned frpc of the release), <code>SHA256SUMS</code> over these three and <code>SHA256SUMS.minisig</code>. It signs with the same minisign key as the release's <code>SHA256SUMS</code> (secret <code>MINISIGN_SECRET_KEY</code>); the signed comment names the version, so an old, genuinely signed set cannot pass as a new one. Without the secret the release fails; the key file lives only for the step, in a directory of its own. The set goes under <code>windows/</code> into the asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code>, and the gateway serves it over the certless repo plane (<code>:8445/windows/</code>). The agent verifies the signature against the key it has built in, like <code>scripts/update.sh</code> (<a href="../admin/agent-deployment.html#windows-auto-update">Agent deployment &rarr; Automatic update</a>). <code>scripts/tests/windows_update_set_test.sh</code> builds the set with a throwaway key and checks its contents and signature.</p>
+          <p>The step &ldquo;Build signed Windows update set&rdquo; in <code>release.yml</code> runs <code>apps/agent/build-windows-update.sh</code>: it lays out <code>windows/</code> with <code>VERSION</code>, <code>adminhelper-agent.exe</code>, <code>frpc.exe</code> (the pinned frpc of the release), <code>SHA256SUMS</code> over these three and <code>SHA256SUMS.minisig</code>. It signs with the same minisign key as the release's <code>SHA256SUMS</code> (secret <code>MINISIGN_SECRET_KEY</code>); the signed comment names the version, so an old, genuinely signed set cannot pass as a new one. Without the secret the release fails; the key file lives only for the step, in a directory of its own. The set goes under <code>windows/</code> into the asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code>, and the gateway serves it over the certless repo plane (<code>:8445/windows/</code>). The agent verifies the signature against the key it has built in, like <code>scripts/update.sh</code> (<a href="../admin/agent-deployment.html#windows-auto-update">Agent deployment &rarr; Automatic update</a>). <code>scripts/tests/windows_update_set_test.sh</code> builds the set with a throwaway key and checks its contents and signature. <strong>Key rotation:</strong> installed Windows agents know only their built-in key; after a rotation they accept no update set until they have been brought once, by hand (one-liner or <code>service install</code>), to a release with the new key.</p>
 
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>
