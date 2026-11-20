@@ -16,6 +16,7 @@ import copy
 import json
 import logging
 import uuid
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -29,7 +30,7 @@ from app import builtin_templates, template_sync
 from app.builtin_templates import seed_builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorCheck, MonitorCheckTombstone, MonitorTemplate
+from app.models import Base, MonitorCheck, MonitorCheckTombstone, MonitorState, MonitorTemplate
 from app.tag_sync import sync_tag_assignments
 from app.template_sync import apply_template
 
@@ -527,7 +528,11 @@ def start(client, monkeypatch):
     loaded: list[bool] = []
     jobs: list[str] = []
     monkeypatch.setattr("app.core.database.SessionLocal", factory)
-    monkeypatch.setattr("app.checkers.agent.hydrate_agent_liveness", lambda entries, **_kw: None)
+    hydrations: list[dict] = []
+    monkeypatch.setattr(
+        "app.checkers.agent.hydrate_agent_liveness",
+        lambda entries, **kw: hydrations.append(kw),
+    )
     monkeypatch.setattr(scheduler_mod, "load_all_checks", lambda: loaded.append(True))
     for job in (
         "alert_log_cleanup",
@@ -552,6 +557,7 @@ def start(client, monkeypatch):
         return loaded == [True]
 
     run.jobs = jobs
+    run.hydrations = hydrations
     return run
 
 
@@ -566,6 +572,23 @@ def test_start_registers_the_system_jobs(start):
         "agent_alert_bundle",
         "bell_catch_up",
     ]
+
+
+def test_start_hands_the_last_check_run_to_the_liveness_hydration(client, start):
+    # R-1607: agent_ping takes the downtime off the age of a persisted stamp; the downtime
+    # starts at the newest check run before the stop.
+    _c, factory = client
+    older, newest = datetime(2026, 1, 1, 10, 0), datetime(2026, 1, 1, 10, 5)
+    with factory() as db:
+        seed_builtin_templates(db)
+        linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
+        apply_template(db, linux, "srv-1", "web01.example", "web01")
+        for check, stamp in zip(db.query(MonitorCheck).all(), (older, newest, None)):
+            db.merge(MonitorState(check_id=check.id, last_check=stamp))
+        db.commit()
+
+    assert start()
+    assert start.hydrations == [{"stopped_at": newest}]
 
 
 def _ship_linux_base_v2(monkeypatch) -> int:

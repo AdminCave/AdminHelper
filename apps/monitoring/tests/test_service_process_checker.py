@@ -615,6 +615,25 @@ def test_list_mode_carries_windows_details_over_whatever_their_case():
     assert _watched(metrics) == {"w32time": "running"}
 
 
+def test_list_mode_finds_the_target_of_an_alias_whatever_its_case_on_windows():
+    # The inventory is keyed folded on Windows; alias_of in the agent's own case has to
+    # find its entry there as well (R-1661).
+    report = _windows_inventory_report()
+    report["systemd"]["all_services"].append(
+        {
+            "unit": "TimeAlias",
+            "active_state": "unknown",
+            "enabled_state": "alias",
+            "alias_of": "W32TIME",
+        }
+    )
+    status, _message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["timealias"]}, report
+    )
+    assert status == "ok"
+    assert _watched(metrics) == {"timealias": "running"}
+
+
 def test_list_mode_stays_case_sensitive_off_windows():
     # systemd units and rc.d scripts differ by case; without the Windows host fact the
     # comparison stays exact (also for an agent before R-0421 without host facts).
@@ -727,6 +746,19 @@ def test_list_mode_alias_takes_the_state_of_its_target():
     )
     assert status == "unknown"
     assert _watched(metrics) == {"sshd": "nodata"}
+
+
+def test_list_mode_alias_down_carries_the_reason_of_its_target():
+    report = _inventory_report()
+    report["systemd"]["all_services"][2].update(active_state="failed", result="exit-code")
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["sshd"]}, report
+    )
+    assert status == "critical"
+    assert metrics["_details"]["watched"] == [
+        {"name": "sshd", "state": "down", "running": False, "reason": "exit-code"}
+    ]
+    assert "sshd (exit-code)" in message
 
 
 def test_list_mode_unit_file_that_list_units_does_not_list_is_down():

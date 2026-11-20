@@ -20,8 +20,10 @@ Semantik: keine Stelle in docs/ — der Kommentar selbst ist der Fund
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Kommentar)
 
-### T2 — R-1661: _resolve_alias unter Windows, Tests für reason und stopped_at  [ ]
+### T2 — R-1661: _resolve_alias unter Windows, Tests für reason und stopped_at  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_service_process_checker.py, apps/monitoring/tests/test_template_overrides.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c2c41d97f 2026-11-20T01:22:13+01:00
+Review: approve (.ah-out/review/klein-nachlese-16/T2.verdict.json)
 Beweis: reviewer kern-monitoring-51 branch, 2026-11-19
 Semantik: keine Stelle in docs/ — Windows vergleicht Dienstnamen ohne Groß-/Kleinschreibung (Spec kern-monitoring-51)
 Änderung: `_resolve_alias` nimmt die Schlüsselfunktion von `_evaluate_list` und findet das Alias-Ziel auch unter Windows, wenn `alias_of` die Schreibweise des Inventars nicht trifft (Test erst rot). Neuer Test: ein Dienst, der über einen Alias als down gilt, trägt den `reason` seines Ziels in `watched` und Meldung. `test_template_overrides` hält den Aufruf der Hydration fest und prüft, dass `stopped_at` der späteste `MonitorState.last_check` ist.
