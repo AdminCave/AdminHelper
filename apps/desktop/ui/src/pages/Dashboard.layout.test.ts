@@ -28,6 +28,7 @@ vi.mock('$lib/stores/connections', async () => {
     kindCounts: w({ total: 0, ssh: 0, rdp: 0, web: 0 }),
     recentConnections: w([]),
     loading: w(false),
+    connectionsStore: w({ items: [], loading: false, error: null }),
   };
 });
 vi.mock('$lib/stores/session', async () => {
@@ -145,9 +146,10 @@ describe('Dashboard layout', () => {
     expect(cards(container)).toEqual(['connections', 'servers', 'problems']);
     expect(panels(container)).toEqual(['recent', 'monitoring', 'tunnel']);
     expect(h.loadServers).toHaveBeenCalledOnce();
-    // Before the first monitoring answer there is no number to show.
+    // Before the first monitoring answer there is no number to show (R-0781 for servers).
     expect(value(container, 'problems')).toBe('-');
-    expect(value(container, 'servers')).toBe('2');
+    expect(value(container, 'servers')).toBe('-');
+    expect(container.textContent).not.toContain(tNow('dashboard.serversHint', { count: 0 }));
     expect(container.textContent).toContain(tNow('dashboard.noTunnels'));
 
     checks.set([
@@ -190,6 +192,7 @@ describe('Dashboard layout', () => {
     await tick();
 
     expect(value(container, 'problems')).toBe('1');
+    expect(value(container, 'servers')).toBe('2');
     expect(container.textContent).toContain(tNow('dashboard.serversHint', { count: 2 }));
     const mon = container.querySelector<HTMLElement>('[data-panel="monitoring"]')!;
     expect(mon.textContent).toContain(tNow('dashboard.pillCrit', { count: 1 }));
@@ -223,10 +226,13 @@ describe('Dashboard layout', () => {
     // What loadMonitoring leaves after a failure: loaded, no checks, the error.
     hasLoaded.set(true);
     monError.set('connection refused');
+    servers.set([{ id: 's1', name: 'web-01', hostname: 'web-01' }]);
     const { container } = render(Dashboard);
     await tick();
 
     expect(value(container, 'problems')).toBe('-');
+    expect(value(container, 'servers')).toBe('-');
+    expect(container.textContent).not.toContain(tNow('dashboard.serversHint', { count: 0 }));
     const mon = container.querySelector<HTMLElement>('[data-panel="monitoring"]')!;
     expect(mon.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
       tNow('error.monitoring', { message: 'connection refused' }),
