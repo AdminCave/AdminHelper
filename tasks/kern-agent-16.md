@@ -1,5 +1,5 @@
 # Agent-RPM: Scriptlets ohne systemd ohne Fehlermeldung — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-16 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-16 · Review: am Ende
 Spec: Roadmap R-0576
 Heavy: none — nur die Scriptlets der rpm-Spec; packaging_rpm_test.go fährt sie mit /bin/sh gegen einen systemctl-Stub, kein Bau- oder Install-Skript geändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
