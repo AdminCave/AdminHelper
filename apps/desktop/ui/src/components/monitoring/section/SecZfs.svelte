@@ -48,7 +48,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (s.errors > 0) parts.push($t('monitoring.zfs.scrubErrors', { count: s.errors }));
     return parts.join(' · ');
   }
-  // Display only: the pool's health rates the check, a scrub with errors is a hint.
+  // Display only: the check rates the pool's health, the scrub's age (scrub_warn_days,
+  // scrub_crit_days), the errors of the last scrub and the vdev errors; the chip only shows.
   function scrubChip(s: ZfsScrub): string {
     if (s.errors > 0) return 'chip-warn';
     return s.state === 'FINISHED' ? 'chip-ok' : 'chip-muted';
@@ -72,7 +73,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (pct >= warn) return 'warn';
     return 'ok';
   }
-  function healthClass(h: string): 'ok' | 'warn' | 'crit' {
+  function healthClass(h: string): 'ok' | 'crit' {
     // Every other state, DEGRADED included, is critical as the check rates it (R-1570).
     return h === 'ONLINE' ? 'ok' : 'crit';
   }
@@ -110,13 +111,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
               {@const lvl = levelOf(p.capacityPercent, capWarn, capCrit)}
               {@const h = healthClass(p.health)}
               {@const worstPill =
-                h === 'crit'
-                  ? 'crit'
-                  : lvl === 'crit'
-                    ? 'crit'
-                    : h === 'warn' || lvl === 'warn'
-                      ? 'warn'
-                      : 'ok'}
+                h === 'crit' ? 'crit' : lvl === 'crit' ? 'crit' : lvl === 'warn' ? 'warn' : 'ok'}
               <span class="mon-line-pill pill-{worstPill}">{p.name} {p.capacityPercent}%</span>
             {/each}
           {/if}

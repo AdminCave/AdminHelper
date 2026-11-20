@@ -525,7 +525,9 @@ def test_a_deadline_of_the_caller_before_the_own_one_ends_the_request_sooner(
     httpd = https_server(HOST, _drip(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n", b"{"))
 
     started = time.monotonic()
-    with pytest.raises(FetchError, match="^127.0.0.1: no answer within 1 s$"):
+    with pytest.raises(
+        FetchError, match="^127.0.0.1: no answer before the deadline of the caller$"
+    ):
         fetch.get(f"https://{HOST}:{httpd.server_address[1]}/directory", deadline=started + 1.0)
 
     assert time.monotonic() - started < DRIP_FOR_S / 2
@@ -536,7 +538,9 @@ def test_a_deadline_of_the_caller_already_past_tries_no_address(rule, monkeypatc
     sent = []
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", lambda _self, r: sent.append(r))
 
-    with pytest.raises(FetchError, match="^127.0.0.1: no answer within 0 s$"):
+    with pytest.raises(
+        FetchError, match="^127.0.0.1: no answer before the deadline of the caller$"
+    ):
         fetch.get(f"https://{HOST}/directory", deadline=time.monotonic() - 1.0)
 
     assert sent == []

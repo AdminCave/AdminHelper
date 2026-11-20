@@ -343,6 +343,28 @@ func TestCollectSmartDisks(t *testing.T) {
 	}
 }
 
+// The disks are read in parallel and arrive in any order; the report lists them by device.
+func TestCollectSmartListsTheDisksByDevice(t *testing.T) {
+	names := []string{"/dev/sdh", "/dev/sdg", "/dev/sdf", "/dev/sde", "/dev/sdd", "/dev/sdc", "/dev/sdb", "/dev/sda"}
+	var scan []string
+	replies := map[string]dockerReply{}
+	for _, n := range names {
+		scan = append(scan, `{"name":"`+n+`","info_name":"`+n+`","type":"sat","protocol":"ATA"}`)
+		replies[n] = dockerReply{out: ataFixture}
+	}
+	stubSmartctl(t, dockerReply{out: `{"devices":[` + strings.Join(scan, ",") + `]}`}, replies)
+
+	disks, _ := collectSmart(context.Background())
+
+	var got []string
+	for _, d := range disks {
+		got = append(got, d.Device)
+	}
+	if want := []string{"/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf", "/dev/sdg", "/dev/sdh"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("disks = %v, want %v", got, want)
+	}
+}
+
 func TestCollectSmartSomeDisksReadable(t *testing.T) {
 	// One readable disk is SMART data: the unreadable one drops out, there is no absence reason.
 	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{

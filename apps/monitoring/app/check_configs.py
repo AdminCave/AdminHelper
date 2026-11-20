@@ -157,9 +157,9 @@ class ZfsHealthConfig(_StrictConfig):
 class DockerHealthConfig(_StrictConfig):
     ignore_containers: list[str] = []
     alert_on_unavailable: StrictBool = True
-    # Dead key, deliberately tolerated: the checker never reads it, but the
-    # desktop UI's docker_health form writes it on every toggle — rejecting it
-    # would 422 product-generated configs. UI cleanup happens in T20.
+    # Dead key, deliberately tolerated: the checker never reads it and the desktop form
+    # no longer writes it, but stored configs of older versions carry it — rejecting it
+    # would 422 their next save.
     check_restarts: StrictBool = False
 
 

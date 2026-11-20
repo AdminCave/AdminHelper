@@ -558,3 +558,17 @@ describe('CheckConfigFields central (R-1224)', () => {
     }
   });
 });
+
+describe('CheckConfigFields zfs_health scrub age', () => {
+  it('offers the two limits in days, bounded like the schema', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = render(CheckConfigFields, { props: { checkType: 'zfs_health', config } });
+    await tick();
+    const warn = inputFor(container, 'Scrub Warnung (Tage)');
+    const crit = inputFor(container, 'Scrub Kritisch (Tage)');
+    expect([warn.min, warn.max, crit.min, crit.max]).toEqual(['1', '3650', '1', '3650']);
+    await fireEvent.input(warn, { target: { value: '40' } });
+    await fireEvent.input(crit, { target: { value: '70' } });
+    expect(config).toEqual({ scrub_warn_days: 40, scrub_crit_days: 70 });
+  });
+});

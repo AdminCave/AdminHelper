@@ -26,6 +26,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
+  // A comparator reads two guests: missing first, then outdated, then the rest.
+  function backupRank(status: string | undefined): number {
+    return status === 'missing' ? 0 : status === 'outdated' ? 1 : 2;
+  }
+
   // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
   const ERROR_KEY = new Map<string, string>([
     ['timeout', 'monitoring.proxmox.error.timeout'],
@@ -141,7 +146,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
         {#snippet extraBody()}
           <div class="mon-expand-list">
-            {#each [...i.vms].sort( (a) => (a.backupStatus === 'missing' ? -1 : a.backupStatus === 'outdated' ? 0 : 1) ) as v (v.vmid)}
+            {#each [...i.vms].sort((a, b) => backupRank(a.backupStatus) - backupRank(b.backupStatus)) as v (v.vmid)}
               {@const b = backupGuestDetails(v) ?? {}}
               {@const storage = backupStorageText(b)}
               {@const error = backupErrorText($t, b)}

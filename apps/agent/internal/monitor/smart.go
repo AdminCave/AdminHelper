@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,6 +120,8 @@ func collectSmart(ctx context.Context) ([]SmartDisk, string) {
 		}(dev.Name, smartDiskID(dev.Name, dev.InfoName, dev.Type), dev.Type, dev.Protocol)
 	}
 	wg.Wait()
+	// The goroutines finish in any order: list the disks by device, so two reports of one host agree.
+	sort.Slice(disks, func(i, j int) bool { return disks[i].Device < disks[j].Device })
 
 	if len(disks) == 0 {
 		// querySmartDevice drops only a query without usable JSON (did not start, hung, no or

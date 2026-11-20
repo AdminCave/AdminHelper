@@ -27,7 +27,9 @@ var (
 // netShareUsage reads how full the network share mounted at the target's mount point is. It asks
 // statfs only of a mount point the mount table names as a network share, and asks it in a process of
 // its own (stat -f through the allowlist, shareTimeout): a share that hangs leaves a statfs in the
-// kernel that no goroutine gets back from, a process the timeout kills (NFS and CIFS wait killable).
+// kernel that no goroutine gets back from. The process is killed at the timeout, but whether the
+// kernel ends a statfs on a hung NFS or CIFS mount then is not verified on a real hung share; the
+// check does not wait for it and reports hung=true.
 // A mount point the table no longer lists is mounted=false, one that holds a local file system is
 // refused; a stat that does not end in time is hung=true. The source of the share stays unread.
 func netShareUsage(ctx context.Context, t Target) (map[string]any, error) {

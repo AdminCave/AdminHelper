@@ -143,6 +143,14 @@ def test_smartctl_error_log_bit_is_warning():
     assert CHECKER.evaluate({}, _report(_disk(smartctl_status=0x40)))[0] == "warning"
 
 
+def test_the_counters_count_disks_not_their_messages():
+    # One disk with two critical messages and one with two warnings: two disks, not four.
+    failing = _disk(device="/dev/sda", smart_passed=False, temp_c=95)
+    warm = _disk(device="/dev/sdb", temp_c=56, smartctl_status=0x40)
+    _, _, metrics = CHECKER.evaluate({}, _report(failing, warm))
+    assert (metrics["smart_disks_critical"], metrics["smart_disks_warning"]) == (1, 1)
+
+
 def test_temperature_threshold_depends_on_kind():
     # HDD crit default 60 -> 62 is critical; an SSD at the same 62 (crit 70) is
     # below crit but >= its warn (60) -> warning. Same temperature, different kind.
