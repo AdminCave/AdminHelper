@@ -6,6 +6,13 @@
 
 package main
 
+import "errors"
+
+// applySelfUpdate exists on Windows only: elsewhere the package manager updates the agent.
+func applySelfUpdate(string) error {
+	return errors.New("self-update-apply is for Windows")
+}
+
 // runService is a no-op on non-Windows platforms: the agent always runs
 // interactively / under systemd, never under the Windows SCM.
 func runService() (handled bool, err error) {

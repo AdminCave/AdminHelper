@@ -95,6 +95,13 @@ func Newer(candidate, current string) bool {
 	return false
 }
 
+// sameVersion reports whether a and b are the same release, "v1.2.3" and "1.2.3" alike.
+func sameVersion(a, b string) bool {
+	x, ok1 := ParseVersion(a)
+	y, ok2 := ParseVersion(b)
+	return ok1 && ok2 && x == y
+}
+
 // parseSums reads sha256sum output and requires exactly the three release files.
 func parseSums(data []byte) (map[string]string, error) {
 	sums := map[string]string{}
@@ -165,7 +172,7 @@ func Fetch(ctx context.Context, o Options) (string, error) {
 	if trusted != TrustedComment(version) {
 		return "", fmt.Errorf("selfupdate: signature does not belong to version %s", version)
 	}
-	if !Newer(version, o.Current) || strings.TrimPrefix(o.Skip, "v") == version {
+	if !Newer(version, o.Current) || sameVersion(version, o.Skip) {
 		return "", ErrUpToDate
 	}
 	// The stage only ever holds one complete, verified set.

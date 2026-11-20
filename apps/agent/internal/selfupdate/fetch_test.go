@@ -64,11 +64,12 @@ func TestFetchStagesVerifiedRelease(t *testing.T) {
 
 func TestFetchUpToDate(t *testing.T) {
 	for name, mod := range map[string]func(*Options){
-		"same version":   func(o *Options) { o.Current = "v1.2.3" },
-		"newer running":  func(o *Options) { o.Current = "1.3.0" },
-		"dev build":      func(o *Options) { o.Current = "dev" },
-		"describe build": func(o *Options) { o.Current = "v1.2.2-3-gabcdef" },
-		"failed before":  func(o *Options) { o.Skip = "1.2.3" },
+		"same version":    func(o *Options) { o.Current = "v1.2.3" },
+		"newer running":   func(o *Options) { o.Current = "1.3.0" },
+		"dev build":       func(o *Options) { o.Current = "dev" },
+		"describe build":  func(o *Options) { o.Current = "v1.2.2-3-gabcdef" },
+		"failed before":   func(o *Options) { o.Skip = "1.2.3" },
+		"failed before v": func(o *Options) { o.Skip = "v1.2.3" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			o := repo(t, nil)
@@ -173,6 +174,14 @@ func TestNewer(t *testing.T) {
 		if got := Newer(c.cand, c.cur); got != c.want {
 			t.Errorf("Newer(%q, %q) = %v, want %v", c.cand, c.cur, got, c.want)
 		}
+	}
+}
+
+func TestFetchSkipsOnlyTheFailedVersion(t *testing.T) {
+	o := repo(t, nil)
+	o.Skip = "1.2.2"
+	if v, err := Fetch(context.Background(), o); err != nil || v != "1.2.3" {
+		t.Fatalf("Fetch = %q, %v; want 1.2.3 staged", v, err)
 	}
 }
 

@@ -13,10 +13,12 @@ Review: approve (.ah-out/review/windows-self-update/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/...
 Doku: → T5
 
-### T2 — Windows: Tagesplan, abgelöster Helfer, Tausch mit .old, Health-Check, Rollback, AUTO_UPDATE=0  [ ]
-Komponente: agent · Dateien: apps/agent/internal/selfupdate/apply_plan.go, apps/agent/internal/selfupdate/apply_plan_test.go, apps/agent/internal/selfupdate/apply_windows.go, apps/agent/internal/selfupdate/apply_windows_test.go, apps/agent/internal/selfupdate/schedule.go, apps/agent/internal/selfupdate/schedule_test.go, apps/agent/cmd/adminhelper-agent/run_windows.go, apps/agent/cmd/adminhelper-agent/main.go
+### T2 — Windows: Tagesplan, abgelöster Helfer, Tausch mit .old, Health-Check, Rollback, AUTO_UPDATE=0  [x]
+Komponente: agent · Dateien: apps/agent/internal/selfupdate/apply_plan.go, apps/agent/internal/selfupdate/apply_plan_test.go, apps/agent/internal/selfupdate/apply_windows.go, apps/agent/internal/selfupdate/apply_windows_test.go, apps/agent/internal/selfupdate/schedule.go, apps/agent/internal/selfupdate/schedule_test.go, apps/agent/cmd/adminhelper-agent/run_windows.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/internal/service/selfupdate_windows.go, apps/agent/cmd/adminhelper-agent/run_other.go, apps/agent/internal/selfupdate/fetch.go, apps/agent/internal/selfupdate/fetch_test.go, apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/cmd/adminhelper-agent/run_windows_test.go, apps/agent/internal/service/selfupdate_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a68089524 2026-11-20T18:48:10+01:00
+Review: approve (.ah-out/review/windows-self-update/T2.verdict.json)
 Änderung: Der Dienst prüft einmal am Tag mit zufälligem Versatz (Zeitpunkt im Datenordner gemerkt). Bei `AUTO_UPDATE=0` in der Agent-Konfiguration prüft er nie. Bei einem neuen, geprüften Release startet er die neue Binary aus dem Staging-Ordner abgelöst, mit dem versteckten Unterbefehl `self-update-apply`. Der Helfer stoppt den Dienst, sichert beide .exe als `.old`, legt die neuen ab und startet. Er wartet bis 15 min auf die Gesund-Marke, die der Dienst nach seinem ersten vollständigen Zyklus mit der neuen Version schreibt. Sonst stoppt er, stellt `.old` her, startet und merkt die Version als gescheitert. Die Reihenfolge liegt plattformunabhängig in `apply_plan.go` mit Hooks, wie `install_plan.go`, und wird mit Fakes getestet (Erfolg, Start scheitert, Marke bleibt aus, Fehler beim Sichern); der Windows-Teil über die Windows-Jobs.
-Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/... ./internal/service/... ./cmd/adminhelper-agent/
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/... ./internal/service/... ./internal/frpc/... ./cmd/adminhelper-agent/
 Doku: → T5
 Abhängt von: T1
 
@@ -46,3 +48,8 @@ Task-Review: am Ende
 ## Entscheidungen
 - Kevin 2026-11-20: täglich automatisch, abschaltbar per Config; ein PR samt release.yml, Kevin merged.
 - HEAD beim Plan: 534598254.
+- T2: Der Update-Client nimmt die TLS-Einstellungen des Agents (CACERT/INSECURE aus der Sync-Config): :8445 liefert dasselbe Zertifikat wie :443; echt macht ein Release allein die minisign-Signatur über SHA256SUMS.
+- T2: Gesund heißt: der Dienst der neuen Version beendet seinen ersten Zyklus (nicht durch Stop abgebrochen). Ein Zyklus mit Serverfehler zählt mit, sonst rollte ein Server-Ausfall jedes Update zurück.
+- T2: Rollback über service.Restore (Stopp, .old zurück, Start) statt über install: der frpc-Pin der neuen Binary wiese das alte frpc ab.
+- T2: Die gescheiterte Version steht in einer eigenen Datei `failed` neben `state.json`; nur ein neueres Release wird wieder versucht.
+- T2: `AUTO_UPDATE` überlebt ein neues Provisionieren (writeSyncConfig übernimmt den Schlüssel), sonst schaltete jedes Re-Provisionieren das Update still wieder ein; dafür `apps/agent/internal/frpc/apply.go` in T2 und `./internal/frpc/...` im Verify.
