@@ -1050,16 +1050,17 @@ class ServiceProcessChecker:
         return "ok", "All services OK", metrics
 
     @staticmethod
-    def _resolve_alias(entry: dict, inventory: dict) -> dict | None:
+    def _resolve_alias(entry: dict, inventory: dict, key) -> dict | None:
         """The all_services entry that holds a name's facts: its own, or for an alias its
         target's. list-units knows a unit by its own name only, so an alias has the state of
-        its target, and without alias_of (the agent could not resolve it) none at all."""
+        its target, and without alias_of (the agent could not resolve it) none at all. key
+        builds the inventory's keys, so the target is found the way the entries were keyed."""
         if entry.get("enabled_state") != "alias":
             return entry
         target = entry.get("alias_of")
         if not isinstance(target, str):
             return None
-        return inventory.get(ServiceProcessChecker._unit_name(target))
+        return inventory.get(key(target))
 
     @staticmethod
     def _inventory_state(entry: dict, error) -> str | None:
@@ -1153,7 +1154,7 @@ class ServiceProcessChecker:
                 if isinstance(s, dict) and isinstance(s.get("unit"), str)
             }
             for unit, entry in inventory.items():
-                target = self._resolve_alias(entry, inventory)
+                target = self._resolve_alias(entry, inventory, key)
                 state = self._inventory_state(target, error) if target is not None else None
                 if state:
                     states[unit] = state

@@ -195,9 +195,10 @@ function adminToken() {
 // event resolves them as a recipient. A fresh user carries NO subscription and
 // there is no default, so `ingest_event` resolves 0 recipients and the SSE push
 // has no destination — the real reason the push spec was red (4.32). Runs from the
-// Node runner via the permissive gateway (-k), like injectEvent. Secrets go via
-// stdin, not argv, so they can't leak into the test log through a curl error
-// (3.19): the login body (password) as `--data @-`, the Bearer token as `-H @-`.
+// Node runner through the permissive gateway (-k), unlike injectEvent, which
+// execs into the server container. Secrets go via stdin, not argv, so they can't
+// leak into the test log through a curl error (3.19): the login body (password) as
+// `--data @-`, the Bearer token as `-H @-`.
 export function ensureAllSubscription() {
   const token = adminToken();
 
