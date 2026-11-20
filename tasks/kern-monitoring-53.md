@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-monitoring-53/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_concurrency.py tests/test_object_state.py tests/test_agent_report.py
 Doku: keine (internes Sperrverhalten ohne dokumentierten Einfluss)
 
-### T2 — R-1653: Cleanup verschwundener Objekte unter der Sperre des Checks  [ ]
+### T2 — R-1653: Cleanup verschwundener Objekte unter der Sperre des Checks  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/scheduler.py, apps/monitoring/tests/test_check_engine_concurrency.py, apps/monitoring/tests/test_object_state.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8c0f3fadd 2026-11-20T08:49:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-53/T2.verdict.json)
 Änderung: `_run_history_cleanup` ermittelt die Checks mit verschwundenen Objekten älter als 30 Tage. Es sperrt je Check dessen `MonitorState` `FOR UPDATE`, in Check-ID-Reihenfolge, und löscht dann. Ein Postgres-Test zeigt, dass das Cleanup wartet, bis ein laufendes `apply_objects` fertig ist.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_concurrency.py tests/test_object_state.py
 Doku: keine (internes Sperrverhalten)

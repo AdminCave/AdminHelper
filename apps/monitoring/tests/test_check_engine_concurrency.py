@@ -441,6 +441,69 @@ def test_lock_state_waits_for_the_first_writer_of_a_check(pg_sessionmaker):
     assert seen == ["critical"]
 
 
+def test_cleanup_waits_for_a_writer_bringing_an_object_back(pg_sessionmaker):
+    """R-1653: the daily cleanup deletes objects gone for 30 days. A writer that holds the
+    check's state lock has read such an object and is about to bring it back (what
+    apply_objects does between its SELECT and its COMMIT); the cleanup must wait for it and
+    then keep the object, instead of deleting the row under the writer."""
+    from app import scheduler as sched
+    from app.check_engine import lock_state
+    from app.models import MonitorObjectState, MonitorState
+
+    check_id = _seed_failing_check(pg_sessionmaker, fail_count=0)
+    session = pg_sessionmaker()
+    session.add(
+        MonitorObjectState(
+            check_id=check_id,
+            object_key="srv-1/disk/sda",
+            kind="disk",
+            name="sda",
+            status="ok",
+            reason="",
+            since=datetime(2026, 1, 1),
+            fail_count=0,
+            stable=True,
+            gone_at=datetime(2026, 1, 1),
+        )
+    )
+    session.commit()
+    session.close()
+
+    writer = pg_sessionmaker()
+    try:
+        assert isinstance(lock_state(writer, check_id), MonitorState)
+        sda = writer.query(MonitorObjectState).filter_by(check_id=check_id).one()
+
+        errors: list[BaseException] = []
+        done = threading.Event()
+
+        def _cleanup():
+            try:
+                sched._run_history_cleanup()
+            except BaseException as exc:  # noqa: BLE001 - reported below, not swallowed
+                errors.append(exc)
+            finally:
+                done.set()
+
+        worker = threading.Thread(target=_cleanup, name="cleanup")
+        worker.start()
+        # A fixed wait, because what is tested is that the cleanup does nothing within it.
+        assert not done.wait(timeout=1.0), "the cleanup did not wait for the check's lock"
+        sda.gone_at = None
+        writer.commit()
+    finally:
+        writer.rollback()
+        writer.close()
+    worker.join(timeout=30)
+    assert not worker.is_alive(), "the cleanup never finished"
+    assert not errors, errors
+
+    session = pg_sessionmaker()
+    left = [row.gone_at for row in session.query(MonitorObjectState).filter_by(check_id=check_id)]
+    session.close()
+    assert left == [None], f"the object brought back is gone: {left}"
+
+
 def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypatch):
     """Two BG dispatches for one check, overlapping inside the claim window.
 
