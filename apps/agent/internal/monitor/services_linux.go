@@ -46,8 +46,8 @@ func collectServiceHealth(ctx context.Context) map[string]any {
 
 	// 3) Failed units
 	failed := []string{}
-	out, err := runSystemctl(ctx, "list-units", "--state=failed", "--no-legend", "--plain")
-	if err == nil {
+	out, failedErr := runSystemctl(ctx, "list-units", "--state=failed", "--no-legend", "--plain")
+	if failedErr == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if parts := strings.Fields(line); len(parts) > 0 && parts[0] != "" {
 				failed = append(failed, parts[0])
@@ -76,6 +76,11 @@ func collectServiceHealth(ctx context.Context) map[string]any {
 			}
 		}
 		health["counts"] = serviceCounts(loaded)
+		// Without the failed list a failed unit is unknown, and an empty list would read as all OK.
+		if failedErr != nil {
+			health["error"] = "systemctl list-units --state=failed: " +
+				commandFailure("systemctl", pluginTimeout, failedErr)
+		}
 		if facts, ok := queryServiceFacts(ctx, unitStates, failed); ok {
 			addServiceFacts(health["all_services"].([]ServiceEntry), facts)
 			health["failed_details"] = failedDetails(failed, facts)
