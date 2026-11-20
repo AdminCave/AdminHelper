@@ -1,5 +1,5 @@
 # Windows-Ansichten: leerer DHCP-Server unknown, nie aktualisierte Signaturen kritisch — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-15 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-15 · Review: am Ende
 Spec: Roadmap R-1465, R-1481
 Heavy: none — nur die plattformneutralen Wertfunktionen dhcpValues/defenderValues in winviews.go, Go-Unit-Tests; linux-full fährt keine Windows-Ansicht, die Windows-CI-Jobs bauen den Agent
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
