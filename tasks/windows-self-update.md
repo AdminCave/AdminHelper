@@ -20,8 +20,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/... .
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Gateway: /windows/ auf der Repo-Ebene :8445  [ ]
+### T3 — Gateway: /windows/ auf der Repo-Ebene :8445  [x]
 Komponente: server · Dateien: apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4c0256888 2026-11-20T18:24:38+01:00
+Review: approve (.ah-out/review/windows-self-update/T3.verdict.json)
 Änderung: `location ~ ^/(apt|rpm|freebsd|windows)/` (nginx.conf:242) samt Kommentar. Der Container-Test liefert eine Datei unter `/windows/` aus und zeigt, dass Pfade außerhalb weiter 404 sind.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: → T5
