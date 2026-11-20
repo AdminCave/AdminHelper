@@ -1030,6 +1030,66 @@ def test_a_refused_all_clear_on_disable_is_caught_up(bell_api, monkeypatch):
     assert bell_record(factory, "chk-bell") == ("ok", _EARLIER)
 
 
+def _route_then_tasks(factory, call):
+    """Runs a route function with its own session and BackgroundTasks as FastAPI would:
+    the session is closed once the answer is out, before the background tasks run."""
+    from fastapi import BackgroundTasks
+
+    tasks = BackgroundTasks()
+    with factory() as db:
+        result = call(tasks, db)
+    return result, tasks
+
+
+@pytest.mark.parametrize("route", ["toggle", "delete"])
+def test_the_all_clear_goes_after_the_answer(bell_api, route):
+    # R-1660: a hub that does not answer must not hold up the answer to the desktop.
+    import asyncio
+
+    from app.routers import checks as checks_router
+
+    _, factory, posts = bell_api
+    seed_bell_check(
+        factory, status="critical", notified_status="critical", hub_status="critical",
+        hub_sent_at=_EARLIER,
+    )  # fmt: skip
+    if route == "toggle":
+        call = lambda tasks, db: checks_router.toggle_check("chk-bell", tasks, db)  # noqa: E731
+    else:
+        call = lambda tasks, db: checks_router.delete_check("chk-bell", tasks, db)  # noqa: E731
+
+    _, tasks = _route_then_tasks(factory, call)
+
+    assert posts == []
+    asyncio.run(tasks())
+    assert _cleared(posts, "critical")
+
+
+def test_a_refused_all_clear_after_the_answer_gives_the_slot_back(bell_api, monkeypatch):
+    import asyncio
+
+    from app.routers import checks as checks_router
+
+    _, factory, posts = bell_api
+    monkeypatch.setattr("app.alerter.post_hub_event", lambda payload, label: False)
+    seed_bell_check(
+        factory, status="critical", notified_status="critical", hub_status="critical",
+        hub_sent_at=_EARLIER,
+    )  # fmt: skip
+
+    out, tasks = _route_then_tasks(
+        factory, lambda tasks, db: checks_router.toggle_check("chk-bell", tasks, db)
+    )
+    assert out["enabled"] is False
+    # Reserved with the answer, so the catch-up job does not send it meanwhile.
+    assert bell_record(factory, "chk-bell") == ("ok", _EARLIER)
+
+    asyncio.run(tasks())
+
+    # The route's session is closed: the job gives the slot back through its own.
+    assert bell_record(factory, "chk-bell") == ("critical", _EARLIER)
+
+
 def test_a_refused_all_clear_on_delete_is_logged(bell_api, monkeypatch, caplog):
     client, factory, posts = bell_api
     monkeypatch.setattr("app.alerter.post_hub_event", lambda payload, label: False)

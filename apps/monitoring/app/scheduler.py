@@ -21,7 +21,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.alert_bundle import FLUSH_SECONDS, flush_agent_alerts
 from app.bell_catch_up import CATCH_UP_SECONDS, catch_up_bell
-from app.check_engine import execute_check
+from app.check_engine import execute_check, lock_state
 from app.check_types import PUSH_ONLY_TYPES
 from app.core.config import ALERT_LOG_RETENTION_DAYS
 from app.core.time import utcnow_naive
@@ -228,12 +228,28 @@ def _run_history_cleanup() -> None:
             .filter(MonitorStatusChange.at < now - timedelta(days=STATUS_LOG_RETENTION_DAYS))
             .delete(synchronize_session=False)
         )
-        gone = (
-            db.query(MonitorObjectState)
-            .filter(MonitorObjectState.gone_at < now - timedelta(days=OBJECT_GONE_RETENTION_DAYS))
-            .delete(synchronize_session=False)
-        )
         db.commit()
+        # Per check under its state lock, in check-id order like the writers: an object that
+        # apply_objects is just bringing back must not vanish under it. The filter is read
+        # again under the lock, so an object back meanwhile stays.
+        cutoff = now - timedelta(days=OBJECT_GONE_RETENTION_DAYS)
+        stale = MonitorObjectState.gone_at < cutoff
+        gone = 0
+        check_ids = [
+            check_id
+            for (check_id,) in db.query(MonitorObjectState.check_id)
+            .filter(stale)
+            .distinct()
+            .order_by(MonitorObjectState.check_id)
+        ]
+        for check_id in check_ids:
+            lock_state(db, check_id)
+            gone += (
+                db.query(MonitorObjectState)
+                .filter(MonitorObjectState.check_id == check_id, stale)
+                .delete(synchronize_session=False)
+            )
+            db.commit()
         if removed:
             logger.info(
                 "History cleanup: removed %d status changes older than %d days",

@@ -17,7 +17,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from app.check_engine import apply_result, dispatch_alert_bg, log_transition, with_skip_note
+from app.check_engine import (
+    apply_result,
+    dispatch_alert_bg,
+    lock_state,
+    log_transition,
+    with_skip_note,
+)
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import (
@@ -522,9 +528,7 @@ def _locked_state(db: Session, check_id: str) -> MonitorState | None:
     # clobber fail_count or double-alert (4.46).
     # Evaluate is pure CPU, so holding the lock across it is harmless.
     # with_for_update is a no-op on sqlite (tests).
-    return (
-        db.query(MonitorState).filter(MonitorState.check_id == check_id).with_for_update().first()
-    )
+    return lock_state(db, check_id)
 
 
 def _prev_details(state: MonitorState | None) -> dict | None:

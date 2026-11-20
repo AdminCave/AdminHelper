@@ -11,10 +11,11 @@ import logging
 import math
 import time
 import uuid
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from app.check_configs import (
     validate_check_config,
 )
 from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
+from app.core import database
 from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
@@ -518,7 +520,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_internal)],
 )
-def delete_check(check_id: str, db: Session = Depends(get_db)):
+def delete_check(check_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Deletes a check. A template check stays deleted on the next template sync."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
@@ -538,11 +540,36 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     remove_check(check_id)
     # No later run sends the all-clear of the alarm the bell shows (R-1571). The
     # catch-up job cannot repeat it either: the row is gone (until the outbox R-1561).
-    if shown is not None and not emit_to_hub(gone, shown, "ok", msg, severity=shown):
+    # It goes after the answer: a hub that does not answer must not hold it up (R-1660).
+    if shown is not None:
+        background_tasks.add_task(_all_clear_deleted, gone, shown, msg)
+
+
+def _all_clear_deleted(gone: SimpleNamespace, shown: str, msg: dict) -> None:
+    if not emit_to_hub(gone, shown, "ok", msg, severity=shown):
         logger.warning(
             "Check %s deleted: the hub did not take its all-clear, the incident stays open",
-            check_id,
+            gone.id,
         )
+
+
+def _all_clear_disabled(
+    check: SimpleNamespace,
+    msg: dict,
+    before: tuple[str | None, datetime | None],
+    reserved: tuple[str | None, datetime | None],
+) -> None:
+    """The all-clear of a disabled check, after the answer; the request's session is closed
+    by then, so a refused one gives the slot back through a session of its own."""
+    if emit_to_hub(check, before[0], "ok", msg, severity=before[0]):
+        return
+    # The catch-up job sends it on a later run (lag_target of a disabled check).
+    db = database.SessionLocal()
+    try:
+        release_hub_slot(db, check.id, reserved, before)
+        db.commit()
+    finally:
+        db.close()
 
 
 @router.post(
@@ -551,7 +578,7 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
-def toggle_check(check_id: str, db: Session = Depends(get_db)):
+def toggle_check(check_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Enables/disables a check."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
@@ -583,12 +610,10 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
 
     if closing is not None:
         before, reserved = closing
+        # What the all-clear needs is taken now: the session is closed when it runs.
+        shown = SimpleNamespace(id=check.id, name=check.name, server_id=check.server_id)
         msg = closed_message(check, "disabled")
-        if not emit_to_hub(check, before[0], "ok", msg, severity=before[0]):
-            # The catch-up job sends it on a later run (lag_target of a disabled check).
-            release_hub_slot(db, check_id, reserved, before)
-            db.commit()
-        db.refresh(state)
+        background_tasks.add_task(_all_clear_disabled, shown, msg, before, reserved)
     return check.to_dict(state=state)
 
 
