@@ -95,20 +95,30 @@ def _backup_details(vm: dict) -> dict:
     return details
 
 
-def _guest_object(vmid: int | None, label: str, status: str, reason: str) -> dict | None:
+def _guest_object(
+    vmid: int | None, label: str, status: str, reason: str, cluster: str | None
+) -> dict | None:
     """The object of a guest's backup (R-1559); None for a guest without a VMID, which has no
-    key. A VMID is unique only within its cluster: the key stays the VMID until the agent's
-    cluster name is taken into it (P1e)."""
+    key. A VMID is unique only within its cluster (ADR 0004 §4): with the agent's cluster name
+    the key is cluster and VMID and holds when the guest moves to another node; without it the
+    key is the VMID alone and not stable."""
     if vmid is None:
         return None
     return {
         "kind": "guest-backup",
-        "id": str(vmid),
+        "id": f"{cluster}/{vmid}" if cluster else str(vmid),
         "name": label,
         "status": status,
         "reason": reason,
-        "stable": False,
+        "stable": cluster is not None,
     }
+
+
+def _key_text(value: object) -> str | None:
+    """A text of the report that goes into an object key: a non-empty string, else None. The
+    key is not shown and object_key bounds its length, so it is taken uncut: a capped copy
+    would give two long names with the same start one key."""
+    return value if isinstance(value, str) and value else None
 
 
 class ProxmoxBackupChecker:
@@ -144,6 +154,7 @@ class ProxmoxBackupChecker:
             return ("warning" if alert else "unknown"), msg, {"_details": details}
 
         vms = capped_objects(proxmox.get("vms"))
+        cluster = _key_text(proxmox.get("cluster_name"))
         if not vms:
             return (
                 "ok",
@@ -186,7 +197,7 @@ class ProxmoxBackupChecker:
                 # A rule, not an exception (ADR 0004 §10): the guest is there, its backup is
                 # not rated.
                 reason = "Not running, backup not rated"
-                guests.append(_guest_object(vmid, label, NOT_COLLECTED, reason))
+                guests.append(_guest_object(vmid, label, NOT_COLLECTED, reason, cluster))
                 continue
 
             last_ts = agent_number(vm.get("last_backup_ts"))
@@ -196,15 +207,15 @@ class ProxmoxBackupChecker:
             if last_ts is None:
                 vm_status = "missing"
                 no_backup.append(label)
-                guests.append(_guest_object(vmid, label, "critical", "No backup"))
+                guests.append(_guest_object(vmid, label, "critical", "No backup", cluster))
             elif (now - last_ts) > max_age_seconds:
                 vm_status = "outdated"
                 age_hours = round((now - last_ts) / 3600)
                 outdated.append(f"{label}: {age_hours}h old")
-                guests.append(_guest_object(vmid, label, "warning", f"{age_hours}h old"))
+                guests.append(_guest_object(vmid, label, "warning", f"{age_hours}h old", cluster))
             else:
                 ok_count += 1
-                guests.append(_guest_object(vmid, label, "ok", "Backup up to date"))
+                guests.append(_guest_object(vmid, label, "ok", "Backup up to date", cluster))
 
             vm_details.append(
                 {
@@ -525,10 +536,22 @@ def _problem_reason(reason: str, state: str) -> str:
     return reason
 
 
-def _container_object(name: str, category: str, reason: str | None, state: str) -> dict:
-    """The object of a rated container (R-1559). Its key would be compose project, service and
-    number; the key is still the name, which a recreated container may change, until the
-    agent's number is taken into it (P1e).
+def _compose_ident(c: dict) -> str | None:
+    """`<project>/<service>/<number>` of a compose container (ADR 0004 §4), which a recreation
+    keeps; None unless the agent sent all three (the number since R-1639, from 1)."""
+    project = _key_text(c.get("compose_project"))
+    service = _key_text(c.get("compose_service"))
+    number = _whole_number(c.get("compose_number"))
+    if project is None or service is None or number is None or number < 1:
+        return None
+    return f"{project}/{service}/{number}"
+
+
+def _container_object(
+    name: str, category: str, reason: str | None, state: str, ident: str | None
+) -> dict:
+    """The object of a rated container (R-1559). A compose container is keyed by its compose
+    identity (stable); any other by its name, which a recreated container may change.
     A container stopped on purpose is ok (ADR 0004 §6.3); an ok reason stays fixed."""
     if category in ("critical", "warning"):
         status, text = category, _problem_reason(reason or "", state)
@@ -538,11 +561,11 @@ def _container_object(name: str, category: str, reason: str | None, state: str) 
         status, text = "ok", "Running"
     return {
         "kind": "container",
-        "id": name,
+        "id": ident or name,
         "name": name,
         "status": status,
         "reason": text,
-        "stable": False,
+        "stable": ident is not None,
     }
 
 
@@ -676,7 +699,11 @@ class DockerHealthChecker:
                     **_docker_details(c),
                 }
             )
-            objects.append(_container_object(shown_name or "?", category, reason, shown_state))
+            objects.append(
+                _container_object(
+                    shown_name or "?", category, reason, shown_state, _compose_ident(c)
+                )
+            )
 
         metrics = {
             "docker_ok": ok_count,

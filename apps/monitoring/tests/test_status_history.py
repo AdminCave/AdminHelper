@@ -351,6 +351,27 @@ def test_the_same_change_a_minute_later_is_a_new_event(history):
     assert [e["at"] for e in events] == [END - 300, END - 600]
 
 
+def test_state_changes_within_a_minute_are_each_an_event(history):
+    # Only the alert-log rows (one per notified rule) are folded; a flapping check logs
+    # each of its own transitions as a state row and every one is an event.
+    _seed_log(
+        history.factory,
+        [
+            ("ping-1", "srv-1", END - 300, "ok", "critical"),
+            ("ping-1", "srv-1", END - 280, "critical", "ok"),
+            ("ping-1", "srv-1", END - 260, "ok", "critical"),
+        ],
+    )
+
+    events = history.get("/status/server/srv-1/history?period=1h").json()["events"]
+
+    assert [(e["at"], e["status"]) for e in events] == [
+        (END - 260, "critical"),
+        (END - 280, "ok"),
+        (END - 300, "critical"),
+    ]
+
+
 def test_events_stop_at_the_limit(history):
     _seed_log(
         history.factory,

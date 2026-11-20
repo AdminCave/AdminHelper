@@ -120,9 +120,9 @@ Objekte ohne Server (`certificate/…`, `domain/…`, `endpoint/…`), Backup-Ob
 |---|---|---|---|---|
 | `disk` | `smart_health` | WWN | Modell + Seriennummer; sonst Host + Gerät, **als instabil markiert** | `/dev/sdX` ist nur Ort; Seriennummer und WWN fehlen in `_details` (Agent) |
 | `pool` | `zfs_health` | Host + Poolname | — | später Pool-GUID (`zpool -p`, Agent) |
-| `guest-backup` | `proxmox_backup` | Cluster + VMID | Einzel-Node ist ein eigener Cluster | Cluster-ID fehlt im Report (R-0519); bis dahin Tag als Ersatz (Frage 10) |
+| `guest-backup` | `proxmox_backup` | Cluster + VMID | Einzel-Node ist ein eigener Cluster; ohne `cluster_name` die VMID, **als instabil markiert** | seit R-1642 mit Host im Schlüssel (`<host>/guest-backup/<cluster>/<vmid>`), weil der Check je Host läuft; ein Schlüssel ohne Host bräuchte einen zentralen Check |
 | `backup-job` | `proxmox_backup` | Cluster + Job-ID | — | wie oben |
-| `container` | `docker_health` | Host + Compose-Projekt/Dienst/Nummer | Host + Containername | Container-ID ist nur Merkmal; Compose-Nummer fehlt (Agent) |
+| `container` | `docker_health` | Host + Compose-Projekt/Dienst/Nummer | Host + Containername, **als instabil markiert** | Container-ID ist nur Merkmal; umgesetzt mit R-1642 (`compose_number` des Agents seit R-1639) |
 | `compose-project` | `docker_health` | Host + Projekt | — | bewertet sich als sein schlechtester nicht ausgeblendeter Container |
 | `host` | `agent_ping` | Server | — | — |
 | `cpu`, `memory` | `agent_resources` | Server + Art | — | — |
