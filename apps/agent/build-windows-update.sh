@@ -25,6 +25,8 @@
 #                     scripts/update.sh pins, which the agent pins as well
 #   OUT_DIR           (optional) default ./windows
 set -euo pipefail
+# [0-9] in =~ follows the locale: under de_DE.UTF-8 it also matches digits outside ASCII.
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 die() { echo "build-windows-update: $*" >&2; exit 1; }

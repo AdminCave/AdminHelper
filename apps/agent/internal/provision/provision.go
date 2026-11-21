@@ -74,6 +74,9 @@ var activatePort = 8444
 // applyWithoutBundle is frpc.ApplyWithoutBundle; tests swap it, the real one runs systemctl.
 var applyWithoutBundle = frpc.ApplyWithoutBundle
 
+// applyBundle is frpc.Apply; tests swap it, the real one runs systemctl.
+var applyBundle = frpc.Apply
+
 // enableTimer is service.EnableTimer; tests swap it, the real one runs systemctl.
 var enableTimer = service.EnableTimer
 
@@ -185,17 +188,19 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 	// tunnel); a host without an active tunnel gets a text without proxies, on which
 	// Apply stops frpc. Without a tunnel no frpc runs, also not one an earlier
 	// provisioning set up.
+	tunnels := 0
 	if resp.FRP != nil {
-		fmt.Println("→ FRP-Client wird eingerichtet...")
-		if err := frpc.Apply(frpc.ApplyParams{
+		n, err := applyBundle(frpc.ApplyParams{
 			AdminHelperURL: adminHelperURL,
 			ServerID:       serverID,
 			APIKey:         resp.APIKey,
 			FrpConfigB64:   resp.FRP.Config,
 			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
 		}
+		tunnels = n
 	} else {
 		if err := frpc.WriteSyncConfig(frpc.SyncConfigParams{
 			AdminHelperURL: adminHelperURL,
@@ -208,7 +213,16 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		if err := applyWithoutBundle(); err != nil {
 			return fmt.Errorf("stop the frpc of an earlier provisioning: %w", err)
 		}
-		fmt.Println("→ Keine FRP-Tunnel fuer diesen Server konfiguriert — FRP wird uebersprungen.")
+	}
+	// The result, not the intent (R-0443): without a tunnel Apply and applyWithoutBundle
+	// both leave frpc stopped.
+	switch {
+	case tunnels == 1:
+		fmt.Println("→ FRP client set up (1 tunnel).")
+	case tunnels > 1:
+		fmt.Printf("→ FRP client set up (%d tunnels).\n", tunnels)
+	default:
+		fmt.Println("→ No active FRP tunnel, frpc stopped.")
 	}
 
 	// 3. The timer runs the agent from now on, whatever the server configured, also without

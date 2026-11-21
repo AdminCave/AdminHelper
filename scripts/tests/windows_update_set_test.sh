@@ -67,5 +67,15 @@ for v in v1.2.3 1.2 01.2.3 1.2.3-beta ""; do
     if [ "$rc" -ne 0 ] && [ ! -e "$T/badver" ]; then ok "VERSION '$v' refused"; else bad "VERSION '$v' accepted (rc=$rc)"; fi
 done
 
+# R-1679: under a locale like de_DE.UTF-8, [0-9] in =~ also matches digits outside ASCII ("²").
+# Where that locale is missing (CI), the static check proves the script pins LC_ALL=C.
+if locale -a 2>/dev/null | grep -qix 'de_DE.utf8'; then
+    rc=0; LC_ALL=de_DE.UTF-8 build "$T/locver" "$T/test.key" "1.².3" || rc=$?
+    if [ "$rc" -ne 0 ] && [ ! -e "$T/locver" ]; then ok "non-ASCII digit refused under de_DE.UTF-8"; else bad "VERSION '1.².3' accepted under de_DE.UTF-8 (rc=$rc)"; fi
+else
+    grep -qx 'export LC_ALL=C' "$SCRIPT" && ok "script pins LC_ALL=C (de_DE.UTF-8 not installed)" \
+        || bad "script does not pin LC_ALL=C"
+fi
+
 if [ "$fail" -ne 0 ]; then echo "windows_update_set_test: FAIL"; exit 1; fi
 echo "windows_update_set_test: PASS"

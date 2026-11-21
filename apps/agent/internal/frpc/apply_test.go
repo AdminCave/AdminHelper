@@ -159,6 +159,12 @@ var bundleToml = []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n" +
 
 // applyBundle runs Apply as a provisioning with an FRP bundle carrying toml.
 func applyBundle(toml []byte) error {
+	_, err := applyBundleCount(toml)
+	return err
+}
+
+// applyBundleCount is applyBundle that also returns the tunnel count Apply reports.
+func applyBundleCount(toml []byte) (int, error) {
 	return Apply(ApplyParams{
 		AdminHelperURL: "https://srv.example",
 		ServerID:       "srv-1",
@@ -445,4 +451,30 @@ func captureLog(t *testing.T) *bytes.Buffer {
 	// SetDefault also redirects the log package, which restoring the slog default does not undo.
 	t.Cleanup(func() { slog.SetDefault(prev); log.SetOutput(prevOut); log.SetFlags(prevFlags) })
 	return &buf
+}
+
+// R-0443: Apply reports how many tunnels the applied text carries, so provision can print the
+// result instead of the intent.
+func TestApplyReportsTheTunnelCount(t *testing.T) {
+	two := append(append([]byte{}, bundleToml...), []byte("\n[[proxies]]\nname = \"rdp\"\n")...)
+	cases := map[string]struct {
+		toml []byte
+		want int
+	}{
+		"one tunnel":      {bundleToml, 1},
+		"two tunnels":     {two, 2},
+		"without tunnels": {[]byte("serverAddr = \"1.2.3.4\"\n"), 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			setupSyncTest(t, "https://srv.example")
+			n, err := applyBundleCount(tc.toml)
+			if err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			if n != tc.want {
+				t.Errorf("Apply reported %d tunnels, want %d", n, tc.want)
+			}
+		})
+	}
 }

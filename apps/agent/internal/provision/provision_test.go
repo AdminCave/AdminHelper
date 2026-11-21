@@ -32,6 +32,7 @@ import (
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/enroll"
+	"adminhelper-agent/internal/frpc"
 )
 
 // TOFU (GHSA-wv93): a --insecure provisioning call must capture the certificate
@@ -966,5 +967,79 @@ func TestProvisionRemovesStaleTemps(t *testing.T) {
 	}
 	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
 		t.Errorf("the stale staged file is still there (err %v)", err)
+	}
+}
+
+// captureStdout returns what fn prints to os.Stdout.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(r)
+		done <- b.String()
+	}()
+	defer func() { os.Stdout = orig }()
+	fn()
+	_ = w.Close()
+	os.Stdout = orig
+	return <-done
+}
+
+// R-0443: provision prints what happened to frpc, not what it is about to do: the set-up
+// tunnels, or that no tunnel is active and frpc is stopped (with a bundle without proxies and
+// without a bundle alike).
+func TestRunPrintsTheFRPResult(t *testing.T) {
+	cases := map[string]struct {
+		frp     any
+		tunnels int
+		want    string
+	}{
+		"bundle with tunnels":    {map[string]any{"config": "eA=="}, 2, "FRP client set up (2 tunnels)"},
+		"bundle with one tunnel": {map[string]any{"config": "eA=="}, 1, "FRP client set up (1 tunnel)."},
+		"bundle without tunnels": {map[string]any{"config": "eA=="}, 0, "No active FRP tunnel, frpc stopped"},
+		"without a bundle":       {nil, 0, "No active FRP tunnel, frpc stopped"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+			t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k", "frp": tc.frp})
+			}))
+			defer srv.Close()
+			u, _ := url.Parse(srv.URL)
+			port, _ := strconv.Atoi(u.Port())
+			orig := activatePort
+			activatePort = port
+			t.Cleanup(func() { activatePort = orig })
+			origBundle := applyBundle
+			applyBundle = func(frpc.ApplyParams) (int, error) { return tc.tunnels, nil }
+			t.Cleanup(func() { applyBundle = origBundle })
+			origApply := applyWithoutBundle
+			applyWithoutBundle = func() error { return nil }
+			t.Cleanup(func() { applyWithoutBundle = origApply })
+			stubEnableTimer(t, nil)
+
+			var runErr error
+			out := captureStdout(t, func() { runErr = Run(srv.URL, "tok", "srv-1", "", true, "") })
+			if runErr != nil {
+				t.Fatalf("Run: %v", runErr)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output %q is missing %q", out, tc.want)
+			}
+			for _, stale := range []string{"FRP-Client wird eingerichtet", "FRP wird uebersprungen"} {
+				if strings.Contains(out, stale) {
+					t.Errorf("output %q still announces the intent (%q)", out, stale)
+				}
+			}
+		})
 	}
 }
