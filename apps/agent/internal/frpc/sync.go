@@ -548,15 +548,21 @@ func dropTunnels(ctx context.Context) error {
 	return nil
 }
 
-// hasProxies reports whether a server-built frpc.toml has a tunnel: the generator writes
-// each one as a [[proxies]] table.
+// hasProxies reports whether a server-built frpc.toml has a tunnel.
 func hasProxies(toml []byte) bool {
+	return countProxies(toml) > 0
+}
+
+// countProxies counts the tunnels of a server-built frpc.toml: the generator writes each one
+// as a [[proxies]] table.
+func countProxies(toml []byte) int {
+	n := 0
 	for _, line := range bytes.Split(toml, []byte("\n")) {
 		if string(bytes.TrimSpace(line)) == "[[proxies]]" {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 // errNoFrpConfig is parseConfigHash's answer to `{"hash": null}`: the server has no FRP

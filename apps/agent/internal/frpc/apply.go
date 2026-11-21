@@ -113,10 +113,11 @@ func writeSyncConfig(p SyncConfigParams) error {
 // host) stops and disables it. It holds the frpc lock from securing the FRP directory to the
 // end. NO HTTP call happens here anymore — the token-activate call has been centralized since
 // v0.23.0 in the `provision` subcommand, which invokes `Apply` with the already-decoded values.
-func Apply(p ApplyParams) error {
+// It returns the number of tunnels in the applied text (0: frpc stopped).
+func Apply(p ApplyParams) (int, error) {
 	unlock, err := lockSyncConfigDir()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer unlock()
 	if err := writeSyncConfig(SyncConfigParams{
@@ -125,15 +126,18 @@ func Apply(p ApplyParams) error {
 		APIKey:         p.APIKey,
 		TLS:            p.TLS,
 	}); err != nil {
-		return err
+		return 0, err
 	}
 
 	serverToml, err := base64.StdEncoding.DecodeString(p.FrpConfigB64)
 	if err != nil {
-		return fmt.Errorf("Config base64 decodieren: %w", err)
+		return 0, fmt.Errorf("Config base64 decodieren: %w", err)
 	}
 
-	return warnOnServiceFailure(applyConfig(context.Background(), serverToml, false))
+	if err := warnOnServiceFailure(applyConfig(context.Background(), serverToml, false)); err != nil {
+		return 0, err
+	}
+	return countProxies(serverToml), nil
 }
 
 // ApplyWithoutBundle is Apply for a provisioning without an FRP bundle: the server has no FRP

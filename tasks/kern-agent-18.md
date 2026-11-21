@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Provisionierung) und apps/gateway/nginx.conf; 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-0443: provision meldet das FRP-Ergebnis statt des Vorhabens  [ ]
+### T1 — R-0443: provision meldet das FRP-Ergebnis statt des Vorhabens  [x]
 Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/frpc/sync.go, changelog.d/kern-agent-18.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @83f6920e9 2026-11-21T07:11:51+01:00
+Review: am Ende (Branch-Review)
 Änderung: `frpc.Apply` liefert die Zahl der `[[proxies]]`-Tabellen des angewendeten Texts mit. `provision` druckt danach „FRP client set up (N tunnels)“ bzw. bei 0 und im Pfad ohne Paket (`provision.go:211`) „no active FRP tunnel, frpc stopped“; die Ausgabe vor dem Aufruf (`provision.go:189`) entfällt. Tests für alle drei Fälle (N > 0, Text ohne Tunnel, ohne Paket) erst rot.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/provision/... ./internal/frpc/...
 Doku: changelog.d/kern-agent-18.md (docs/ zitiert die Ausgaben nicht)
