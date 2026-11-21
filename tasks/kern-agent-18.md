@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/provision/... ./internal/frpc/...
 Doku: changelog.d/kern-agent-18.md (docs/ zitiert die Ausgaben nicht)
 
-### T2 — R-1679: build-windows-update.sh prüft VERSION locale-fest  [ ]
+### T2 — R-1679: build-windows-update.sh prüft VERSION locale-fest  [x]
 Komponente: scripts · Dateien: apps/agent/build-windows-update.sh, scripts/tests/windows_update_set_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3d20e89bd 2026-11-21T07:14:12+01:00
+Review: am Ende (Branch-Review)
 Änderung: Die Prüfung von `VERSION` (`build-windows-update.sh:33`) läuft unter `LC_ALL=C`. Der Test ruft das Skript unter einer UTF-8-Locale mit einer Nicht-ASCII-Ziffer in `VERSION` auf und erwartet die Ablehnung; er ist erst rot.
 Verify: bash scripts/dev/verify.sh scripts --strict -- windows_update_set_test
 Doku: keine (Eingabeprüfung eines Release-Skripts)
