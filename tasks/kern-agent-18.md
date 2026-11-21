@@ -1,5 +1,5 @@
 # kern-agent-18 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-18 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-18 · Review: am Ende
 Spec: docs/features/kern-agent-18.md (Roadmap R-0443, R-1679)
 Heavy: linux-full — apps/agent (Provisionierung) und apps/gateway/nginx.conf; nur Ausgabe und Kommentar, kein Cross-Host-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
