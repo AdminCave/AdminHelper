@@ -1,5 +1,5 @@
 # kern-agent-18 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-18 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-18 · Review: am Ende
 Spec: docs/features/kern-agent-18.md (Roadmap R-0443, R-1679)
 Heavy: linux-full — apps/agent (Provisionierung) und apps/gateway/nginx.conf; nur Ausgabe und Kommentar, kein Cross-Host-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,8 +21,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- windows_update_set_test
 Doku: keine (Eingabeprüfung eines Release-Skripts)
 
-### T3 — R-1679: Gateway-Kopfkommentar nennt den signierten Windows-Satz  [ ]
+### T3 — R-1679: Gateway-Kopfkommentar nennt den signierten Windows-Satz  [x]
 Komponente: server · Dateien: apps/gateway/nginx.conf
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @02ce6aae5 2026-11-21T07:17:39+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Kopfkommentar (`nginx.conf:1-6`) nennt, dass die Repo-Ebene auch den minisign-signierten Windows-Update-Satz ausliefert, dessen Signatur der Agent prüft, nicht das Gateway. Nur Kommentar.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: keine (Kommentar)
