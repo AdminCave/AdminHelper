@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/ops-14/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- image_pins_test
 Doku: → T4
 
-### T2 — R-0460: release.yml pinnt vor dem Bundle-Bau und legt IMAGES ins Bundle  [ ]
+### T2 — R-0460: release.yml pinnt vor dem Bundle-Bau und legt IMAGES ins Bundle  [x]
 Komponente: server · Dateien: .github/workflows/release.yml, apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f005409ed 2026-11-22T07:34:20+01:00
+Review: approve (.ah-out/review/ops-14/T2.verdict.json)
 Änderung: `release.yml` ersetzt den Schritt „Assert the tag images exist on ghcr“ durch Buildx, cosign-Installer und „Pin the signed tag images by digest“ (`image-pins.sh` → `stage/IMAGES`) vor „Build runtime bundle“; `MANIFEST.sha256` nimmt `IMAGES` auf. `test_release_images.py` prüft statt des alten Schritts: Pin-Schritt vor Bundle und Draft, `IMAGES` im Manifest, die Image-Liste des Skripts = die von `docker.yml` und ihre Schlüssel = die Compose-Variablen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: → T4

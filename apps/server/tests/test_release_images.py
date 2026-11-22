@@ -7,7 +7,8 @@ them.
 
 ci.yml builds each image on every pull request (job docker-build), docker.yml publishes the same
 matrix, and release.yml offers a draft release only once every published image of the tag is on
-ghcr, since install.sh and update.sh pin them by version. docker-compose.yml pulls exactly those
+ghcr and signed by docker.yml for the tag, since install.sh and update.sh pin them by the digest
+the release writes into the runtime bundle. docker-compose.yml pulls exactly those
 images from ghcr. The draft is a pre-release, and "latest" of every image moves only when the
 release turns stable and is the latest release: then docker.yml points it at the image the tag
 push built, once the signature that push made checks out.
@@ -164,13 +165,35 @@ def test_ci_builds_every_image_docker_yml_publishes_frps_among_them():
     assert {"image": "frps", "context": ".", "dockerfile": _FRPS_DOCKERFILE} in built
 
 
-def test_the_release_waits_for_every_published_image():
-    run = _step("release.yml", "release", "Assert the tag images exist on ghcr")["run"]
-    loop = re.search(r"^\s*for img in ([a-z -]+); do$", run, re.M)
-    assert loop, run
-    awaited = loop[1].split()
-    assert len(awaited) == len(set(awaited)), awaited
-    assert set(awaited) == _published()
+def _pin_pairs() -> list[tuple[str, str]]:
+    """The (env key, image) pairs image-pins.sh resolves and writes into IMAGES."""
+    script = (_ROOT / "scripts" / "release" / "image-pins.sh").read_text(encoding="utf-8")
+    loop = re.search(r"^for pair in ([A-Z_a-z: \\\n-]+?); do$", script, re.M)
+    assert loop, "image-pins.sh: no `for pair in ...; do` loop"
+    return [tuple(pair.split(":")) for pair in loop[1].replace("\\", " ").split()]
+
+
+def test_the_release_pins_every_published_image_before_the_bundle():
+    names = [step.get("name") for step in _workflow("release.yml")["jobs"]["release"]["steps"]]
+    pin = "Pin the signed tag images by digest"
+    assert names.index("Install cosign") < names.index(pin), names
+    assert (
+        names.index(pin) < names.index("Build runtime bundle") < names.index("Create draft release")
+    )
+    assert (
+        'scripts/release/image-pins.sh "${GITHUB_REF_NAME}" stage/IMAGES'
+        in _step("release.yml", "release", pin)["run"]
+    )
+    # IMAGES under MANIFEST.sha256, so under the minisign signature of SHA256SUMS.
+    bundle = _step("release.yml", "release", "Build runtime bundle")["run"]
+    assert "find docker-compose.yml .env.example IMAGES scripts -type f" in bundle, bundle
+    pairs = _pin_pairs()
+    images = [image for _, image in pairs]
+    assert len(images) == len(set(images)), images
+    assert set(images) == _published()
+    compose = (_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    for key, image in pairs:
+        assert f"${{{key}:-ghcr.io/admincave/adminhelper/{image}:latest}}" in compose, (key, image)
 
 
 def test_only_a_stable_release_moves_latest():
