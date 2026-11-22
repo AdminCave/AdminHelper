@@ -1,5 +1,5 @@
 # ops-14 — Task-Ledger
-Status: aktiv · Branch: feature/ops-14 · Review: am Ende
+Status: aktiv · Branch: feature/ops-14 · Review: pro Task
 Spec: docs/features/ops-14.md (Roadmap R-0460)
 Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_test: letztes Release → Checkout); der Digest-Pfad selbst ist erst mit dem nächsten Release-Bundle real beweisbar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
