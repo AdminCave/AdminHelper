@@ -1,5 +1,5 @@
 # ops-14 — Task-Ledger
-Status: aktiv · Branch: feature/ops-14 · Review: pro Task
+Status: bereit · Branch: feature/ops-14 · Review: pro Task
 Spec: docs/features/ops-14.md (Roadmap R-0460)
 Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_test: letztes Release → Checkout); der Digest-Pfad selbst ist erst mit dem nächsten Release-Bundle real beweisbar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,10 +39,12 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T5 — R-0460: upgrade_path_test nimmt den Digest-Pin an  [ ]
+### T5 — R-0460: upgrade_path_test nimmt den Digest-Pin an  [x]
 Komponente: scripts · Dateien: scripts/tests/upgrade_path_test.sh, docs/features/ops-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ee0eea1bb 2026-11-22T08:16:56+01:00
+Review: approve (.ah-out/review/ops-14/T5.verdict.json)
 Änderung: Fund der Abschlussprüfung: Schritt 4 verlangt `SERVER_IMAGE=…/server:$PREV_VER` wörtlich und wird rot, sobald das zuletzt veröffentlichte Release `IMAGES` trägt. Trägt das Bundle von PREV `IMAGES` (die Kopie liegt dann im Install-Verzeichnis), verlangt der Test `:$PREV_VER@sha256:<64 hex>`, sonst wie bisher den Tag. Dazu der Satz zum alten `update.sh` in der Spec (der Re-Exec ins neue `update.sh` pinnt schon den Digest).
-Verify: bash scripts/dev/verify.sh scripts --strict -- upgrade_path_test
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: keine (Test und Spec)
 
 ## Entscheidungen

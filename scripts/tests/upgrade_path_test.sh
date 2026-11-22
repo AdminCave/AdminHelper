@@ -316,10 +316,17 @@ elif grep -q "\"name\": *\"adminhelper-runtime-$PREV\.tar\.gz\"" <<<"$REL_JSON";
             || bad "update.sh: no minisign verification in the log — checksum-only path?"
         # The version truth of an install is the image pin in .env; an install
         # directory has no VERSION marker by design (it is not in MANIFEST.sha256,
-        # and install.sh removes it).
-        grep -qx "SERVER_IMAGE=$GHCR/server:$PREV_VER" "$INST/.env" \
+        # and install.sh removes it). A bundle with IMAGES (R-0460; update.sh leaves
+        # its copy in the install directory) pins tag AND digest, one without it the
+        # tag alone.
+        if [ -e "$INST/IMAGES" ]; then
+            want_pin="SERVER_IMAGE=$GHCR/server:${PREV_VER//./\\.}@sha256:[0123456789abcdef]\{64\}"
+        else
+            want_pin="SERVER_IMAGE=$GHCR/server:${PREV_VER//./\\.}"
+        fi
+        LC_ALL=C grep -qx "$want_pin" "$INST/.env" \
             && ok "update.sh: the image pins moved to $PREV_VER" \
-            || bad "update.sh: SERVER_IMAGE not pinned to $PREV_VER after the update"
+            || bad "update.sh: SERVER_IMAGE not pinned to $PREV_VER after the update (want ${want_pin})"
         [ -x "$INST/scripts/install.sh" ] && [ -x "$INST/scripts/restore.sh" ] \
             && ok "update.sh: the runtime scripts were swapped in" \
             || bad "update.sh: runtime scripts missing after the swap"

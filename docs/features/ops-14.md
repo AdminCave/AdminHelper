@@ -61,9 +61,9 @@ Skripte ignorieren sie (sie liest niemand), neue Skripte kommen mit alten Bundle
 ## Risiken & Rollback
 - **Release-Lauf:** Ein Fehler in `image-pins.sh` macht `release.yml` rot, es entsteht kein Draft. Der Lauf ist erst
   mit dem nächsten Tag real bewiesen; bis dahin nur die Tests mit Stubs.
-- **Update:** `update.sh` wird vom Bundle des Ziels geholt, das Skript der alten Installation wechselt aber erst im
-  Lauf. Das neue `update.sh` muss alte und neue Bundles lesen (Fallback); das alte `update.sh` ignoriert `IMAGES` und
-  pinnt einmal noch den Tag. Der nächste Lauf pinnt dann den Digest.
+- **Update:** Das `update.sh` der alten Installation holt das Bundle des Ziels und übergibt (`AH_UPDATE_REEXECED`) an
+  das `update.sh` daraus; dieses prüft das Bundle erneut und pinnt schon beim ersten Lauf den Digest. Das neue
+  `update.sh` muss alte und neue Bundles lesen (Fallback).
 - **Versionserkennung:** Ein falsch gelesener Pin hieße „unknown“ und damit jedes Update als Downgrade-Frage; Tests
   decken `:X.Y.Z@sha256:` ab.
 - **Rollback:** Revert des PR; Hosts mit Digest-Pins laufen weiter (die Referenz ist gültig), ein späteres altes
