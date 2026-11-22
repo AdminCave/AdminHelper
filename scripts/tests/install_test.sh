@@ -140,7 +140,7 @@ DL="$WORK/dl"; API="$WORK/api"
 # publish a release fixture. tamper=1: corrupt SHA256SUMS AFTER signing, so the
 # minisign signature no longer matches (signature-verification failure path).
 make_release() {
-  local ver="$1" tamper="${2:-0}"
+  local ver="$1" tamper="${2:-0}" images="${3:-}"
   local tag="v$ver" assetdir="$DL/$REPO/releases/download/v$ver"
   mkdir -p "$assetdir" "$API/repos/$REPO/releases"
   local stage; stage=$(mktemp -d)
@@ -148,7 +148,11 @@ make_release() {
   cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$stage/"
   cp "$SRC"/scripts/*.sh "$stage/scripts/"
   printf '%s\n' "$tag" > "$stage/VERSION"
-  ( cd "$stage" && find docker-compose.yml .env.example scripts -type f | sort | xargs sha256sum > MANIFEST.sha256 )
+  # images: the content of the bundle's IMAGES file (R-0460); empty = none, as before.
+  local listed="docker-compose.yml .env.example scripts"
+  [ -z "$images" ] || { printf '%s' "$images" > "$stage/IMAGES"; listed="docker-compose.yml .env.example IMAGES scripts"; }
+  # shellcheck disable=SC2086 # word-splitting the list is the point
+  ( cd "$stage" && find $listed -type f | sort | xargs sha256sum > MANIFEST.sha256 )
   tar czf "$assetdir/adminhelper-runtime-$tag.tar.gz" -C "$stage" .
   ( cd "$assetdir" && sha256sum "adminhelper-runtime-$tag.tar.gz" > SHA256SUMS )
   minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
@@ -198,6 +202,51 @@ INST="$WORK/inst3"
 out=$(run_install --ref v0.35.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -qE 'Signatur ungueltig|Checksumme' <<<"$out"; } \
   && ok "tampered bundle aborts" || bad "tamper not caught: rc=$rc"
+
+# ── 3b. IMAGES in the bundle: pins with the digest, a bad file aborts (R-0460) ─
+# images_for <ver> — a valid IMAGES file for <ver>, image n gets digest 000…0n.
+images_for() {
+  local i=1 k
+  for k in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+    printf '%s_IMAGE=ghcr.io/admincave/adminhelper/%s:%s@sha256:%064d\n' "${k%%:*}" "${k#*:}" "$1" "$i"
+    i=$((i + 1))
+  done
+}
+make_release 0.36.0 0 "$(images_for 0.36.0)"
+INST="$WORK/inst3b"
+out=$(run_install --ref v0.36.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
+n=0
+while IFS= read -r want; do
+  [ "$(LC_ALL=C grep -a -c -x -F "$want" "$INST/.env" 2>/dev/null)" = 1 ] && n=$((n + 1))
+done <<< "$(images_for 0.36.0)"
+{ [ $rc -eq 0 ] && [ "$n" = 5 ] && [ "$(grep -c '_IMAGE=' "$INST/.env")" = 5 ]; } \
+  && ok "a bundle with IMAGES pins tag and digest of all five images" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
+# A present file applies: each defect aborts before .env, never falls back to the tag.
+good=$(images_for 0.36.0)
+bad_images() {
+  case $1 in
+    version)   images_for 0.36.1 ;;
+    repo)      sed 's|ghcr.io/admincave/|ghcr.io/other/|' <<<"$good" ;;
+    swapped)   sed 's|^SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:|SERVER_IMAGE=ghcr.io/admincave/adminhelper/gateway:|' <<<"$good" ;;
+    four)      sed '/^MONITORING_IMAGE=/d' <<<"$good" ;;
+    six)       printf '%s\nEXTRA=1\n' "$good" ;;
+    duplicate) sed 's/^MONITORING_IMAGE=.*/SERVER_IMAGE=ghcr.io\/admincave\/adminhelper\/server:0.36.0@sha256:'"$(printf '%064d' 1)"'/' <<<"$good" ;;
+    short)     sed 's/^\(GATEWAY_IMAGE=.*\)2$/\1/' <<<"$good" ;;
+    upper)     sed 's/^\(FRPS_IMAGE=.*\)3$/\1A/' <<<"$good" ;;
+    tagonly)   sed 's/^\(CA_ISSUER_IMAGE=[^@]*\)@.*/\1/' <<<"$good" ;;
+    crlf)      sed 's/$/\r/' <<<"$good" ;;
+  esac
+}
+for defect in version repo swapped four six duplicate short upper tagonly crlf; do
+  make_release 0.36.0 0 "$(bad_images "$defect")
+"
+  INST="$WORK/inst3b-$defect"
+  out=$(run_install --ref v0.36.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
+  { [ $rc -ne 0 ] && grep -q 'IMAGES file of the bundle is invalid' <<<"$out" && [ ! -e "$INST/.env" ]; } \
+    && ok "IMAGES $defect -> install aborts before .env" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES $defect: rc=$rc"; }
+done
 
 # ── 4. full disk while writing .env: abort, .env stays whole (R-0496) ────────
 # An existing install in checkout mode (compose file present, so no bootstrap)
@@ -721,6 +770,11 @@ blk_i=$(blk "$REAL_INSTALL"); blk_u=$(blk "$REPO_ROOT/scripts/update.sh")
 { grep -q '^check_env_templates() {' <<<"$blk_u" && grep -q '^# <<< env check$' <<<"$blk_u" && [ "$blk_i" = "$blk_u" ]; } \
   && ok "install.sh holds the .env check of update.sh byte for byte" \
   || bad "the .env check of install.sh differs from that of update.sh"
+blk_p() { sed -n '/^# >>> image pins/,/^# <<< image pins$/p' "$1"; }
+blk_i=$(blk_p "$REAL_INSTALL"); blk_u=$(blk_p "$REPO_ROOT/scripts/update.sh")
+{ grep -q '^image_pins() {' <<<"$blk_u" && grep -q '^# <<< image pins$' <<<"$blk_u" && [ "$blk_i" = "$blk_u" ]; } \
+  && ok "install.sh holds the IMAGES check of update.sh byte for byte" \
+  || bad "the IMAGES check of install.sh differs from that of update.sh"
 
 echo
 echo "──────────────────────────────────────────"

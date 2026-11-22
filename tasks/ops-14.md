@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.
 Doku: → T4
 Abhängt von: T1
 
-### T3 — R-0460: install.sh und update.sh pinnen den Digest aus dem Bundle  [ ]
+### T3 — R-0460: install.sh und update.sh pinnen den Digest aus dem Bundle  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/update.sh, scripts/tests/install_test.sh, scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b0c5949ed 2026-11-22T08:01:09+01:00
+Review: approve (.ah-out/review/ops-14/T3.verdict.json)
 Änderung: Liegt `IMAGES` im geprüften Bundle, pinnen `install.sh --ref` (Pin-Block, `fetch_bundle_into`) und `update.sh` (`TARGET_IMAGES`) die fünf Zeilen daraus; ohne `IMAGES` wie bisher den Tag. Eine `IMAGES`, die nicht genau die fünf Schlüssel mit `ghcr.io/admincave/adminhelper/<image>:<Zielversion>@sha256:<64 hex>` trägt, bricht ab, bevor etwas geändert ist. `installed_version`/`installed_label` lesen `:X.Y.Z@sha256:…`. Tests für beide Skripte: Bundle mit und ohne `IMAGES`, kaputte `IMAGES`, Versionserkennung mit Digest-Pin; erst rot.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: → T4
