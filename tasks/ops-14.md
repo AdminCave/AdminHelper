@@ -5,8 +5,10 @@ Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_tes
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-0460: image-pins.sh löst die signierten Image-Digests eines Tags auf  [ ]
+### T1 — R-0460: image-pins.sh löst die signierten Image-Digests eines Tags auf  [x]
 Komponente: scripts · Dateien: scripts/release/image-pins.sh, scripts/tests/image_pins_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @012ba5489 2026-11-22T07:30:42+01:00
+Review: approve (.ah-out/review/ops-14/T1.verdict.json)
 Änderung: Neues `scripts/release/image-pins.sh <tag> <out>` (SPDX-Header): je Image wartet es auf `:X.Y.Z` auf ghcr, löst den Digest auf, prüft die cosign-Signatur (Identität `docker.yml@refs/tags/<tag>`) und schreibt `IMAGES` mit fünf Zeilen `KEY=ghcr.io/admincave/adminhelper/<image>:X.Y.Z@sha256:<hex>`. Test `image_pins_test.sh` mit gestubbtem `docker`/`cosign` (in die Liste der Skript-Tests in `run.sh`): gültiger Lauf, fehlende Signatur, fehlendes Image, kaputter Digest, späte Signatur → Exit und kein `IMAGES` bei Rot.
 Verify: bash scripts/dev/verify.sh scripts --strict -- image_pins_test
 Doku: → T4
