@@ -1,5 +1,5 @@
 # ops-14 — Task-Ledger
-Status: aktiv · Branch: feature/ops-14 · Review: pro Task
+Status: bereit · Branch: feature/ops-14 · Review: pro Task
 Spec: docs/features/ops-14.md (Roadmap R-0460)
 Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_test: letztes Release → Checkout); der Digest-Pfad selbst ist erst mit dem nächsten Release-Bundle real beweisbar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/ops-14/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: → T4
 
-### T4 — R-0460: Doku und CHANGELOG  [ ]
+### T4 — R-0460: Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/ops-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @753a4a40a 2026-11-22T08:03:30+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `cicd.html` DE+EN: `IMAGES` im Runtime-Bundle, Digest nur mit passender cosign-Signatur. `installation.html` DE+EN: Install und Update pinnen `:X.Y.Z@sha256:…` aus dem signierten Bundle, ältere Releases den Tag. Changelog-Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
