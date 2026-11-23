@@ -29,8 +29,10 @@ Review: approve (.ah-out/review/ops-15/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: → T5
 
-### T4 — R-0592: Arbeitskopien der .env mit zufälligem Namen und Aufräumen beim Abbruch  [ ]
+### T4 — R-0592: Arbeitskopien der .env mit zufälligem Namen und Aufräumen beim Abbruch  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/install.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f1b0a2f08 2026-11-23T10:41:47+01:00
+Review: approve (.ah-out/review/ops-15/T4.verdict.json)
 Änderung: `upsert_env` (`update.sh:392`, `install.sh:641`) und die Rollbacks (`update.sh:891`, `:1057`) legen ihre Arbeitskopie per `mktemp .env.ah-XXXXXX` an und tragen sie in eine Aufräumliste ein, die der bestehende EXIT-Trap (`install.sh:48`, `update.sh:776`) mit abräumt; der feste Name `.env.ah-new` entfällt. Test 40 „append“ (`update_test.sh:1408-1417`) prüft Exit, Fehlermeldung und Rollback-Text einzeln, `bad` nennt die fehlende Bedingung (R-0592 d). Der rote Lauf bei parallelen Läufen (R-0592 c) wird mit zwei gleichzeitigen `update_test`-Läufen nachgestellt; der Befund steht unter `## Entscheidungen`, ein reproduzierbarer Fehler wird eine eigene Roadmap-Zeile.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: keine (internes Verhalten der Skripte)
@@ -43,3 +45,6 @@ Doku: diese Task
 
 ## Entscheidungen
 - T3: Kein Aufräumen einer liegengebliebenen `IMAGES`-Kopie in `update.sh`: `IMAGES` gibt es erst seit ops-14 (#632, heute gemergt), kein veröffentlichtes Bundle trägt sie (letzter Tag v0.47.0 davor), also hat kein Host eine Kopie (YAGNI, weicht von der Spec ab).
+- T4: Test 26 blockierte den Restore mit einem Verzeichnis `.env.ah-new`; mit `mktemp` gibt es den festen Namen nicht mehr. Gleichwertiger Ersatz: ein `mv`-Stub (`AH_TEST_ENV_LOCK`), den der Docker-Stub beim gescheiterten Pull bzw. Healthcheck scharf schaltet, die Restore-Meldung `UNVOLLSTAENDIG` bleibt geprüft; die Prüfung „nichts im Weg-Verzeichnis gelandet“ wird „keine `.env.ah-*`-Kopie übrig“ (alter Code: rot, `.env.ah-new` bleibt).
+- T4: Der Blockier-Haken von Test 44g (`mktemp`) vergleicht jetzt per Muster `*/.env.ah-XXXXXX`, da `mktemp` das absolute Argument bekommt.
+- T4 (R-0592 c): zwei `update_test.sh`-Läufe gleichzeitig im selben Worktree: beide `445 passed, 0 failed` — keine geteilten Pfade, nichts zu tun.

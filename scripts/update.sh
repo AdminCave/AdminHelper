@@ -389,7 +389,8 @@ upsert_env() {
     # swap and in both rollbacks: without it, mv asks before it replaces a file it
     # may not write when stdin is a terminal, and waits for an answer that a
     # wrapper collecting the output never shows.
-    tmp=$(mktemp .env.ah-XXXXXX) || return 1
+    tmp=$(mktemp "${PWD}/.env.ah-XXXXXX") || return 1
+    ENV_TMPS+=("$tmp")
     { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
         && mv -f "$tmp" .env; } \
@@ -773,7 +774,10 @@ PARENT_TMP=""
 if [ -n "${AH_UPDATE_PARENT_TMP:-}" ] && [ "$0" = "${AH_UPDATE_PARENT_TMP}/update-new.sh" ]; then
     PARENT_TMP="$AH_UPDATE_PARENT_TMP"
 fi
-trap 'rm -rf -- "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}' EXIT
+# The .env working copies (upsert_env, both rollbacks) sit next to .env; one an
+# abort leaves between mktemp and mv goes with the exit as well (R-0592).
+ENV_TMPS=()
+trap 'rm -rf -- "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}; rm -f -- "${ENV_TMPS[@]}"' EXIT
 EXTRACT=$(fetch_bundle "$TARGET" "$TMP")
 
 # --- Self-update: hand off to the release's update.sh if it differs ----------
@@ -904,8 +908,9 @@ rollback_before_deploy() {
     log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..."
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # Copy next to .env, then rename: an interrupted restore leaves no half .env.
-    # -T: a directory .env.ah-new in the way fails the restore, it takes no copy.
-    { cp -pT "${TMP}/env.prev" .env.ah-new && mv -fT .env.ah-new .env; } \
+    local envtmp
+    { envtmp=$(mktemp "${PWD}/.env.ah-XXXXXX") && ENV_TMPS+=("$envtmp") \
+        && cp -pT "${TMP}/env.prev" "$envtmp" && mv -fT "$envtmp" .env; } \
         || { log "WARN: .env-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
         || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
@@ -1071,11 +1076,11 @@ rollback_after_deploy() {
     # the old .env lacked stays absent. grep exits 1 for "no line selected", which
     # is fine on either side.
     # LC_ALL=C grep -a, as in upsert_env: a file grep takes for binary loses lines.
-    local pins='^#?[[:space:]]*(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE='
-    { ( umask 077
-        { LC_ALL=C grep -a -vE "$pins" .env || [ $? -eq 1 ]; } > .env.ah-new \
-            && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
-      ) && mv -fT .env.ah-new .env; } \
+    local pins='^#?[[:space:]]*(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE=' envtmp
+    { envtmp=$(mktemp "${PWD}/.env.ah-XXXXXX") && ENV_TMPS+=("$envtmp") \
+        && { LC_ALL=C grep -a -vE "$pins" .env || [ $? -eq 1 ]; } > "$envtmp" \
+        && { LC_ALL=C grep -a -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> "$envtmp" \
+        && mv -fT "$envtmp" .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # After a move to PostgreSQL 18 the new images only ever ran on the new volume,
     # which is gone: the old one holds the revisions of ${INSTALLED_LABEL} as before.

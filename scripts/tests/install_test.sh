@@ -277,6 +277,23 @@ grep -qx 'compose version' <<<"$dlog" && ok "docker call log written" || bad "no
 ! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "no compose pull/up after the failed write" \
   || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
 
+# ── 4b. a signal between mktemp and mv: the working copy goes with the exit (R-0592)
+# The mv wrapper ends install.sh with SIGTERM where upsert_env would put its copy in
+# place of .env, so the copy is still there when the script ends.
+INST="$WORK/inst4b"; mkdir -p "$INST/scripts"
+cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+cp "$SRC"/scripts/*.sh "$INST/scripts/"
+printf 'DOMAIN=old.example\n' > "$INST/.env"
+TERMMV="$WORK/termmv"; mkdir -p "$TERMMV"
+# shellcheck disable=SC2016 # the wrapper expands its own arguments
+printf '#!/usr/bin/env bash\ncase "${*: -2:1}" in *.env.ah-*) kill -TERM "$PPID"; exit 1 ;; esac\nexec %s "$@"\n' \
+  "$(command -v mv)" > "$TERMMV/mv"
+chmod +x "$TERMMV/mv"
+out=$(cd "$INST" && PATH="$TERMMV:$PATH" bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes 2>&1); rc=$?
+[ $rc -ne 0 ] && ok "SIGTERM while .env is written ends install" || bad "SIGTERM while .env is written: exit $rc"
+! compgen -G "$INST/.env.ah-*" >/dev/null && ok "SIGTERM while .env is written leaves no .env.ah-* copy" \
+  || bad "copies left after SIGTERM: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
+
 # ── 5. .env holding only the key: grep -v filters every line (exit 1), no error ─
 INST="$WORK/inst5"; mkdir -p "$INST/scripts"
 cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
