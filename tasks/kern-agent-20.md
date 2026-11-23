@@ -1,5 +1,5 @@
 # kern-agent-20 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-20 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-20 · Review: pro Task
 Spec: docs/features/kern-agent-20.md (Roadmap R-0688)
 Heavy: linux-full — apps/agent (Monitoring-Report); Windows-Dateien prüft der PR-Job agent-windows, FreeBSD nur quer gebaut
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -73,8 +73,10 @@ Review: approve (.ah-out/review/kern-agent-20/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T9 — R-0688: Entwickler-Doku nennt Structs und Vertrag  [ ]
+### T9 — R-0688: Entwickler-Doku nennt Structs und Vertrag  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @643388220 2026-11-23T14:30:37+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `agent.html:121` (DE+EN) beschreibt die Report-Structs und den Golden-Vertrag unter `testdata/report/` statt `map[string]any`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html, docs/en/developer/agent.html
