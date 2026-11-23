@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API (Bootstrap, Benutzer anlegen) und der Start des
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-0690: users/service.create_user als einziger Weg  [ ]
+### T1 — R-0690: users/service.create_user als einziger Weg  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/service.py, apps/server/app/modules/users/router.py, apps/server/app/modules/users/auth_router.py, apps/server/app/cli.py, apps/server/app/main.py, apps/server/tests/test_users_service.py, apps/server/tests/test_bootstrap.py, apps/server/tests/test_cli.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @09538ae8f 2026-11-23T16:43:52+01:00
+Review: approve (.ah-out/review/kern-server-11/T1.verdict.json)
 Änderung: Neue Datei `users/service.py` (SPDX) mit `create_user(db, *, username, password, is_admin, servers, actor, audit_action="user.created") -> User` und `UsernameTaken`: Insert, Basis-Abo-Regel eines Admins, `queue_event("user.created")`, Commit mit Fang des `IntegrityError`, `sync_policy`, Audit. `POST /api/users`, `POST /api/auth/bootstrap` (Audit `auth.bootstrap`, Lock und Token unverändert), `cli create-admin` und `_ensure_admin` rufen ihn. Neue Testdatei (SPDX): je Weg genau ein `user.created`, ein Audit-Eintrag, Policy-Sync, Wettlauf → `UsernameTaken` ohne Event.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_users_service.py tests/test_bootstrap.py tests/test_cli.py tests/test_users.py tests/test_users_promotion_event.py tests/test_event_whitelist.py tests/test_openapi_snapshot.py
 Doku: → T4

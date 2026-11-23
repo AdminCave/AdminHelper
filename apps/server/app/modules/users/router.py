@@ -5,7 +5,6 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user, hash_password
@@ -21,6 +20,7 @@ from app.modules.frp.policy import sync_policy
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
+from app.modules.users import service as users_service
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     DeviceResponse,
@@ -56,52 +56,27 @@ def create_user(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    if db.query(User).filter(User.username == data.username).first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
-        )
-    user = User(
-        username=data.username,
-        hashed_password=hash_password(data.password),
-        is_admin=data.is_admin,
+    taken = HTTPException(
+        status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
     )
-    if data.server_ids:
-        servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
-        user.servers = servers
-    db.add(user)
+    if db.query(User).filter(User.username == data.username).first():
+        raise taken
+    servers = (
+        db.query(Server).filter(Server.id.in_(data.server_ids)).all() if data.server_ids else []
+    )
     # A revocation of a former namesake stays: it is a point in time, so it keeps
     # the old certificates out and lets the new user's later ones through (R-0224).
     try:
-        db.flush()
-        if data.is_admin:
-            # A fresh install has zero subscriptions, so alerts would reach
-            # nobody — every new admin starts with the bell-only baseline rule.
-            db.add(default_admin_subscription(user.id))
-        queue_event(
+        user = users_service.create_user(
             db,
-            "user.created",
-            {"id": user.id, "username": user.username, "is_admin": user.is_admin},
+            username=data.username,
+            password=data.password,
+            is_admin=data.is_admin,
+            servers=servers,
+            actor=actor_from_request(request),
         )
-        db.commit()
-    except IntegrityError:
-        # Lost the race against a concurrent create of the same username (the
-        # check above has a TOCTOU window; users.username is unique). Map to the
-        # same 409 the pre-check returns.
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
-        )
-    db.refresh(user)
-    # A user's access is part of every STCP proxy's allowUsers, which frps' plugin checks.
-    sync_policy(db)
-    audit.record(
-        db,
-        "user.created",
-        actor=actor_from_request(request),
-        object_type="user",
-        object_id=user.id,
-        object_label=user.username,
-    )
+    except users_service.UsernameTaken:
+        raise taken from None
     return _user_response(user)
 
 

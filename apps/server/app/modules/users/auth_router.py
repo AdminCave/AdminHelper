@@ -42,7 +42,7 @@ from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
 from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
-from app.modules.notifications.service import default_admin_subscription
+from app.modules.users import service as users_service
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     BootstrapRequest,
@@ -444,26 +444,21 @@ def bootstrap(
         )
     require_cert_user(request, data.username, db)
 
-    user = User(
-        username=data.username,
-        hashed_password=hash_password(data.password),
-        is_admin=True,
-    )
-    db.add(user)
-    # Baseline notification rule — the bootstrap admin is the only user a
-    # fresh install has (same as the other admin-create paths).
-    db.flush()
-    db.add(default_admin_subscription(user.id))
-    db.commit()
-    db.refresh(user)
-    audit.record(
-        db,
-        "auth.bootstrap",
-        actor=Actor("user", str(user.id), user.username, ip),
-        object_type="user",
-        object_id=user.id,
-        object_label=user.username,
-    )
+    try:
+        user = users_service.create_user(
+            db,
+            username=data.username,
+            password=data.password,
+            is_admin=True,
+            actor=lambda new: Actor("user", str(new.id), new.username, ip),
+            audit_action="auth.bootstrap",
+        )
+    except users_service.UsernameTaken:
+        # The lock keeps two bootstraps apart, not a CLI create-admin at the same moment.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Server ist bereits initialisiert",
+        ) from None
 
     # Consume the token — even if deleting the file fails, the 'count() > 0'
     # check above remains the effective protection.

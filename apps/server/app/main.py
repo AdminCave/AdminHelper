@@ -19,13 +19,12 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.exc import IntegrityError
 
 # Every ORM model before the first query (the lifespan's), see app/model_registry.py.
 # Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
 from app import model_registry  # noqa: F401
 from app.core import identity, middleware
-from app.core.auth import hash_api_key, hash_password
+from app.core.auth import hash_api_key
 from app.core.config import (
     ADMIN_PASSWORD,
     BOOTSTRAP_SETUP_FILE,
@@ -39,6 +38,7 @@ from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
 from app.core.query_params import reject_repeated_scalar_query
+from app.core.request_context import Actor
 from app.modules.ansible.router import router as ansible_router
 from app.modules.api_keys.router import router as api_keys_router
 from app.modules.audit.router import router as audit_router
@@ -59,12 +59,13 @@ from app.modules.notifications.router import feed_router as notifications_feed_r
 from app.modules.notifications.router import internal_router as notifications_internal_router
 from app.modules.notifications.router import prefs_router as notifications_prefs_router
 from app.modules.notifications.schemas import IncomingEvent
-from app.modules.notifications.service import default_admin_subscription, notify_users
+from app.modules.notifications.service import notify_users
 from app.modules.notifications.stream import stream_router as notifications_stream_router
 from app.modules.provisioning.router import catalog_router as provisioning_catalog_router
 from app.modules.provisioning.router import router as provisioning_router
 from app.modules.servers.router import internal_router as servers_internal_router
 from app.modules.servers.router import router as servers_router
+from app.modules.users import service as users_service
 
 # Import routers
 from app.modules.users.auth_router import router as auth_router
@@ -73,6 +74,10 @@ from app.modules.users.router import router as users_router
 from app.modules.users.schemas import PASSWORD_MAX_LEN
 
 logger = logging.getLogger(__name__)
+
+# The ADMIN_PASSWORD admin has no request and no principal; the web panel lists the
+# audit row under the actor filter `system`.
+_STARTUP_ACTOR = Actor("system", None, "startup", None)
 
 
 def _ensure_admin(db):
@@ -116,25 +121,18 @@ def _ensure_admin(db):
         _emit_bootstrap_token()
         return
 
-    admin = User(
-        username="admin",
-        hashed_password=hash_password(ADMIN_PASSWORD),
-        is_admin=True,
-    )
-    db.add(admin)
     try:
-        # Baseline notification rule for the very first admin (same as the API
-        # and CLI create paths). Flush inside the try: a lost multi-worker race
-        # rolls back both rows together.
-        db.flush()
-        db.add(default_admin_subscription(admin.id))
-        db.commit()
-    except IntegrityError:
+        users_service.create_user(
+            db,
+            username="admin",
+            password=ADMIN_PASSWORD,
+            is_admin=True,
+            actor=_STARTUP_ACTOR,
+        )
+    except users_service.UsernameTaken:
         # With uvicorn --workers N, every worker runs the lifespan on a fresh DB and all see
         # count()==0, so all try to insert the admin. The unique users.username constraint lets
-        # exactly one win; the losers catch the conflict and return instead of crashing the
-        # worker at first boot (4.67).
-        db.rollback()
+        # exactly one win; the losers return instead of crashing the worker at first boot (4.67).
         return
     # A direct admin obsoletes any pending bootstrap token, so don't leave the raw
     # setup file lingering for a run (3.91).

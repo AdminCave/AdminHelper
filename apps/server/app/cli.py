@@ -33,13 +33,12 @@ from typing import NoReturn
 from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import SessionLocal
-from app.core.events import queue_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import Actor
 from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
-from app.modules.notifications.service import default_admin_subscription
+from app.modules.users import service as users_service
 from app.modules.users.models import User
 from app.modules.users.schemas import _USERNAME_PATTERN, PASSWORD_MAX_LEN
 
@@ -69,25 +68,16 @@ def create_admin(db, username: str, password: str) -> int:
     if db.query(User).filter(User.username == username).first() is not None:
         print(f"Fehler: Benutzer '{username}' existiert bereits.", file=sys.stderr)
         return 1
-    user = User(username=username, hashed_password=hash_password(password), is_admin=True)
-    db.add(user)
-    # Same baseline as the API path: without a subscription no alert would
-    # reach the very first admin on a fresh install.
-    db.flush()
-    db.add(default_admin_subscription(user.id))
-    queue_event(db, "user.created", {"id": user.id, "username": user.username, "is_admin": True})
-    # The event is not lost when the CLI exits right after the commit: concurrent.futures
-    # joins its worker threads at interpreter shutdown, so the hooks and the notification
-    # bridge still run before the process ends.
-    db.commit()
-    audit.record(
-        db,
-        "user.created",
-        actor=_CLI_ACTOR,
-        object_type="user",
-        object_id=user.id,
-        object_label=user.username,
-    )
+    try:
+        # The event is not lost when the CLI exits right after the commit: concurrent.futures
+        # joins its worker threads at interpreter shutdown, so the hooks and the notification
+        # bridge still run before the process ends.
+        users_service.create_user(
+            db, username=username, password=password, is_admin=True, actor=_CLI_ACTOR
+        )
+    except users_service.UsernameTaken:
+        print(f"Fehler: Benutzer '{username}' existiert bereits.", file=sys.stderr)
+        return 1
     print(f"Admin '{username}' angelegt.", file=sys.stderr)
     return 0
 
