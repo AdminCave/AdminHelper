@@ -1,5 +1,5 @@
 # kern-desktop-e2e-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-desktop-e2e-2 · Review: am Ende
+Status: erledigt · Branch: feature/kern-desktop-e2e-2 · Review: am Ende
 Spec: docs/features/kern-desktop-e2e-2.md (Roadmap R-0573)
 Heavy: linux-full — Desktop-Journey (settings-enroll.live.js läuft in desktop_e2e_tunnel); nur Testcode
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
