@@ -75,7 +75,10 @@
           Pflicht-Check), kein Force-Push, kein Bypass-Akteur
           &ndash; auch nicht f&uuml;r ihn selbst. Das ist die Aussen-Grenze der Stufe: ein Release wird
           &uuml;ber einen Release-Branch geschnitten statt an der Regel vorbei. <code>ci.yml</code> l&auml;uft
-          auch auf <code>merge_group</code>; eine Merge Queue schaltet erst das Ruleset ein.</p>
+          auch auf <code>merge_group</code>: seit 2026-11-23 verlangt das Ruleset eine Merge Queue (Merge-Methode Merge,
+          Build-Konkurrenz&nbsp;2, Gruppengr&ouml;&szlig;e&nbsp;1, Check-Timeout 60&nbsp;min, nur gr&uuml;ne Eintr&auml;ge).
+          Sie testet <code>main</code> plus Pull Request vor dem Merge; <code>gh pr merge</code> reiht nur ein,
+          <code>scripts/dev/queue-wait.sh</code> wartet auf den Merge-Commit.</p>
 
           <p><strong>Workflow-H&auml;rtung.</strong> Jeder <code>actions/checkout</code> l&auml;uft mit
           <code>persist-credentials: false</code>: kein Schritt pusht oder holt mit dem Token, und so liegt es
@@ -93,7 +96,7 @@
             <tbody>
               <tr><td>Pull Request</td><td><code>ci.yml</code> (muss grün sein; die gesteuerten Suiten nach den ge&auml;nderten Pfaden, siehe &bdquo;Pfad-Steuerung&ldquo;); <code>nightly.yml</code>, wenn er die Datei &auml;ndert</td></tr>
               <tr><td>Push auf <code>main</code></td><td><code>ci.yml</code> + <code>docker.yml</code> (Image-Tags <code>:main</code> + <code>:sha-&hellip;</code>)</td></tr>
-              <tr><td>Merge Queue (Event <code>merge_group</code>)</td><td><code>ci.yml</code> voll, auf dem Commit der Gruppe; greift erst, wenn das Ruleset von <code>main</code> eine Merge Queue verlangt</td></tr>
+              <tr><td>Merge Queue (Event <code>merge_group</code>)</td><td><code>ci.yml</code> voll, auf dem Commit der Gruppe (<code>main</code> plus Pull Request); Pflicht vor jedem Merge nach <code>main</code></td></tr>
               <tr><td>Tag <code>v*</code></td><td><code>docker.yml</code> (Tags <code>:0.26.0</code> + <code>:sha-&hellip;</code>) + <code>release.yml</code> (Draft-Release als Pre-release mit Artefakten)</td></tr>
               <tr><td>Release wird Stable (Event <code>release</code>, Typ <code>released</code>)</td><td><code>docker.yml</code>, Job <code>latest</code> (<code>:latest</code> auf das signierte <code>:0.26.0</code>, ohne Neubau)</td></tr>
               <tr><td>Schedule (w&ouml;chentlich)</td><td><code>audit.yml</code> (Dependency-Audit)</td></tr>

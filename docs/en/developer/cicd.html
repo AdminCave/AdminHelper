@@ -73,7 +73,10 @@
           required check), no force-push, no bypass actor &ndash; not even
           for the owner. It is the outer boundary of the stage: a release is cut on a release branch rather
           than around the rule. <code>ci.yml</code> also runs on
-          <code>merge_group</code>; only the ruleset turns a merge queue on.</p>
+          <code>merge_group</code>: since 2026-11-23 the ruleset requires a merge queue (merge method merge, build
+          concurrency&nbsp;2, group size&nbsp;1, check timeout 60&nbsp;min, green entries only). It tests
+          <code>main</code> plus the pull request before the merge; <code>gh pr merge</code> only enqueues,
+          <code>scripts/dev/queue-wait.sh</code> waits for the merge commit.</p>
 
           <p><strong>Workflow hardening.</strong> Every <code>actions/checkout</code> runs with
           <code>persist-credentials: false</code>: no step pushes or fetches with the token, so it does not sit
@@ -91,7 +94,7 @@
             <tbody>
               <tr><td>Pull request</td><td><code>ci.yml</code> (must pass; the gated suites by the changed paths, see &ldquo;Path gating&rdquo;); <code>nightly.yml</code> when it changes that file</td></tr>
               <tr><td>Push to <code>main</code></td><td><code>ci.yml</code> + <code>docker.yml</code> (image tags <code>:main</code> + <code>:sha-&hellip;</code>)</td></tr>
-              <tr><td>Merge queue (event <code>merge_group</code>)</td><td><code>ci.yml</code> in full, on the group&rsquo;s commit; takes effect once the ruleset of <code>main</code> requires a merge queue</td></tr>
+              <tr><td>Merge queue (event <code>merge_group</code>)</td><td><code>ci.yml</code> in full, on the group&rsquo;s commit (<code>main</code> plus the pull request); required before every merge into <code>main</code></td></tr>
               <tr><td>Tag <code>v*</code></td><td><code>docker.yml</code> (tags <code>:0.26.0</code> + <code>:sha-&hellip;</code>) + <code>release.yml</code> (draft release, marked as a pre-release, with artifacts)</td></tr>
               <tr><td>Release turns stable (event <code>release</code>, type <code>released</code>)</td><td><code>docker.yml</code>, job <code>latest</code> (<code>:latest</code> onto the signed <code>:0.26.0</code>, no rebuild)</td></tr>
               <tr><td>Schedule (weekly)</td><td><code>audit.yml</code> (dependency audit)</td></tr>
