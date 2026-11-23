@@ -46,6 +46,17 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
 cd "$ROOT" || exit 0
 
+# The merge watcher (line 4c) starts here and runs beside the other gh calls:
+# the SessionStart hook has 10 s in all, and the watcher's two gh calls one
+# after the other would eat most of it. It comes from the checkout this hook
+# lives in, like roadmap.py; AH_MERGE_WATCH replaces it in a test.
+MERGE_WATCH="${AH_MERGE_WATCH:-$(dirname "$ROADMAP_PY")/merge-watch.sh}"
+MW_FD=""
+if [ -f "$MERGE_WATCH" ]; then
+  exec 3< <(timeout 5 bash "$MERGE_WATCH" 2>/dev/null)
+  MW_FD=3
+fi
+
 WARNINGS=()
 warn() { WARNINGS+=("$1"); }
 gh_json() {  # gh_json <args…> -> value, or "?" when gh/network/auth is unavailable
@@ -201,18 +212,19 @@ for f in .github/workflows/*.yml .github/workflows/*.yaml; do
 done
 
 # ── line 4c: merge queue and main (merge-watch.sh, R-1724) ────────────────────
-# From the checkout this hook lives in, like roadmap.py; AH_MERGE_WATCH replaces
-# the script in a test. Its ACTION lines (a pull request out of the queue, a red
-# main) become WARN lines; anything else it says, or no answer, is "Merge: ?".
-MERGE_WATCH="${AH_MERGE_WATCH:-$(dirname "$ROADMAP_PY")/merge-watch.sh}"
+# Started at the top (MW_FD), read here: its ACTION lines (a pull request out of
+# the queue, a red main) become WARN lines; anything else it says, or no answer
+# within its deadline, is "Merge: ?".
 mw_line="Merge: ?"
-if [ -f "$MERGE_WATCH" ]; then
+if [ -n "$MW_FD" ]; then
   while IFS= read -r l; do
     case "$l" in
       "Merge: "*) mw_line="$l" ;;
-      "ACTION: "*) warn "${l#ACTION: } — gehört dem Vorhaben dieses PRs (/feature-build §4.7, §4.8)." ;;
+      "ACTION: main "*) warn "${l#ACTION: } — zuständig ist der letzte Merge (/feature-build §4.8)." ;;
+      "ACTION: "*) warn "${l#ACTION: } — gehört dem Vorhaben dieses PRs (/feature-build §4.7)." ;;
     esac
-  done < <(timeout 8 bash "$MERGE_WATCH" 2>/dev/null)
+  done <&3
+  exec 3<&-
 fi
 echo "$mw_line"
 

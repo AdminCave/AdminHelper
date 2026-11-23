@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Merge-Wächter ohne Modell — Task-Ledger
-Status: aktiv · Branch: feature/harness-merge-watch · Review: am Ende
+Status: bereit · Branch: feature/harness-merge-watch · Review: am Ende
 Spec: docs/features/harness-merge-watch.md (Roadmap R-1724)
 Heavy: none — nur Harness-Skripte, SessionStart-Hook, Skill-Text und Entwickler-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -36,8 +36,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md · changelog.d/harness-merge-watch.md
 Task-Review: am Ende
 
-### T4 — R-1724: Hook startet den Wächter parallel (Abschlussprüfung)  [ ]
+### T4 — R-1724: Hook startet den Wächter parallel (Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f320000b4 2026-11-23T12:58:08+01:00
+Review: am Ende (Branch-Review)
 Änderung: Fund `wichtig` der Abschlussprüfung: `timeout 8` nacheinander riss bei langsamem GitHub die 10 s des SessionStart-Hooks. Der Hook startet den Wächter gleich nach `cd "$ROOT"` per Prozess-Substitution auf fd 3 (`timeout 5`) und liest ihn in Zeile 4c; ein hängender Wächter ergibt `Merge: ?`. Nit: „main ist rot“ nennt den letzten Merge (§4.8) statt des PRs. Test: hängender Wächter → `Merge: ?`, Exit 0, unter 7 s (Gegenprobe mit `timeout 8` rot: 8 s).
 Verify: bash scripts/dev/verify.sh scripts --strict -- session_status_test
 Doku: keine (Verhalten wie in T3 beschrieben)
