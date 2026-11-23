@@ -1,5 +1,5 @@
 # ops-15 — Task-Ledger
-Status: aktiv · Branch: feature/ops-15 · Review: pro Task
+Status: bereit · Branch: feature/ops-15 · Review: pro Task
 Spec: docs/features/ops-15.md (Roadmap R-1684, R-0592)
 Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_test: letztes Release → Checkout); der Pin-Job in release.yml ist erst mit dem nächsten Tag real beweisbar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,8 +37,10 @@ Review: approve (.ah-out/review/ops-15/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: keine (internes Verhalten der Skripte)
 
-### T5 — R-1684, R-0592: Doku, Kopfkommentar uninstall.sh und CHANGELOG  [ ]
-Komponente: scripts · Dateien: scripts/uninstall.sh, docs/admin/installation.html, docs/en/admin/installation.html, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ops-15.md
+### T5 — R-1684, R-0592: Doku, Kopfkommentar uninstall.sh und CHANGELOG  [x]
+Komponente: scripts · Dateien: scripts/uninstall.sh, docs/admin/installation.html, docs/en/admin/installation.html, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ops-15.md, scripts/tests/uninstall_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a91aef493 2026-11-23T10:50:38+01:00
+Review: approve (.ah-out/review/ops-15/T5.verdict.json)
 Änderung: Kopfkommentar `uninstall.sh:11` und die Beispiel-Kommentare `installation.html:256`/`:260` (EN `:204`/`:208`) nennen `./repo`; der Satz zur Kopie von `IMAGES` (`installation.html:223`, EN `:176`) sagt, dass sie nicht mehr im Verzeichnis liegt; `cicd.html:590` DE+EN nennt den eigenen Pin-Job; Fragment `changelog.d/ops-15.md` (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test uninstall_test
 Doku: diese Task
