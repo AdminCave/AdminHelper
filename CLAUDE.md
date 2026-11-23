@@ -40,8 +40,9 @@ laufen (Kriterien `/feature-plan` §4), und lässt Zeilen aus, deren Dateien ein
 (`scripts/dev/overlap.sh`). Seriell bleibt, was sich Contract-Dateien, eine Test-DB oder eine Abhängigkeit teilt:
 Parallelität darf keine Prüfung kosten.
 
-**Merge:** Eigene PRs merged die Session selbst, auch zu `CLAUDE.md`, `.claude/`, `scripts/` (Kevin 2026-10-17), sobald
-die Bedingungen aus `/feature-build` §4.7 erfüllt sind. Kevin merged fremde PRs und PRs, die
+**Merge:** `main` verlangt eine Merge Queue (seit 2026-11-23); sie prüft `main` + PR vor dem Merge. Eigene PRs reiht
+die Session selbst ein, auch zu `CLAUDE.md`, `.claude/`, `scripts/` (Kevin 2026-10-17), sobald die Bedingungen aus
+`/feature-build` §4.7 erfüllt sind (`gh pr merge`, nie `--admin`). Kevin merged fremde PRs und PRs, die
 `.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern (sie wirken
 ohne Release auf Nutzer oder Secrets). Ist `main` rot, wird der letzte Merge revertiert, und bis `main` grün ist, wird
 nichts gemergt; flaky heißt Rerun plus Roadmap-Zeile.
@@ -93,7 +94,8 @@ Vor dem ersten Lauf eines Vorhabens `.claude/rules/testing.md` lesen (Ebenen, SK
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test; Feature → Test dazu; Refactor → Suite grün
   vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O, echte
   SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.
-- Nicht „fertig“ melden, solange CI läuft oder rot ist (PR und Merge-Commit, `/feature-build` §4.7–§4.8).
+- Nicht „fertig“ melden, solange CI läuft oder rot ist oder der PR in der Merge Queue steht (PR, Queue und
+  Merge-Commit, `/feature-build` §4.7–§4.8).
 
 ## 6. Rollen, Prüfer, Modelle (`.claude/agents/`)
 | Rolle | Modell | Aufgabe |

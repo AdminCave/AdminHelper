@@ -113,27 +113,34 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
 5. **Abschlussbedingung:** `bash WT/scripts/dev/review.sh final WT/tasks/<slug>.md > <Scratchpad>/final.md`. Exit 0:
    alle Tasks zu, Urteil aktuell, Code und Tests `approve`; Exit 3 nennt, was fehlt (etwa ein Commit nach dem
    Urteil → `reviewer` fortsetzen).
-6. Basis nachziehen: `git -C WT fetch origin`; scheitert `git -C WT merge-base --is-ancestor origin/main HEAD`
-   (etwa nach dem Merge des parallelen Vorhabens): `git -C WT merge origin/main`, das Union-Ergebnis in
-   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften; neue Einträge stehen in `changelog.d/<slug>.md`,
-   `python3 scripts/release/changelog-assemble.py --check`); die Suiten dazu fährt die PR-CI. Kopf `erledigt`
+6. Basis nur bei Konflikt nachziehen: `main` verlangt eine Merge Queue (R-1344), sie prüft `main` + PR vor dem
+   Merge. `git -C WT fetch origin`; meldet GitHub für einen offenen PR `gh pr view <n> --json mergeable` →
+   `CONFLICTING` (vor dem ersten Push: `git -C WT merge-tree --write-tree origin/main HEAD` scheitert):
+   `git -C WT merge origin/main`, das Union-Ergebnis in `CHANGELOG.md` von Hand prüfen (keine doppelten
+   Überschriften; neue Einträge stehen in `changelog.d/<slug>.md`, `python3 scripts/release/changelog-assemble.py
+   --check`); die Suiten dazu fährt die PR-CI. Ohne Konflikt wird nicht hineingemergt. Kopf `erledigt`
    als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`; PR-Text:
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, dahinter `final.md` (nach
-   dem Basis-Merge neu erzeugt) und das `security`-Urteil; `gh pr create --title "<type>: <feature>" --body-file
+   einem Basis-Merge neu erzeugt) und das `security`-Urteil; `gh pr create --title "<type>: <feature>" --body-file
    <Scratchpad>/pr-body.md`; `roadmap.py status R-nnnn pr --pr "#<n>"`.
-7. `gh pr checks <n> --watch --fail-fast`. Merge (CLAUDE.md §2): CI im ersten Anlauf grün, die Läufe aus 3 grün,
-   `review.sh final` Exit 0 auf dem PR-Stand, `security` `approve` wo nötig, keine Ersatzprüfung im Branch (auch
-   nicht in einem Task-Commit) → Basis wie in 6 prüfen: der Branch muss `origin/main` enthalten, sonst mergen,
-   pushen, neue CI abwarten (die PR-CI testet dann genau `main` + PR; das Ruleset prüft die Kombination nicht); ein
-   Merge je CI-Zyklus. Dann `gh pr merge <n> --merge` (ohne `--delete-branch`: gh entfernt sonst den Worktree; den
-   Remote-Branch danach mit `git push origin --delete feature/<slug>`). Sonst → Übergabe an Kevin: rote CI, ein Lauf
-   aus 3 rot, ein Urteil nicht `approve`, eine Ersatzprüfung, oder der PR ändert `.github/workflows/`,
-   `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh`.
-8. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits beobachten: `gh run list --workflow ci.yml --commit
-   <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id> --exit-status`; rot → nichts weiter
-   mergen, Revert nach CLAUDE.md §2. Dann `python3 scripts/dev/roadmap.py sync`, `git -C tasks/private push`,
-   `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`, `git worktree list` und
-   `python3 scripts/vm/vm.py list` sauber. Dann §5: braucht der Report der Nacht eine Reaktion?
+7. `gh pr checks <n> --watch --fail-fast`. Einreihen (CLAUDE.md §2): CI im ersten Anlauf grün, die Läufe aus 3
+   grün, `review.sh final` Exit 0 auf dem PR-Stand, `security` `approve` wo nötig, keine Ersatzprüfung im Branch
+   (auch nicht in einem Task-Commit), keine Sperre durch den neuesten Sammellauf (§5) → `bash WT/scripts/dev/review.sh
+   final WT/tasks/<slug>.md > <Scratchpad>/final.md && gh pr merge <n>` reiht in die Merge Queue ein (ohne
+   Merge-Methode, die setzt die Queue; nie `--admin`, das umginge sie; ohne `--delete-branch`: gh entfernt sonst den
+   Worktree). Dann `bash WT/scripts/dev/queue-wait.sh <n>` aus `WT` als Hintergrund-Wächter; die Session baut
+   solange ein anderes Vorhaben (CLAUDE.md §2). Exit 0 → die Zeile `merged <sha>` gibt den Merge-Commit für 8, den
+   Remote-Branch danach mit `git push origin --delete feature/<slug>` löschen. Exit 1 (aus der Queue gefallen) → den
+   roten `merge_group`-Lauf lesen (`gh run list --workflow ci.yml --event merge_group -L 5`): Konflikt → 6, dann
+   erneut 7; flaky → einmal neu einreihen plus Roadmap-Zeile; echt rot → Task ins Ledger wie 4.4 oder Übergabe.
+   Exit 2 oder 3 → melden (Infrastruktur oder hängende Queue), nicht von Hand mergen. Sonst → Übergabe an Kevin:
+   rote CI, ein Lauf aus 3 rot, ein Urteil nicht `approve`, eine Ersatzprüfung, oder der PR ändert
+   `.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` (Kevin reiht ein).
+8. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits (`<merge-sha>` aus `queue-wait.sh`) beobachten: `gh run
+   list --workflow ci.yml --commit <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id>
+   --exit-status`; rot → nichts weiter mergen, Revert nach CLAUDE.md §2. Dann `python3 scripts/dev/roadmap.py sync`,
+   `git -C tasks/private push`, `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`, `git worktree
+   list` und `python3 scripts/vm/vm.py list` sauber. Dann §5: braucht der Report der Nacht eine Reaktion?
 
 ## 5. Sammellauf (schwere Suite über `main`)
 
