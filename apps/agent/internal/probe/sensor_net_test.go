@@ -471,6 +471,12 @@ func TestHTTPSensorTellsASilentServerOfPlainTextWithinAShortTimeout(t *testing.T
 		}
 		_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"))
 	})
+	freshSnapshot(t) // the guard is to see the listener just started
+	// The guard asks docker for its published ports before each connect; on a host with many
+	// containers that alone takes most of the one second this test gives the sensor.
+	oldPubs := publishedPorts
+	publishedPorts = func(context.Context) ([]publication, error) { return nil, nil }
+	t.Cleanup(func() { publishedPorts = oldPubs })
 	p := onLoopback("http", port, map[string]any{"expect": "ok"}, "status_code", "tls")
 	p.Target.Scheme = "auto"
 	p.TimeoutS = 1
