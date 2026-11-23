@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-server-11/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_users_service.py tests/test_bootstrap.py tests/test_cli.py tests/test_users.py tests/test_users_promotion_event.py tests/test_event_whitelist.py tests/test_openapi_snapshot.py
 Doku: → T4
 
-### T2 — R-0690: frps_fields liefert die Felder strukturiert  [ ]
+### T2 — R-0690: frps_fields liefert die Felder strukturiert  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/app/main.py, apps/server/tests/test_config_generator.py, apps/server/tests/test_frp_extra_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1a7db5543 2026-11-23T17:05:11+01:00
+Review: approve (.ah-out/review/kern-server-11/T2.verdict.json)
 Änderung: `frps_fields(config) -> dict[str, str | int | bool]` liefert Schlüssel und Werte vor `[transport.tls]`; `generate_frps_toml` schreibt sie, `_report_rejected_fields` liest sie statt den Text an ` = ` zu zerlegen. Test: der erzeugte Text ist für eine Reihe von Konfigurationen (Dashboard an/aus, vhost, subDomainHost, extra_config) Byte für Byte der vorherige (festgehaltene Erwartung), und `_report_rejected_fields` meldet dieselben Felder.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_extra_config.py tests/test_frp_toml_roundtrip.py tests/test_frp_input_hardening.py tests/test_frps_supervisor.py
 Doku: keine (interne Struktur, frps.toml unverändert)

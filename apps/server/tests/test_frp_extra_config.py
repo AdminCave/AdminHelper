@@ -33,7 +33,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from app.modules.frp.config_generator import generate_frps_toml
+from app.modules.frp.config_generator import frps_fields, generate_frps_toml
 from app.modules.frp.extra_config import ALLOWED_KEYS, STRING_FIELDS, value_allowed
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.schemas import FrpServerConfigCreate, FrpServerConfigUpdate
@@ -151,6 +151,16 @@ def test_the_string_fields_are_the_quoted_lines_the_generator_writes_from_the_co
     assert quoted - {"auth.method", "webServer.addr"} == set(STRING_FIELDS)
     for key, field in STRING_FIELDS.items():
         assert f'{key} = "{getattr(_config(**FULL), field)}"' in toml
+
+
+def test_the_startup_check_reads_the_fields_the_generator_writes():
+    # R-0690: _report_rejected_fields reads frps_fields; it must carry every line before
+    # the TLS table, with the value the line holds.
+    config = _config(**FULL)
+    lines = [line for line in generate_frps_toml(config).split(TABLE)[0].splitlines() if line]
+    fields = frps_fields(config)
+    assert list(fields) == [line.split(" = ")[0] for line in lines]
+    assert all(isinstance(fields[key], str) for key in STRING_FIELDS)
 
 
 VALUES = [

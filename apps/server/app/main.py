@@ -45,7 +45,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.connections.router import router as connections_router
 from app.modules.enrollment.router import router as enrollment_router
 from app.modules.frp import policy as frp_policy
-from app.modules.frp.config_generator import generate_frps_toml
+from app.modules.frp.config_generator import frps_fields
 from app.modules.frp.extra_config import STRING_FIELDS, rejected_keys, value_allowed
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.router import router as frp_router
@@ -273,12 +273,7 @@ def _report_rejected_fields(db, config):
     sensible replacement and a port no obvious one, so the row stays as it is: the field
     names (never the values) are logged at every start, and the admins are told once, each
     field with its rule, for as long as the same fields stay so."""
-    written = {}
-    for line in generate_frps_toml(config).split("\n"):
-        if line == "[transport.tls]":
-            break
-        key, _, value = line.partition(" = ")
-        written[key] = value
+    written = frps_fields(config)
     rules = {
         field: _FRPS_RULE_CHARACTERS
         for key, field in STRING_FIELDS.items()
@@ -288,7 +283,7 @@ def _report_rejected_fields(db, config):
     if "auth_token" not in rules and len(config.auth_token.encode()) < 16:
         rules["auth_token"] = _FRPS_RULE_TOKEN
     if "webServer.port" in written and dashboard_port_refused(
-        int(written["webServer.port"]), int(written["bindPort"]), FRP_BIND_PORT
+        written["webServer.port"], written["bindPort"], FRP_BIND_PORT
     ):
         rules["dashboard_port"] = _FRPS_RULE_DASHBOARD_PORT
     fields = list(rules)
