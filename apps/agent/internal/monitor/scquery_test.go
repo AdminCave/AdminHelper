@@ -69,26 +69,26 @@ func TestAliasAndWatchScQueryError(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := scServiceHealth([]byte(scFixture), err, nil, nil)
-			if got["error"] != "sc query failed: sc did not start" {
-				t.Errorf("error = %q, want %q", got["error"], "sc query failed: sc did not start")
+			if got.Error != "sc query failed: sc did not start" {
+				t.Errorf("error = %q, want %q", got.Error, "sc query failed: sc did not start")
 			}
-			if c, ok := got["counts"]; ok {
+			if c := got.Counts; c != nil {
 				t.Errorf("counts = %v, want none without sc query", c)
 			}
-			if all := got["all_services"].([]ServiceEntry); len(all) != 0 {
+			if all := got.AllServices; len(all) != 0 {
 				t.Errorf("all_services = %v, want none", all)
 			}
 		})
 	}
 	// sc answered: inventory and counts, no error.
 	got := scServiceHealth([]byte(scFixture), nil, nil, nil)
-	if _, ok := got["error"]; ok {
-		t.Errorf("error = %q, want none", got["error"])
+	if got.Error != "" {
+		t.Errorf("error = %q, want none", got.Error)
 	}
-	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 1, "total": 2}) {
-		t.Errorf("counts = %v, want active 1 of 2", got["counts"])
+	if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 1, Total: 2}) {
+		t.Errorf("counts = %v, want active 1 of 2", got.Counts)
 	}
-	if all := got["all_services"].([]ServiceEntry); len(all) != 2 {
+	if all := got.AllServices; len(all) != 2 {
 		t.Errorf("all_services = %v, want both services", all)
 	}
 }
@@ -107,13 +107,13 @@ func TestScServiceHealthTimedOut(t *testing.T) {
 		t.Errorf("execTimed returned after %s, the timeout did not stop the hung call", elapsed)
 	}
 	got := scServiceHealth(out, err, nil, nil)
-	if want := "sc query failed: timed out after 100ms"; got["error"] != want {
-		t.Errorf("error = %q, want %q", got["error"], want)
+	if want := "sc query failed: timed out after 100ms"; got.Error != want {
+		t.Errorf("error = %q, want %q", got.Error, want)
 	}
-	if c, ok := got["counts"]; ok {
+	if c := got.Counts; c != nil {
 		t.Errorf("counts = %v, want none without sc query", c)
 	}
-	if all := got["all_services"].([]ServiceEntry); len(all) != 0 {
+	if all := got.AllServices; len(all) != 0 {
 		t.Errorf("all_services = %v, want none", all)
 	}
 }
@@ -191,17 +191,17 @@ func TestScServiceHealthExitAndCrashes(t *testing.T) {
 		{"unit": "BadSvc", "active_state": "inactive", "enabled_state": "unknown", "exit": "win32=1053"},
 		{"unit": "wuauserv", "active_state": "active", "enabled_state": "unknown"},
 	}
-	if !reflect.DeepEqual(got["all_services"], want) {
-		t.Errorf("all_services = %v\nwant %v", got["all_services"], want)
+	if !reflect.DeepEqual(got.AllServices, want) {
+		t.Errorf("all_services = %v\nwant %v", got.AllServices, want)
 	}
 	if calls != 1 {
 		t.Errorf("crash events read %d times, want once", calls)
 	}
-	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-		t.Errorf("counts = %v, want active 2 of 7", got["counts"])
+	if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+		t.Errorf("counts = %v, want active 2 of 7", got.Counts)
 	}
 	// No new failed: a crashed Windows service stays inactive, as before.
-	if f := got["failed"].([]string); len(f) != 0 {
+	if f := got.Failed; len(f) != 0 {
 		t.Errorf("failed = %v, want none", f)
 	}
 }
@@ -219,7 +219,7 @@ func TestScServiceHealthReadsEventsOnlyForAnExit(t *testing.T) {
 			t.Errorf("%s: crash events read without a stopped service with an exit", name)
 			return nil, nil
 		}, nil)
-		for _, svc := range got["all_services"].([]ServiceEntry) {
+		for _, svc := range got.AllServices {
 			if svc["exit"] != "" || svc["result"] != "" {
 				t.Errorf("%s: %v carries exit or result", name, svc)
 			}
@@ -232,11 +232,11 @@ func TestScServiceHealthCrashEventsFail(t *testing.T) {
 	got := scServiceHealth([]byte(scExitFixture), nil, func() ([]byte, error) {
 		return []byte(scmEventXML("7031", "2026-11-12T10:00:00Z", "Print Spooler")), errors.New("exit status 5")
 	}, nil)
-	if _, ok := got["error"]; ok {
-		t.Errorf("error = %q, want none", got["error"])
+	if got.Error != "" {
+		t.Errorf("error = %q, want none", got.Error)
 	}
 	exits := 0
-	for _, svc := range got["all_services"].([]ServiceEntry) {
+	for _, svc := range got.AllServices {
 		if svc["result"] != "" || svc["since"] != "" {
 			t.Errorf("%v carries result or since without events", svc)
 		}
@@ -328,11 +328,11 @@ func TestScServiceHealthStartStates(t *testing.T) {
 	if !reflect.DeepEqual(asked, wantAsked) {
 		t.Errorf("start states asked for %v, want %v", asked, wantAsked)
 	}
-	if !reflect.DeepEqual(got["enabled_inactive"], []string{"AppMgmt", "Spooler", "W32Time"}) {
-		t.Errorf("enabled_inactive = %v, want [AppMgmt Spooler W32Time]", got["enabled_inactive"])
+	if !reflect.DeepEqual(got.EnabledInactive, []string{"AppMgmt", "Spooler", "W32Time"}) {
+		t.Errorf("enabled_inactive = %v, want [AppMgmt Spooler W32Time]", got.EnabledInactive)
 	}
 	states := map[string]string{}
-	for _, svc := range got["all_services"].([]ServiceEntry) {
+	for _, svc := range got.AllServices {
 		states[svc["unit"]] = svc["enabled_state"]
 	}
 	want := map[string]string{
@@ -347,10 +347,10 @@ func TestScServiceHealthStartStates(t *testing.T) {
 func TestScServiceHealthWithoutStartStates(t *testing.T) {
 	// Without start states every service stays "unknown" and enabled_inactive empty, as before.
 	got := scServiceHealth([]byte(scExitFixture), nil, func() ([]byte, error) { return nil, errors.New("no events") }, nil)
-	if ei := got["enabled_inactive"].([]string); len(ei) != 0 {
+	if ei := got.EnabledInactive; len(ei) != 0 {
 		t.Errorf("enabled_inactive = %v, want none", ei)
 	}
-	for _, svc := range got["all_services"].([]ServiceEntry) {
+	for _, svc := range got.AllServices {
 		if svc["enabled_state"] != "unknown" {
 			t.Errorf("%s enabled_state = %q, want unknown", svc["unit"], svc["enabled_state"])
 		}

@@ -19,7 +19,7 @@ const serviceLogsSupported = true
 const serviceLogUnitsListed = false
 
 // serviceLogUnits are the units whose error lines are sent: the failed ones (failedUnits).
-func serviceLogUnits(systemd map[string]any) ([]string, map[string]string) {
+func serviceLogUnits(systemd *ServiceHealth) ([]string, map[string]string) {
 	return failedUnits(systemd)
 }
 

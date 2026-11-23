@@ -86,22 +86,18 @@ func parseRCEnabled(out []byte) []rcScript {
 // stays empty: rc(8) keeps no failed state. A failed `service -e`, or a status call that did not
 // answer (it hung or was killed), sets error and leaves the counts out; after the latter no script is
 // asked further, since each such call waits pluginTimeout.
-func rcServiceHealth(ctx context.Context, run rcRun, readFile func(string) ([]byte, error)) map[string]any {
-	result := map[string]any{
-		"failed":           []string{},
-		"enabled_inactive": []string{},
-		"all_services":     []ServiceEntry{},
-	}
+func rcServiceHealth(ctx context.Context, run rcRun, readFile func(string) ([]byte, error)) *ServiceHealth {
+	result := &ServiceHealth{Failed: []string{}, EnabledInactive: []string{}, AllServices: []ServiceEntry{}}
 	out, err := run(ctx, "-e")
 	if err != nil {
-		result["error"] = "service -e failed: " + commandFailure("service", pluginTimeout, err)
+		result.Error = "service -e failed: " + commandFailure("service", pluginTimeout, err)
 		return result
 	}
 	services, enabledInactive := []ServiceEntry{}, []string{}
 	for _, s := range parseRCEnabled(out) {
 		out, err := run(ctx, s.name, "status")
 		if err != nil && !answered(err) {
-			result["error"] = "service " + s.name + " status failed: " +
+			result.Error = "service " + s.name + " status failed: " +
 				commandFailure("service", pluginTimeout, err)
 			break
 		}
@@ -117,10 +113,10 @@ func rcServiceHealth(ctx context.Context, run rcRun, readFile func(string) ([]by
 			enabledInactive = append(enabledInactive, s.name)
 		}
 	}
-	result["all_services"] = services
-	result["enabled_inactive"] = enabledInactive
-	if _, failed := result["error"]; !failed {
-		result["counts"] = serviceCounts(services)
+	result.AllServices = services
+	result.EnabledInactive = enabledInactive
+	if result.Error == "" {
+		result.Counts = serviceCounts(services)
 	}
 	return result
 }
@@ -128,17 +124,17 @@ func rcServiceHealth(ctx context.Context, run rcRun, readFile func(string) ([]by
 // rcWatchedServices asks `service <name> status` for each watched name, in the entry form of the other
 // platforms. A name service(8) would not take, an output parseRCStatus cannot read and a failed call
 // are not running; after a call that did not answer no name is asked further.
-func rcWatchedServices(ctx context.Context, run rcRun, names []string) []map[string]any {
-	services := make([]map[string]any, 0, len(names))
+func rcWatchedServices(ctx context.Context, run rcRun, names []string) []WatchedService {
+	services := make([]WatchedService, 0, len(names))
 	asking := true
 	for _, name := range names {
-		svc := map[string]any{"name": name, "running": false, "pid": nil}
+		svc := WatchedService{Name: name}
 		if asking && reRCScriptName.MatchString(name) {
 			out, err := run(ctx, name, "status")
 			if err == nil || answered(err) {
 				if state, pid, ok := parseRCStatus(out); ok && state == "active" {
-					svc["running"] = true
-					svc["pid"] = pid
+					svc.Running = true
+					svc.PID = &pid
 				}
 			} else {
 				asking = false

@@ -135,7 +135,7 @@ func TestWinServiceLogLinesKeepsTheServicesLastTenOldestFirstRedacted(t *testing
 }
 
 func TestWindowsLogUnitsAreStoppedAutomaticServicesWithAnExit(t *testing.T) {
-	block := map[string]any{"all_services": []ServiceEntry{
+	block := &ServiceHealth{AllServices: []ServiceEntry{
 		{"unit": "Spooler", "active_state": "inactive", "enabled_state": "enabled", "exit": "1067", "since": "2026-11-19T08:00:00Z"},
 		{"unit": "Stopped", "active_state": "inactive", "enabled_state": "enabled"},
 		{"unit": "Manual", "active_state": "inactive", "enabled_state": "manual", "exit": "1"},
@@ -149,7 +149,7 @@ func TestWindowsLogUnitsAreStoppedAutomaticServicesWithAnExit(t *testing.T) {
 	if !reflect.DeepEqual(since, map[string]string{"Spooler": "2026-11-19T08:00:00Z", "MSSQLSERVER": ""}) {
 		t.Errorf("since = %v", since)
 	}
-	if units, _ := windowsLogUnits(map[string]any{"error": "sc query failed"}); units == nil || len(units) != 0 {
+	if units, _ := windowsLogUnits(&ServiceHealth{Error: "sc query failed"}); units == nil || len(units) != 0 {
 		t.Errorf("block without services: units = %#v, want empty", units)
 	}
 }

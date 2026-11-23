@@ -219,8 +219,8 @@ func TestRCServiceHealthUnreadableScript(t *testing.T) {
 	// A file that cannot be read proves nothing: the inactive service stays a candidate.
 	run, _ := fakeService(t, rcHostAnswers(t))
 	got := rcServiceHealth(context.Background(), run, rcFiles(nil))
-	if want := []string{"newsyslog", "nginx"}; !reflect.DeepEqual(got["enabled_inactive"], want) {
-		t.Errorf("enabled_inactive = %v, want %v", got["enabled_inactive"], want)
+	if want := []string{"newsyslog", "nginx"}; !reflect.DeepEqual(got.EnabledInactive, want) {
+		t.Errorf("enabled_inactive = %v, want %v", got.EnabledInactive, want)
 	}
 }
 

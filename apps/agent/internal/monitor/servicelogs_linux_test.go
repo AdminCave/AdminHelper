@@ -28,18 +28,14 @@ import (
 // ("" leaves it out of failed_details); details false sends no failed_details at all.
 func stubFailedUnits(t *testing.T, failed *[]string, since map[string]string, details *bool) {
 	t.Helper()
-	serviceHealthCollector = func(context.Context) map[string]any {
-		health := map[string]any{"failed": append([]string{}, *failed...)}
+	serviceHealthCollector = func(context.Context) *ServiceHealth {
+		health := &ServiceHealth{Failed: append([]string{}, *failed...)}
 		if *details {
-			d := []map[string]string{}
+			d := []FailedDetail{}
 			for _, unit := range *failed {
-				entry := map[string]string{"unit": unit}
-				if since[unit] != "" {
-					entry["since"] = since[unit]
-				}
-				d = append(d, entry)
+				d = append(d, FailedDetail{Unit: unit, Since: since[unit]})
 			}
-			health["failed_details"] = d
+			health.FailedDetails = d
 		}
 		return health
 	}
@@ -65,9 +61,10 @@ func stubServiceLogReader(t *testing.T, broken map[string]bool) *[]string {
 
 func failedLogs(t *testing.T, report map[string]any) map[string]any {
 	t.Helper()
-	svc, _ := report["systemd"].(map[string]any)
-	logs, _ := svc["failed_logs"].(map[string]any)
-	return logs
+	if svc, _ := report["systemd"].(*ServiceHealth); svc != nil {
+		return svc.FailedLogs
+	}
+	return nil
 }
 
 func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
@@ -101,8 +98,8 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	}
 
 	// The failed units are the ones with lines: the block names no log_units (a Windows block does).
-	if svc, _ := run()["systemd"].(map[string]any); svc["log_units"] != nil {
-		t.Errorf("log_units = %#v, want none on Linux", svc["log_units"])
+	if svc, _ := run()["systemd"].(*ServiceHealth); svc.LogUnits != nil {
+		t.Errorf("log_units = %#v, want none on Linux", svc.LogUnits)
 	}
 
 	// Same failures: nothing read, nothing sent.

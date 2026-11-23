@@ -38,10 +38,10 @@ func TestWatchedServicesSkipAnInvalidName(t *testing.T) {
 		return []byte("Id=systemd-journald.service\nNames=systemd-journald.service\nActiveState=active\nMainPID=600\n"), nil
 	}
 	got := collectWatchedServices(context.Background(), []string{"my svc", "systemd-journald", "a/b"})
-	want := []map[string]any{
-		{"name": "my svc", "running": false, "pid": nil},
-		{"name": "systemd-journald", "running": true, "pid": "600"},
-		{"name": "a/b", "running": false, "pid": nil},
+	want := []WatchedService{
+		stoppedService("my svc"),
+		runningService("systemd-journald", "600"),
+		stoppedService("a/b"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("collectWatchedServices = %v, want %v", got, want)
@@ -53,7 +53,7 @@ func TestWatchedServicesSkipAnInvalidName(t *testing.T) {
 		t.Error("systemctl asked for invalid names only")
 		return nil, nil
 	}
-	if got := collectWatchedServices(context.Background(), []string{"--help"}); len(got) != 1 || got[0]["running"] != false {
+	if got := collectWatchedServices(context.Background(), []string{"--help"}); len(got) != 1 || got[0].Running {
 		t.Errorf("collectWatchedServices(--help) = %v", got)
 	}
 }

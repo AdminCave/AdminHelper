@@ -83,6 +83,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	next.CPU = cpuNow
 
 	// Service health (platform-specific)
+	var svc *ServiceHealth
 	m.core(ctx, "services", func(ctx context.Context) {
 		svcHealth := serviceHealthCollector(ctx)
 		if len(serviceNames) > 0 {
@@ -90,10 +91,11 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			// top-level "services" key: avoids double systemctl/sc subprocess spawns
 			// per cycle and two snapshots that could disagree if a service flips.
 			watched := collectWatchedServices(ctx, serviceNames)
-			svcHealth["watched"] = watched
+			svcHealth.Watched = watched
 			report["services"] = watched
 		}
 		report["systemd"] = svcHealth
+		svc = svcHealth
 	})
 
 	// The core always runs; what comes after it waits while the host is under load.
@@ -132,15 +134,15 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// names in log_units. The failures that ended are forgotten even in a run that reads no lines; with
 	// the switch off the state is empty, so lines go out anew once it is on again. Between two runs
 	// its throttle stays as it was.
-	if svc, _ := report["systemd"].(map[string]any); work != nil && work.serviceLogs && serviceLogsSupported && svc != nil {
+	if work != nil && work.serviceLogs && serviceLogsSupported && svc != nil {
 		failed, since := serviceLogUnits(svc)
 		if serviceLogUnitsListed {
-			svc["log_units"] = failed
+			svc.LogUnits = failed
 		}
 		next.ServiceLogs = stillFailed(prev.ServiceLogs, failed, since)
 		m.optional(ctx, serviceLogsCollector, func(ctx context.Context) {
 			if logs := collectServiceLogs(ctx, failed, since, next.ServiceLogs); len(logs) > 0 {
-				svc["failed_logs"] = logs
+				svc.FailedLogs = logs
 			}
 		})
 	} else {
@@ -349,14 +351,12 @@ var serviceLogReader = newServiceLogReader
 
 // failedUnits are the failed units of the systemd block in its order, and the since of each from
 // failed_details ("" for a unit without one).
-func failedUnits(systemd map[string]any) ([]string, map[string]string) {
-	failed, _ := systemd["failed"].([]string)
+func failedUnits(systemd *ServiceHealth) ([]string, map[string]string) {
 	since := map[string]string{}
-	details, _ := systemd["failed_details"].([]map[string]string)
-	for _, d := range details {
-		since[d["unit"]] = d["since"]
+	for _, d := range systemd.FailedDetails {
+		since[d.Unit] = d.Since
 	}
-	return failed, since
+	return systemd.Failed, since
 }
 
 // stillFailed is sent without the failures that ended: a unit no longer failed, or failed anew

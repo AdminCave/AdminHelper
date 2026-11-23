@@ -142,11 +142,10 @@ func winServiceLogLines(lines []winLogLine, byName map[string]string, unit strin
 // "enabled" ones that carry an exit (an automatic service that ended with an error code), in the
 // block's order, and the since of each from the SCM crash events ("" without one). The block lists
 // them as log_units, since a Windows block never has failed ones.
-func windowsLogUnits(systemd map[string]any) ([]string, map[string]string) {
+func windowsLogUnits(systemd *ServiceHealth) ([]string, map[string]string) {
 	units := []string{}
 	since := map[string]string{}
-	services, _ := systemd["all_services"].([]ServiceEntry)
-	for _, svc := range services {
+	for _, svc := range systemd.AllServices {
 		if svc["active_state"] != "inactive" || svc["enabled_state"] != "enabled" || svc["exit"] == "" {
 			continue
 		}

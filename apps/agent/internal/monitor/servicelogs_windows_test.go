@@ -22,8 +22,8 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 		{"unit": "Manual", "active_state": "inactive", "enabled_state": "manual", "exit": "1"},
 		{"unit": "W32Time", "active_state": "active", "enabled_state": "enabled"},
 	}
-	serviceHealthCollector = func(context.Context) map[string]any {
-		return map[string]any{"all_services": append([]ServiceEntry{}, services...)}
+	serviceHealthCollector = func(context.Context) *ServiceHealth {
+		return &ServiceHealth{AllServices: append([]ServiceEntry{}, services...)}
 	}
 	old := serviceLogReader
 	t.Cleanup(func() { serviceLogReader = old })
@@ -45,9 +45,9 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 	}
 
 	report := run()
-	svc, _ := report["systemd"].(map[string]any)
-	if !reflect.DeepEqual(svc["log_units"], []string{"Spooler"}) {
-		t.Fatalf("log_units = %#v, want [Spooler]", svc["log_units"])
+	svc, _ := report["systemd"].(*ServiceHealth)
+	if !reflect.DeepEqual(svc.LogUnits, []string{"Spooler"}) {
+		t.Fatalf("log_units = %#v, want [Spooler]", svc.LogUnits)
 	}
 	want := map[string]any{"Spooler": map[string]any{"since": "2026-11-19T08:00:00Z", "lines": []string{"error of Spooler"}}}
 	if logs := failedLogs(t, report); !reflect.DeepEqual(logs, want) {
@@ -56,8 +56,8 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 
 	// Same failure: log_units again, nothing read, nothing sent.
 	report = run()
-	if svc, _ := report["systemd"].(map[string]any); !reflect.DeepEqual(svc["log_units"], []string{"Spooler"}) {
-		t.Errorf("second run: log_units = %#v", svc["log_units"])
+	if svc, _ := report["systemd"].(*ServiceHealth); !reflect.DeepEqual(svc.LogUnits, []string{"Spooler"}) {
+		t.Errorf("second run: log_units = %#v", svc.LogUnits)
 	}
 	if logs := failedLogs(t, report); logs != nil || len(read) != 0 {
 		t.Fatalf("same failure: failed_logs %#v, read %v; want none", logs, read)
@@ -73,7 +73,8 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 // failedLogs is the failed_logs of the report's systemd block (as in servicelogs_linux_test.go).
 func failedLogs(t *testing.T, report map[string]any) map[string]any {
 	t.Helper()
-	svc, _ := report["systemd"].(map[string]any)
-	logs, _ := svc["failed_logs"].(map[string]any)
-	return logs
+	if svc, _ := report["systemd"].(*ServiceHealth); svc != nil {
+		return svc.FailedLogs
+	}
+	return nil
 }

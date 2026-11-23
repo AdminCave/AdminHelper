@@ -13,7 +13,7 @@ const serviceLogsSupported = false
 
 const serviceLogUnitsListed = false
 
-func serviceLogUnits(systemd map[string]any) ([]string, map[string]string) {
+func serviceLogUnits(systemd *ServiceHealth) ([]string, map[string]string) {
 	return failedUnits(systemd)
 }
 
