@@ -1,5 +1,5 @@
 # kern-events-1 — Server-Events nach dem Commit — Task-Ledger
-Status: bereit · Branch: feature/kern-events-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-events-1 · Review: pro Task
 Spec: docs/features/kern-events-1.md (Roadmap R-0689)
 Heavy: linux-full — Server-Handler aller CRUD-Routen (Events, Hooks, Benachrichtigungen) und Scheduler-Start
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
