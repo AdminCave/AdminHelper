@@ -1,0 +1,22 @@
+[
+  {
+    "name": "cron",
+    "pid": "812",
+    "running": true
+  },
+  {
+    "name": "sshd",
+    "pid": "905",
+    "running": true
+  },
+  {
+    "name": "nginx",
+    "pid": null,
+    "running": false
+  },
+  {
+    "name": "nosuch",
+    "pid": null,
+    "running": false
+  }
+]

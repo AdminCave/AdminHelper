@@ -1,0 +1,23 @@
+{
+  "failed": [
+    "a.service",
+    "b.service"
+  ],
+  "failed_details": [
+    {
+      "since": "2026-11-19T04:00:00Z",
+      "unit": "a.service"
+    },
+    {
+      "unit": "b.service"
+    }
+  ],
+  "failed_logs": {
+    "a.service": {
+      "lines": [
+        "error of a.service"
+      ],
+      "since": "2026-11-19T04:00:00Z"
+    }
+  }
+}

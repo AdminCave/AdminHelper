@@ -1,0 +1,19 @@
+[
+  {
+    "free_gb": 58,
+    "fstype": "ext4",
+    "inodes_percent": 12.3,
+    "mount": "/",
+    "percent": 42,
+    "total_gb": 100,
+    "used_gb": 42
+  },
+  {
+    "free_gb": 58,
+    "fstype": "NTFS",
+    "mount": "C:",
+    "percent": 42,
+    "total_gb": 100,
+    "used_gb": 42
+  }
+]

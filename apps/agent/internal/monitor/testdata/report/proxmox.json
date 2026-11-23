@@ -1,0 +1,98 @@
+{
+  "available": true,
+  "cluster_name": "testcluster",
+  "error": null,
+  "node": {
+    "cpu": 5,
+    "memory_percent": 25,
+    "name": "pve-golden"
+  },
+  "vms": [
+    {
+      "backup_jobs": [
+        {
+          "id": "backup-a",
+          "schedule": "daily",
+          "storage": "local"
+        },
+        {
+          "id": "backup-b",
+          "schedule": "sun 01:00",
+          "storage": "pbs"
+        },
+        {
+          "id": "backup-c",
+          "schedule": "hourly",
+          "storage": "pbs"
+        }
+      ],
+      "backup_size": 2147483648,
+      "backup_storage": "pbs",
+      "backup_verify": "ok",
+      "last_backup_ts": 1760086400,
+      "name": "web",
+      "status": "running",
+      "type": "qemu",
+      "vmid": 100
+    },
+    {
+      "backup_jobs": [
+        {
+          "id": "backup-a",
+          "schedule": "daily",
+          "storage": "local"
+        },
+        {
+          "id": "backup-d",
+          "schedule": "weekly",
+          "storage": "local"
+        }
+      ],
+      "backup_storage": "pbs",
+      "backup_verify": "failed",
+      "last_backup_ts": 1760000000,
+      "name": "dns",
+      "status": "running",
+      "type": "lxc",
+      "vmid": 101
+    },
+    {
+      "backup_error": "no space left on device",
+      "backup_error_ts": 1760073296,
+      "backup_jobs": [
+        {
+          "id": "backup-g",
+          "schedule": "02:30",
+          "storage": "pbs"
+        }
+      ],
+      "backup_storage": "local",
+      "last_backup_ts": 1760000000,
+      "name": "db",
+      "status": "stopped",
+      "type": "qemu",
+      "vmid": 102
+    },
+    {
+      "backup_jobs": [],
+      "last_backup_ts": null,
+      "name": "ci",
+      "status": "stopped",
+      "type": "qemu",
+      "vmid": 103
+    },
+    {
+      "backup_jobs": [
+        {
+          "schedule": "daily",
+          "storage": "local"
+        }
+      ],
+      "last_backup_ts": null,
+      "name": "mail",
+      "status": "running",
+      "type": "qemu",
+      "vmid": 104
+    }
+  ]
+}

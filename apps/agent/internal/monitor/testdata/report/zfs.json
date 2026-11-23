@@ -1,0 +1,28 @@
+{
+  "available": true,
+  "error": null,
+  "pools": [
+    {
+      "allocated": "64.3M",
+      "capacity_percent": 26,
+      "fragmentation_percent": 15,
+      "free": "176M",
+      "health": "ONLINE",
+      "name": "probe",
+      "scrub": {
+        "end": 1794483164,
+        "errors": 0,
+        "state": "FINISHED"
+      },
+      "size": "240M",
+      "vdev_errors": [
+        {
+          "checksum": 380,
+          "name": "/var/tmp/ahprobe/a",
+          "read": 0,
+          "write": 0
+        }
+      ]
+    }
+  ]
+}

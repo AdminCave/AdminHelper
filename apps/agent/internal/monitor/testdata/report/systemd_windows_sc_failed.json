@@ -1,0 +1,6 @@
+{
+  "all_services": [],
+  "enabled_inactive": [],
+  "error": "sc query failed: sc did not start",
+  "failed": []
+}

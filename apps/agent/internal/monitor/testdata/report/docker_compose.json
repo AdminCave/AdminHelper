@@ -1,0 +1,53 @@
+{
+  "available": true,
+  "containers": [
+    {
+      "exit_code": 0,
+      "health": "",
+      "id": "10cc445f4945",
+      "image": "nginx:1.30.6-alpine",
+      "name": "ah-t3-created",
+      "oom_killed": false,
+      "restart_count": 0,
+      "restart_policy": "no",
+      "state": "created",
+      "status": "Created"
+    },
+    {
+      "compose_project": "demo",
+      "compose_service": "db",
+      "exit_code": 0,
+      "health": "",
+      "id": "84aeb0e7cb3d",
+      "image": "nginx:1.30.6-alpine",
+      "name": "ah-t3-db",
+      "oom_killed": false,
+      "restart_count": 0,
+      "restart_policy": "no",
+      "started_at": 1794481006,
+      "state": "running",
+      "status": "Up Less than a second"
+    },
+    {
+      "compose_project": "demo",
+      "compose_service": "web",
+      "exit_code": 0,
+      "health": "",
+      "id": "9a8eff593ad7",
+      "image": "nginx:1.30.6-alpine",
+      "name": "ah-t3-web",
+      "oom_killed": false,
+      "ports": [
+        "127.0.0.1:18053-\u003e53/udp",
+        "127.0.0.1:18080-\u003e80/tcp",
+        "[::1]:18080-\u003e80/tcp"
+      ],
+      "restart_count": 0,
+      "restart_policy": "no",
+      "started_at": 1794481004,
+      "state": "running",
+      "status": "Up 2 seconds"
+    }
+  ],
+  "error": null
+}

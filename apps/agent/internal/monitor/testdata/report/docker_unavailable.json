@@ -1,0 +1,6 @@
+{
+  "available": false,
+  "containers": [],
+  "error": "daemon_unreachable",
+  "error_message": "docker info failed: docker did not start"
+}

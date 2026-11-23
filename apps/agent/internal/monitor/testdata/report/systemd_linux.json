@@ -1,0 +1,108 @@
+{
+  "all_services": [
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "exit": "status=0",
+      "restarts": "0",
+      "result": "success",
+      "since": "2026-11-27T11:51:52Z",
+      "sub_state": "dead",
+      "unit": "anacron.service"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "exit": "signal=SIGTERM",
+      "restarts": "0",
+      "result": "success",
+      "since": "2026-11-27T08:45:25Z",
+      "sub_state": "dead",
+      "unit": "cron.service"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "exit": "status=0",
+      "restarts": "0",
+      "result": "success",
+      "since": "2026-11-12T09:08:45Z",
+      "sub_state": "dead",
+      "unit": "e2scrub_reap.service"
+    },
+    {
+      "active_state": "unknown",
+      "enabled_state": "enabled",
+      "unit": "getty@.service"
+    },
+    {
+      "active_state": "active",
+      "enabled_state": "unknown",
+      "memory_bytes": "286720",
+      "restarts": "0",
+      "result": "success",
+      "since": "2026-11-12T09:08:48Z",
+      "sub_state": "running",
+      "unit": "getty@tty1.service"
+    },
+    {
+      "active_state": "unknown",
+      "alias_of": "smartmontools.service",
+      "enabled_state": "alias",
+      "unit": "smartd.service"
+    },
+    {
+      "active_state": "failed",
+      "enabled_state": "enabled",
+      "exit": "status=17",
+      "restarts": "0",
+      "result": "exit-code",
+      "since": "2026-11-12T09:08:51Z",
+      "sub_state": "failed",
+      "unit": "smartmontools.service"
+    },
+    {
+      "active_state": "active",
+      "enabled_state": "enabled",
+      "memory_bytes": "6258688",
+      "restarts": "2",
+      "result": "success",
+      "since": "2026-11-12T09:08:48Z",
+      "sub_state": "running",
+      "unit": "ssh.service"
+    },
+    {
+      "active_state": "unknown",
+      "alias_of": "ssh.service",
+      "enabled_state": "alias",
+      "unit": "sshd.service"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "restarts": "0",
+      "result": "success",
+      "sub_state": "dead",
+      "unit": "systemd-pstore.service"
+    }
+  ],
+  "counts": {
+    "active": 2,
+    "total": 7
+  },
+  "enabled_inactive": [
+    "cron.service"
+  ],
+  "failed": [
+    "smartmontools.service"
+  ],
+  "failed_details": [
+    {
+      "exit": "status=17",
+      "restarts": "0",
+      "result": "exit-code",
+      "since": "2026-11-12T09:08:51Z",
+      "unit": "smartmontools.service"
+    }
+  ]
+}
