@@ -1,5 +1,5 @@
 # kern-server-11 — Ein Weg für neue Benutzer, FRP-Startprüfungen aus main.py — Task-Ledger
-Status: bereit · Branch: feature/kern-server-11 · Review: pro Task
+Status: erledigt · Branch: feature/kern-server-11 · Review: pro Task
 Spec: docs/features/kern-server-11.md (Roadmap R-0690)
 Heavy: linux-full — Server-API (Bootstrap, Benutzer anlegen) und der Start des Servers (frps.toml)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
