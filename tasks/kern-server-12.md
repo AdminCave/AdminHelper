@@ -1,5 +1,5 @@
 # kern-server-12 — Ein Monitoring-Client im Server, Internal-Key-Gate nach core — Task-Ledger
-Status: geplant · Branch: feature/kern-server-12 · Review: pro Task
+Status: aktiv · Branch: feature/kern-server-12 · Review: pro Task
 Spec: docs/features/kern-server-12.md (Roadmap R-0691)
 Heavy: linux-full — Server-API (Server löschen, Provisioning, Internal-Ingress)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
