@@ -754,8 +754,8 @@ func TestReloadNotAfterAFailedRestart(t *testing.T) {
 	}
 	restart := restartService
 	restartService = func(context.Context) error { return errors.New("systemctl failed") }
-	if err := applyBundle(bundleToml); err != nil {
-		t.Fatalf("Apply with a failing restart: %v, want only a warning", err)
+	if err := applyBundle(bundleToml); !errors.Is(err, ErrServiceDeferred) {
+		t.Fatalf("Apply with a failing restart = %v, want ErrServiceDeferred", err)
 	}
 	restartService = restart
 

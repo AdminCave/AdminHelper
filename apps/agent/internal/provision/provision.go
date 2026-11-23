@@ -26,6 +26,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -189,6 +190,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 	// Apply stops frpc. Without a tunnel no frpc runs, also not one an earlier
 	// provisioning set up.
 	tunnels := 0
+	var deferred error // frpc.ErrServiceDeferred: frpc did not follow, Apply has warned
 	if resp.FRP != nil {
 		n, err := applyBundle(frpc.ApplyParams{
 			AdminHelperURL: adminHelperURL,
@@ -197,10 +199,10 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			FrpConfigB64:   resp.FRP.Config,
 			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
 		})
-		if err != nil {
+		if err != nil && !errors.Is(err, frpc.ErrServiceDeferred) {
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
 		}
-		tunnels = n
+		tunnels, deferred = n, err
 	} else {
 		if err := frpc.WriteSyncConfig(frpc.SyncConfigParams{
 			AdminHelperURL: adminHelperURL,
@@ -211,12 +213,21 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			return fmt.Errorf("write the FRP sync config: %w", err)
 		}
 		if err := applyWithoutBundle(); err != nil {
-			return fmt.Errorf("stop the frpc of an earlier provisioning: %w", err)
+			if !errors.Is(err, frpc.ErrServiceDeferred) {
+				return fmt.Errorf("stop the frpc of an earlier provisioning: %w", err)
+			}
+			deferred = err
 		}
 	}
 	// The result, not the intent (R-0443): without a tunnel Apply and applyWithoutBundle
-	// both leave frpc stopped.
+	// both leave frpc stopped, unless stopping it failed (R-1682).
 	switch {
+	case deferred != nil && tunnels == 1:
+		fmt.Println("→ FRP client configured (1 tunnel), but frpc did not start — the next agent run tries again.")
+	case deferred != nil && tunnels > 1:
+		fmt.Printf("→ FRP client configured (%d tunnels), but frpc did not start — the next agent run tries again.\n", tunnels)
+	case deferred != nil:
+		fmt.Println("→ No active FRP tunnel, but frpc did not stop — the next agent run tries again.")
 	case tunnels == 1:
 		fmt.Println("→ FRP client set up (1 tunnel).")
 	case tunnels > 1:
