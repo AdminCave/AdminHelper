@@ -22,10 +22,9 @@ _FIRE_EVENT = re.compile(r'fire_event\(\s*"([^"]+)"')
 _QUEUE_EVENT = re.compile(r'queue_event\(\s*\w+,\s*"([^"]+)"')
 _FIRE_EVENT_CALL = re.compile(r"\bfire_event\(")
 # Sources without a transaction of their own; everything else queues on its session, so
-# a rolled-back change fires nothing (R-0689). app/main.py leaves with server.startup.
+# a rolled-back change fires nothing (R-0689).
 _FIRE_EVENT_ALLOWED = {
     "core/events.py",
-    "main.py",
     "modules/notifications/router.py",
     "scheduler_main.py",
 }

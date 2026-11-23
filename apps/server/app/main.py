@@ -407,7 +407,7 @@ def _run_startup_tasks():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.config import REDIS_URL
-    from app.core.events import fire_event, shutdown_events
+    from app.core.events import shutdown_events
     from app.modules.monitoring_proxy import router as monitoring_proxy_mod
     from app.modules.notifications import stream_hub
 
@@ -436,7 +436,6 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "SSE fan-out not started (%s); push disabled, clients poll", type(exc).__name__
         )
-    fire_event("server.startup", {})
     yield
     policy_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

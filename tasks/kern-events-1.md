@@ -22,10 +22,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_events_after_co
 Doku: → T4
 Abhängt von: T1
 
-### T3 — R-0689: server.startup einmal, vom Scheduler  [ ]
+### T3 — R-0689: server.startup einmal, vom Scheduler  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/app/scheduler_main.py, apps/server/tests/test_scheduler_schema_gate.py, apps/server/tests/test_event_whitelist.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @cf8169ab7 2026-11-23T15:35:04+01:00
+Review: approve (.ah-out/review/kern-events-1/T3.verdict.json)
 Änderung: Der Lifespan feuert `server.startup` nicht mehr; `scheduler_main.main()` feuert es nach `scheduler.start()` und ruft beim Stopp `shutdown_events`. Test: `main()` mit gestubbtem Scheduler und Signal feuert genau ein `server.startup`; der Lifespan feuert keins.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_schema_gate.py tests/test_events_after_commit.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_schema_gate.py tests/test_events_after_commit.py tests/test_event_whitelist.py tests/test_bootstrap.py
 Doku: → T4
 Abhängt von: T1
 
