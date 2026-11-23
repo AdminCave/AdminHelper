@@ -275,7 +275,7 @@ func TestBuildReportCarriesProxmoxBackups(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var gotSaved *backupIndexCheck
 			var gotNow time.Time
-			pluginCollectors.proxmox = func(_ context.Context, s *backupIndexCheck, n time.Time) (map[string]any, *backupIndexCheck) {
+			pluginCollectors.proxmox = func(_ context.Context, s *backupIndexCheck, n time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 				gotSaved, gotNow = s, n
 				return nil, ret
 			}

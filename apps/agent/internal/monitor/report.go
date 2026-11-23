@@ -253,7 +253,7 @@ var pushRetryDelay = 10 * time.Second
 // docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
 var pluginCollectors = struct {
 	docker  func(context.Context) *DockerBlock
-	proxmox func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck)
+	proxmox func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck)
 	zfs     func(context.Context) map[string]any
 	smart   func(context.Context) ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}

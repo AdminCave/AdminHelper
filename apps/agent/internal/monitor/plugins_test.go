@@ -335,8 +335,9 @@ func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
 		return nil
 	}
 	proxmox := record("proxmox")
-	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
-		return proxmox(ctx), nil
+	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (*ProxmoxBlock, *backupIndexCheck) {
+		proxmox(ctx)
+		return nil, nil
 	}
 	pluginCollectors.zfs = record("zfs")
 
@@ -1090,7 +1091,7 @@ var errPveshExec = &exec.Error{Name: "/opt/some-path/pvesh", Err: exec.ErrNotFou
 
 // assertProxmoxUnavailable checks that block is the outage block with code and text as it goes on the
 // wire, and that the log (diagnose) names both.
-func assertProxmoxUnavailable(t *testing.T, block map[string]any, logs *bytes.Buffer, code, text string) {
+func assertProxmoxUnavailable(t *testing.T, block *ProxmoxBlock, logs *bytes.Buffer, code, text string) {
 	t.Helper()
 	got := dockerWire(t, block)
 	want := map[string]any{"available": false, "error": code, "error_message": text, "node": nil, "vms": []any{}}
@@ -1353,7 +1354,7 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 }
 
 // proxmoxBlock is collectProxmox's block for a report without a saved backup index.
-func proxmoxBlock(t *testing.T) map[string]any {
+func proxmoxBlock(t *testing.T) *ProxmoxBlock {
 	t.Helper()
 	block, _ := collectProxmox(context.Background(), nil, time.Now())
 	return block
@@ -1466,7 +1467,7 @@ func TestCollectProxmoxOutageKeepsSavedIndex(t *testing.T) {
 			})
 			captureWarnings(t)
 			block, check := collectProxmox(context.Background(), saved, now)
-			if block["available"] != false {
+			if block.Available {
 				t.Errorf("block = %v, want the outage", block)
 			}
 			if check != saved {

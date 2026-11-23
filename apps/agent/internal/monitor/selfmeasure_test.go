@@ -163,7 +163,7 @@ func TestBuildReportMeasuresEveryCollector(t *testing.T) {
 func TestBuildReportCountsTheCPUTimeOfTheToolsItWaitedFor(t *testing.T) {
 	stubReportHost(t)
 	t.Setenv(dockerHelperEnv, "spin")
-	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
+	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		if _, err := execTimed(ctx, time.Minute, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$"); err != nil {
 			t.Errorf("spinning helper: %v", err)
 		}

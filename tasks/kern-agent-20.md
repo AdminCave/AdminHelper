@@ -49,8 +49,10 @@ Review: approve (.ah-out/review/kern-agent-20/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T6 — R-0688: Proxmox-Block typisiert  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go
+### T6 — R-0688: Proxmox-Block typisiert  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/report_golden_linux_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/selfmeasure_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b85071317 2026-11-23T13:52:48+01:00
+Review: approve (.ah-out/review/kern-agent-20/T6.verdict.json)
 Änderung: `ProxmoxBlock` mit Gästen, Cluster und Backup-Details als Structs; `collectProxmox`, `proxmoxUnavailable`, `putBackupDetails` liefern bzw. füllen sie. Die Antworten von `pvesh` (`pveString`, `pveBool`, `vmidList`) bleiben lose, sie sind externe Eingabe.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9

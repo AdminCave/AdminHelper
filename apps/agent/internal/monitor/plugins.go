@@ -361,13 +361,56 @@ func pveshGet(ctx context.Context, out any, path string, args ...string) (code, 
 	return "", ""
 }
 
+// ProxmoxBlock is the proxmox block. VMs is never nil (the wire carries [] for none, also when
+// unavailable); Node is null and Error the code while unavailable, Error null while available.
+type ProxmoxBlock struct {
+	Available    bool           `json:"available"`
+	Error        *string        `json:"error"`
+	ErrorMessage string         `json:"error_message,omitempty"`
+	Node         *ProxmoxNode   `json:"node"`
+	VMs          []ProxmoxGuest `json:"vms"`
+	ClusterName  string         `json:"cluster_name,omitempty"`
+}
+
+// ProxmoxNode is the local node of the proxmox block, cpu and memory in percent.
+type ProxmoxNode struct {
+	Name          string  `json:"name"`
+	CPU           float64 `json:"cpu"`
+	MemoryPercent float64 `json:"memory_percent"`
+}
+
+// ProxmoxGuest is a VM or container of the proxmox block. Name, status and type are pvesh's strings,
+// null when it sends none; last_backup_ts is null without a backup. The backup details come only when
+// known (putBackupDetails): backup_jobs is [] when the jobs were read and none covers the guest, and
+// missing when they could not be read.
+type ProxmoxGuest struct {
+	VMID          int                `json:"vmid"`
+	Name          *string            `json:"name"`
+	Status        *string            `json:"status"`
+	Type          *string            `json:"type"`
+	LastBackupTS  *int64             `json:"last_backup_ts"`
+	BackupStorage string             `json:"backup_storage,omitempty"`
+	BackupSize    int64              `json:"backup_size,omitempty"`
+	BackupVerify  string             `json:"backup_verify,omitempty"`
+	BackupJobs    []ProxmoxBackupJob `json:"backup_jobs,omitzero"`
+	BackupError   *string            `json:"backup_error,omitempty"`
+	BackupErrorTS *int64             `json:"backup_error_ts,omitempty"`
+}
+
+// ProxmoxBackupJob is a backup job that covers a guest, each field only when the job names it.
+type ProxmoxBackupJob struct {
+	ID       string `json:"id,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	Storage  string `json:"storage,omitempty"`
+}
+
 // collectProxmox collects Proxmox metrics (Linux with pvesh only). No pvesh binary means Proxmox is
 // not installed and stays silent (nil). With the CLI present the block is always sent: an unreadable
 // hostname, or a node status, backup index or VM list that could not be read, is available=false
 // with an error code (proxmoxUnavailable), so the monitoring service can raise it instead of seeing
 // no data. saved is the backup index of the last report (buildBackupIndex); the second result is the
 // one to save, saved itself after an outage.
-func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time) (map[string]any, *backupIndexCheck) {
+func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 	if _, err := pveshCLI.lookPath("pvesh"); err != nil {
 		return nil, nil
 	}
@@ -386,10 +429,10 @@ func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time)
 	if total == 0 {
 		total = 1
 	}
-	node := map[string]any{
-		"name":           nodeName,
-		"cpu":            round1(getFloat(nd, "cpu", 0) * 100),
-		"memory_percent": round1(getFloat(memData, "used", 0) / total * 100),
+	node := &ProxmoxNode{
+		Name:          nodeName,
+		CPU:           round1(getFloat(nd, "cpu", 0) * 100),
+		MemoryPercent: round1(getFloat(memData, "used", 0) / total * 100),
 	}
 
 	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages)). Without
@@ -406,32 +449,22 @@ func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time)
 	if code, text = pveshGet(ctx, &vms, "/cluster/resources", "--type", "vm"); code != "" {
 		return proxmoxUnavailable(code, text), saved
 	}
-	vmList := make([]map[string]any, 0, len(vms))
+	vmList := make([]ProxmoxGuest, 0, len(vms))
 	for _, vm := range vms {
 		vmid := int(getFloat(vm, "vmid", 0))
 		if vmid == 0 {
 			continue
 		}
-		var lastBackup any
+		entry := ProxmoxGuest{VMID: vmid, Name: pveText(vm["name"]), Status: pveText(vm["status"]), Type: pveText(vm["type"])}
 		if ts, ok := backupIndex[vmid]; ok {
-			lastBackup = ts
-		}
-		entry := map[string]any{
-			"vmid":           vmid,
-			"name":           vm["name"],
-			"status":         vm["status"],
-			"type":           vm["type"],
-			"last_backup_ts": lastBackup,
+			entry.LastBackupTS = &ts
 		}
 		guestNode, _ := vm["node"].(string)
 		pool, _ := vm["pool"].(string)
-		check.putBackupDetails(entry, vmid, guestNode, pool)
+		check.putBackupDetails(&entry, vmid, guestNode, pool)
 		vmList = append(vmList, entry)
 	}
-	block := map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}
-	if name := corosyncClusterName(pveshCLI.corosyncConf); name != "" {
-		block["cluster_name"] = name
-	}
+	block := &ProxmoxBlock{Available: true, Node: node, VMs: vmList, ClusterName: corosyncClusterName(pveshCLI.corosyncConf)}
 	return block, check
 }
 
@@ -476,15 +509,9 @@ func corosyncClusterName(path string) string {
 // the monitoring service evaluates (timeout | cli_failed | parse_failed | backup_index_incomplete),
 // text names the call and its exit status or the inactive storage — never stderr or a file path (as
 // dockerUnavailable).
-func proxmoxUnavailable(code, text string) map[string]any {
+func proxmoxUnavailable(code, text string) *ProxmoxBlock {
 	logger.Warnf("%s, proxmox reported as unavailable (%s)", text, code)
-	return map[string]any{
-		"available":     false,
-		"error":         code,
-		"error_message": text,
-		"node":          nil,
-		"vms":           []map[string]any{},
-	}
+	return &ProxmoxBlock{Error: &code, ErrorMessage: text, VMs: []ProxmoxGuest{}}
 }
 
 // proxmoxBackupsEvery is how long a backup index read from the storages' content stays the index.
@@ -691,6 +718,15 @@ func pveString(v any) string {
 	return s
 }
 
+// pveText is v if it is a string, else nil: a guest field pvesh did not send goes out as null.
+func pveText(v any) *string {
+	s, ok := v.(string)
+	if !ok {
+		return nil
+	}
+	return &s
+}
+
 // pveBool reads a boolean of the PVE API, which pvesh prints as a number, a string or a JSON boolean
 // depending on where the value comes from; a string as PVE::JSONSchema parse_boolean reads it. A
 // missing or unreadable value is def.
@@ -758,35 +794,25 @@ func (job backupJob) covers(vmid int, node, pool string) bool {
 // known: storage, size and verification state of its newest backup; the jobs that cover it (an empty
 // list when the jobs were read and none does); the error of the last failed vzdump task, unless the
 // guest has a backup newer than that task's start.
-func (check *backupIndexCheck) putBackupDetails(entry map[string]any, vmid int, node, pool string) {
+func (check *backupIndexCheck) putBackupDetails(entry *ProxmoxGuest, vmid int, node, pool string) {
 	if d, ok := check.Newest[vmid]; ok {
-		entry["backup_storage"] = d.Storage
+		entry.BackupStorage = d.Storage
 		if d.Size > 0 {
-			entry["backup_size"] = d.Size
+			entry.BackupSize = d.Size
 		}
-		if d.Verify != "" {
-			entry["backup_verify"] = d.Verify
-		}
+		entry.BackupVerify = d.Verify
 	}
 	if check.Jobs != nil {
-		jobs := []map[string]any{}
+		entry.BackupJobs = []ProxmoxBackupJob{}
 		for _, job := range check.Jobs {
-			if !job.covers(vmid, node, pool) {
-				continue
+			if job.covers(vmid, node, pool) {
+				entry.BackupJobs = append(entry.BackupJobs, ProxmoxBackupJob{ID: job.ID, Schedule: job.Schedule, Storage: job.Storage})
 			}
-			wire := map[string]any{}
-			for key, value := range map[string]string{"id": job.ID, "schedule": job.Schedule, "storage": job.Storage} {
-				if value != "" {
-					wire[key] = value
-				}
-			}
-			jobs = append(jobs, wire)
 		}
-		entry["backup_jobs"] = jobs
 	}
 	if e, ok := check.Errors[vmid]; ok && e.Unix >= check.Index[vmid] {
-		entry["backup_error"] = e.Text
-		entry["backup_error_ts"] = e.Unix
+		entry.BackupError = &e.Text
+		entry.BackupErrorTS = &e.Unix
 	}
 }
 

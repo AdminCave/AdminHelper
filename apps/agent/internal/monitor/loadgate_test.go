@@ -183,9 +183,9 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 	}
 	plugins := 0
 	pluginCollectors.docker = func(context.Context) *DockerBlock { plugins++; return &DockerBlock{Available: true} }
-	pluginCollectors.proxmox = func(_ context.Context, b *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
+	pluginCollectors.proxmox = func(_ context.Context, b *backupIndexCheck, _ time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		plugins++
-		return map[string]any{"node": "n"}, b
+		return &ProxmoxBlock{}, b
 	}
 	pluginCollectors.zfs = func(context.Context) map[string]any { plugins++; return map[string]any{"pools": []any{}} }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { plugins++; return nil, "not_installed" }
