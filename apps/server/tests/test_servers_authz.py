@@ -56,28 +56,25 @@ def test_unauthenticated_cannot_list_servers(test_client, db_session):
 
 
 def test_server_deleted_event_fires_after_commit(test_client, db_session, admin_user, monkeypatch):
-    """2.48: server.deleted must fire only AFTER the delete commits — a rolled-back
-    delete must not tell admins "server removed" for a still-existing server. The
-    spy asserts the row is already gone at fire time (i.e. the commit ran first)."""
-    from app.modules.servers import router as servers_router
+    """2.48: server.deleted fires once the delete commits — a rolled-back delete must not
+    tell admins "server removed" for a still-existing server. The route queues the event on
+    its session; the dispatch after the commit is app.core.events' (test_events_after_commit)."""
+    from app.core import events
     from app.modules.servers.models import Server
 
     headers = _auth(_login(test_client, "admin", "adminpass"))
     server_id = test_client.post("/api/servers", json=SERVER, headers=headers).json()["id"]
 
-    seen = {}
-
-    def spy_fire(event, data):
-        seen["event"] = event
-        seen["row_gone"] = db_session.query(Server).filter(Server.id == data["id"]).first() is None
-
-    monkeypatch.setattr(servers_router, "fire_event", spy_fire)
+    fired = []
+    # No SQL here: the dispatch runs in after_commit of the request's session.
+    monkeypatch.setattr(events, "fire_event", lambda event, data: fired.append((event, data)))
 
     r = test_client.delete(f"/api/servers/{server_id}", headers=headers)
 
     assert r.status_code == 204, r.text
-    assert seen["event"] == "server.deleted"
-    assert seen["row_gone"] is True  # fired after the commit, not before it
+    assert [e for e, _ in fired] == ["server.deleted"]
+    assert fired[0][1]["id"] == server_id
+    assert db_session.query(Server).filter(Server.id == server_id).first() is None
 
 
 def test_server_delete_logs_monitoring_cleanup_http_error(

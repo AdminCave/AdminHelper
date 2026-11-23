@@ -60,7 +60,7 @@ def _create_config(db, monkeypatch, **fields):
     from app.modules.frp.schemas import FrpServerConfigCreate
 
     monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
-    monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
+    monkeypatch.setattr(cr, "queue_event", lambda *a, **k: None)
     data = FrpServerConfigCreate(name="n", server_addr="a.example", **fields)
     cr.create_server_config(data=data, request=SimpleNamespace(state=SimpleNamespace()), db=db)
     return db.query(FrpServerConfig).one()
@@ -87,7 +87,7 @@ def _update_config(db, monkeypatch, config_id, **fields):
     from app.modules.frp.schemas import FrpServerConfigUpdate
 
     monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
-    monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
+    monkeypatch.setattr(cr, "queue_event", lambda *a, **k: None)
     data = FrpServerConfigUpdate(**fields)
     cr.update_server_config(
         config_id=config_id, data=data, request=SimpleNamespace(state=SimpleNamespace()), db=db
@@ -122,7 +122,7 @@ def test_update_response_masks_secrets(db_session, monkeypatch):
     from app.modules.frp.schemas import FrpServerConfigUpdate
 
     monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
-    monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
+    monkeypatch.setattr(cr, "queue_event", lambda *a, **k: None)
     cfg = _create_config(db_session, monkeypatch, dashboard_port=7500, dashboard_user="admin")
     result = cr.update_server_config(
         config_id=cfg.id,
@@ -149,7 +149,7 @@ def test_create_survives_frps_write_failure(db_session, monkeypatch):
         raise OSError("read-only file system")
 
     monkeypatch.setattr(cr, "write_frps_config", _boom)
-    monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
+    monkeypatch.setattr(cr, "queue_event", lambda *a, **k: None)
     data = FrpServerConfigCreate(name="n", server_addr="a.example")
     # Must NOT raise despite the write failure...
     cr.create_server_config(

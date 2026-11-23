@@ -5,6 +5,7 @@
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
+from app.core import events  # noqa: F401  registers the session listeners of queue_event
 from app.core.config import DATABASE_URL, DB_MAX_OVERFLOW, DB_POOL_SIZE
 
 # Postgres pool, per process. Single-worker default (10+20) is realistically

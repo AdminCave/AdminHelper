@@ -18,7 +18,7 @@ from app.core.auth import get_current_admin
 from app.core.bounds import Offset
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
 from app.core.database import get_db
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.identity import SCOPE_AGENT
 from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
@@ -156,9 +156,12 @@ def create_server(
         notes=data.notes or "",
     )
     db.add(server)
+    db.flush()
+    queue_event(
+        db, "server.created", {"id": server.id, "name": server.name, "hostname": server.address}
+    )
     db.commit()
     db.refresh(server)
-    fire_event("server.created", {"id": server.id, "name": server.name, "hostname": server.address})
     audit.record(
         db,
         "server.created",
@@ -222,9 +225,9 @@ def update_server(
     server.hostname = stored_hostname(server.name, hostname)
     if "tags" in sent:
         server.tags = json.dumps(data.tags) if data.tags else None
+    queue_event(db, "server.updated", {"id": server.id, "name": server.name})
     db.commit()
     db.refresh(server)
-    fire_event("server.updated", {"id": server.id, "name": server.name})
     audit.record(
         db,
         "server.updated",
@@ -294,11 +297,9 @@ def delete_server(
     # the ca-issuer stops renewing its cert and the data plane rejects it (F1).
     revoke_identity(db, server.id, SCOPE_AGENT)
     db.delete(server)
+    queue_event(db, "server.deleted", {"id": server_id, "name": server_name})
     db.commit()
     sync_policy(db)
-    # Fire only after the commit succeeds — a rolled-back delete must not tell all
-    # admins "server removed" for a server that still exists (2.48).
-    fire_event("server.deleted", {"id": server_id, "name": server_name})
     audit.record(
         db,
         "server.deleted",

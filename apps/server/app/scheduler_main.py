@@ -69,6 +69,7 @@ def main() -> None:
     # only its own modules, and a relationship to a model none of them reached fails
     # the mapper configuration, so the job does too (R-0411).
     from app import model_registry  # noqa: F401
+    from app.core.events import fire_event, shutdown_events
     from app.modules.hooks.scheduler import (
         reconcile_scheduled_hooks,
         schedule_audit_cleanup,
@@ -102,6 +103,9 @@ def main() -> None:
     reconcile_scheduled_hooks()  # initial sync of scheduled hooks
     scheduler.start()
     logger.info("Scheduler-Prozess gestartet (System-Jobs + Hook-Reconcile)")
+    # The scheduler runs as exactly one process, the web service as WEB_CONCURRENCY workers:
+    # here server.startup fires once per start (R-0689).
+    fire_event("server.startup", {})
 
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -110,6 +114,7 @@ def main() -> None:
 
     logger.info("Scheduler-Prozess faehrt herunter")
     scheduler.shutdown(wait=False)
+    shutdown_events()
 
 
 if __name__ == "__main__":
