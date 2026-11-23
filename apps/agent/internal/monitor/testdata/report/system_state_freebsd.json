@@ -1,0 +1,9 @@
+{
+  "reboot_required": true,
+  "security_packages": [
+    "FreeBSD",
+    "curl",
+    "openssl"
+  ],
+  "security_updates": 3
+}

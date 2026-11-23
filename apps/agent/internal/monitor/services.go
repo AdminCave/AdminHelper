@@ -20,20 +20,57 @@ import (
 // type here once instead of keeping three []map[string]string literals in sync.
 type ServiceEntry = map[string]string
 
+// ServiceHealth is the systemd block of the report, the same on every platform. omitzero keeps an
+// empty list and leaves out one never set (nil): the server tells "no units" from "not collected",
+// and a platform without a part (failed_details off Linux, counts after a failed call) sends no key.
+type ServiceHealth struct {
+	Failed          []string              `json:"failed,omitzero"`
+	EnabledInactive []string              `json:"enabled_inactive,omitzero"`
+	AllServices     []ServiceEntry        `json:"all_services,omitzero"`
+	Counts          *ServiceCounts        `json:"counts,omitempty"`
+	Error           string                `json:"error,omitempty"`
+	FailedDetails   []FailedDetail        `json:"failed_details,omitzero"`
+	Watched         []WatchedService      `json:"watched,omitzero"`
+	LogUnits        []string              `json:"log_units,omitzero"`
+	FailedLogs      map[string]ServiceLog `json:"failed_logs,omitempty"`
+}
+
+// ServiceCounts is the "x/y active" display of the loaded services (serviceCounts).
+type ServiceCounts struct {
+	Active int `json:"active"`
+	Total  int `json:"total"`
+}
+
+// FailedDetail is one failed unit with the reason fields of its facts (failedDetails).
+type FailedDetail struct {
+	Unit     string `json:"unit"`
+	Result   string `json:"result,omitempty"`
+	Exit     string `json:"exit,omitempty"`
+	Since    string `json:"since,omitempty"`
+	Restarts string `json:"restarts,omitempty"`
+}
+
+// WatchedService is the state of one watched service name; PID is null while it does not run.
+type WatchedService struct {
+	Name    string  `json:"name"`
+	Running bool    `json:"running"`
+	PID     *string `json:"pid"`
+}
+
 // serviceCounts sums up the loaded services for the "x/y active" display: active are the entries
 // whose active_state is "active", total all of them. Callers pass the loaded services only: on
 // Linux the units list-units reports as loaded (not its not-found and masked units, nor the
 // templates, aliases and unloaded unit files the inventory also lists), on Windows every service
 // sc query lists. No .service suffix filter: Linux lists service units only (--type=service), and
 // Windows service names carry no suffix.
-func serviceCounts(entries []ServiceEntry) map[string]int {
+func serviceCounts(entries []ServiceEntry) *ServiceCounts {
 	active := 0
 	for _, e := range entries {
 		if e["active_state"] == "active" {
 			active++
 		}
 	}
-	return map[string]int{"active": active, "total": len(entries)}
+	return &ServiceCounts{Active: active, Total: len(entries)}
 }
 
 // answered reports whether a failed call of a service tool (systemctl, service) still answered,

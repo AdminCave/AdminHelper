@@ -47,7 +47,7 @@ func TestFreebsdSystemStateNative(t *testing.T) {
 		t.Fatal("run on a host: a jail reports no reboot_required")
 	}
 	block, _ := collectSystemState(context.Background(), reportState{})
-	if _, ok := block["reboot_required"].(bool); !ok {
+	if block.RebootRequired == nil {
 		t.Fatalf("block = %v, want reboot_required", block)
 	}
 }

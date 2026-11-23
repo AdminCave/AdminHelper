@@ -1,0 +1,48 @@
+{
+  "smart": [
+    {
+      "available_spare_pct": 98,
+      "critical_warning": 1,
+      "device": "/dev/nvme0",
+      "kind": "NVMe",
+      "media_errors": 2,
+      "model": "Samsung SSD 980 1TB",
+      "pending_sectors": 0,
+      "percentage_used": 3,
+      "power_on_hours": 8760,
+      "protocol": "NVMe",
+      "reallocated_sectors": 0,
+      "reallocation_events": 0,
+      "reported_uncorrect": 0,
+      "serial": "S649NX0T123456",
+      "smart_passed": true,
+      "smartctl_status": 0,
+      "spin_retry_count": 0,
+      "temp_c": 41,
+      "udma_crc_errors": 0,
+      "uncorrectable": 0
+    },
+    {
+      "available_spare_pct": 0,
+      "critical_warning": 0,
+      "device": "/dev/sda",
+      "kind": "HDD",
+      "media_errors": 0,
+      "model": "WDC WD40EFRX-68N32N0",
+      "pending_sectors": 5,
+      "percentage_used": 0,
+      "power_on_hours": 21340,
+      "protocol": "ATA",
+      "reallocated_sectors": 3,
+      "reallocation_events": 2,
+      "reported_uncorrect": 4,
+      "serial": "WD-WCC7K2ABCDEF",
+      "smart_passed": true,
+      "smartctl_status": 0,
+      "spin_retry_count": 1,
+      "temp_c": 34,
+      "udma_crc_errors": 7,
+      "uncorrectable": 6
+    }
+  ]
+}

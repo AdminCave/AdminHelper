@@ -77,12 +77,12 @@ func capPackageName(name string) string {
 
 // putSecurityUpdates sets security_updates and, when it names any, security_packages in block from a
 // count that succeeded.
-func putSecurityUpdates(block map[string]any, check *updatesCheck) {
+func putSecurityUpdates(block *SystemState, check *updatesCheck) {
 	if check == nil || check.Security == nil {
 		return
 	}
-	block["security_updates"] = *check.Security
+	block.SecurityUpdates = check.Security
 	if len(check.Packages) > 0 {
-		block["security_packages"] = check.Packages
+		block.SecurityPackages = check.Packages
 	}
 }

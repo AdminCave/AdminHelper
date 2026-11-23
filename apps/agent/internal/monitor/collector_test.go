@@ -248,7 +248,8 @@ func TestResourcesInReport(t *testing.T) {
 		t.Run(c.goos, func(t *testing.T) {
 			stubReportHost(t)
 			stubResources(t, c.goos)
-			resources, ok := BuildReport(nil)["resources"].(map[string]any)
+			resources := BuildReport(nil).Resources
+			ok := resources != nil
 			if !ok {
 				t.Fatal("report has no resources")
 			}

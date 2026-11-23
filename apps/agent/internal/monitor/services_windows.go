@@ -24,7 +24,7 @@ var reWinServiceName = regexp.MustCompile(`^[A-Za-z0-9._$-]+$`)
 
 // collectServiceHealth collects Windows service status; ctx ends the sc call.
 // The format is compatible with the systemd format for the monitoring server.
-func collectServiceHealth(ctx context.Context) map[string]any {
+func collectServiceHealth(ctx context.Context) *ServiceHealth {
 	// The block is built in scServiceHealth (no build tag) so it is unit-tested on any platform —
 	// see scquery.go / scquery_test.go (6.20).
 	out, err := runWithTimeout(ctx, "sc", "query", "state=", "all")
@@ -78,10 +78,10 @@ func serviceHasTriggers(name string) bool {
 }
 
 // collectWatchedServices checks the status of specific Windows services; ctx ends every sc call.
-func collectWatchedServices(ctx context.Context, names []string) []map[string]any {
-	var services []map[string]any
+func collectWatchedServices(ctx context.Context, names []string) []WatchedService {
+	var services []WatchedService
 	for _, name := range names {
-		svc := map[string]any{"name": name, "running": false, "pid": nil}
+		svc := WatchedService{Name: name}
 		// Reject names that aren't plain service names rather than passing an
 		// option-looking string to sc (which has no `--`) — report not-running (3.44).
 		if !reWinServiceName.MatchString(name) {
@@ -92,7 +92,7 @@ func collectWatchedServices(ctx context.Context, names []string) []map[string]an
 		if err == nil {
 			output := string(out)
 			if strings.Contains(output, "RUNNING") {
-				svc["running"] = true
+				svc.Running = true
 				exOut, err := runWithTimeout(ctx, "sc", "queryex", name)
 				if err == nil {
 					for _, line := range strings.Split(string(exOut), "\n") {
@@ -101,7 +101,7 @@ func collectWatchedServices(ctx context.Context, names []string) []map[string]an
 							if len(parts) >= 3 {
 								pid := parts[len(parts)-1]
 								if pid != "0" {
-									svc["pid"] = pid
+									svc.PID = &pid
 								}
 							}
 						}

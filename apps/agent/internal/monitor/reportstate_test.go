@@ -275,7 +275,7 @@ func TestBuildReportCarriesProxmoxBackups(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var gotSaved *backupIndexCheck
 			var gotNow time.Time
-			pluginCollectors.proxmox = func(_ context.Context, s *backupIndexCheck, n time.Time) (map[string]any, *backupIndexCheck) {
+			pluginCollectors.proxmox = func(_ context.Context, s *backupIndexCheck, n time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 				gotSaved, gotNow = s, n
 				return nil, ret
 			}
@@ -335,7 +335,7 @@ func TestReportStateNotUsedByBuildReport(t *testing.T) {
 	s.times = cpuTimes(300, 1100)
 
 	report := BuildReport(nil)
-	if got := report["resources"].(map[string]any)["cpu_percent"]; got != sampledCPU || s.samples != 1 {
+	if got := report.Resources.CPUPercent; got != sampledCPU || s.samples != 1 {
 		t.Errorf("cpu_percent = %v after %d samples, want the 1s sample %v", got, s.samples, sampledCPU)
 	}
 	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {

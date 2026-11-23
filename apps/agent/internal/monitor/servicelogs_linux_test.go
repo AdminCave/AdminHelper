@@ -28,18 +28,14 @@ import (
 // ("" leaves it out of failed_details); details false sends no failed_details at all.
 func stubFailedUnits(t *testing.T, failed *[]string, since map[string]string, details *bool) {
 	t.Helper()
-	serviceHealthCollector = func(context.Context) map[string]any {
-		health := map[string]any{"failed": append([]string{}, *failed...)}
+	serviceHealthCollector = func(context.Context) *ServiceHealth {
+		health := &ServiceHealth{Failed: append([]string{}, *failed...)}
 		if *details {
-			d := []map[string]string{}
+			d := []FailedDetail{}
 			for _, unit := range *failed {
-				entry := map[string]string{"unit": unit}
-				if since[unit] != "" {
-					entry["since"] = since[unit]
-				}
-				d = append(d, entry)
+				d = append(d, FailedDetail{Unit: unit, Since: since[unit]})
 			}
-			health["failed_details"] = d
+			health.FailedDetails = d
 		}
 		return health
 	}
@@ -63,11 +59,13 @@ func stubServiceLogReader(t *testing.T, broken map[string]bool) *[]string {
 	return &read
 }
 
-func failedLogs(t *testing.T, report map[string]any) map[string]any {
+// failedLogs is the systemd.failed_logs block as the monitoring service decodes it.
+func failedLogs(t *testing.T, report *Report) map[string]any {
 	t.Helper()
-	svc, _ := report["systemd"].(map[string]any)
-	logs, _ := svc["failed_logs"].(map[string]any)
-	return logs
+	if report.Systemd == nil {
+		return nil
+	}
+	return dockerWire(t, report.Systemd.FailedLogs)
 }
 
 func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
@@ -79,10 +77,10 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	read := stubServiceLogReader(t, nil)
 	work := &probeWork{serviceLogs: true}
 	var state reportState
-	run := func() map[string]any {
+	run := func() *Report {
 		t.Helper()
 		*read = nil
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(context.Background(), nil, work, state, time.Now())
 		return report
 	}
@@ -90,8 +88,8 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	// First run: both failures go out with their since, oldest line first.
 	logs := failedLogs(t, run())
 	want := map[string]any{
-		"a.service": map[string]any{"since": since["a.service"], "lines": []string{"error of a.service"}},
-		"b.service": map[string]any{"since": since["b.service"], "lines": []string{"error of b.service"}},
+		"a.service": map[string]any{"since": since["a.service"], "lines": []any{"error of a.service"}},
+		"b.service": map[string]any{"since": since["b.service"], "lines": []any{"error of b.service"}},
 	}
 	if !reflect.DeepEqual(logs, want) {
 		t.Fatalf("failed_logs = %#v, want %#v", logs, want)
@@ -101,8 +99,8 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	}
 
 	// The failed units are the ones with lines: the block names no log_units (a Windows block does).
-	if svc, _ := run()["systemd"].(map[string]any); svc["log_units"] != nil {
-		t.Errorf("log_units = %#v, want none on Linux", svc["log_units"])
+	if svc := run().Systemd; svc.LogUnits != nil {
+		t.Errorf("log_units = %#v, want none on Linux", svc.LogUnits)
 	}
 
 	// Same failures: nothing read, nothing sent.
@@ -254,7 +252,7 @@ func TestBuildReportReadsNoErrorLinesUnderLoadOrThrottle(t *testing.T) {
 	sent := map[string]string{"a.service": "s1", "c.service": "s3"}
 
 	// Shed under load: nothing read, the failure that ended is forgotten all the same.
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading {
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading {
 		return loadReading{LoadPerCPU: ptr(3), MemAvailable: ptr(50)}
 	}
 	prev := reportState{ServiceLogs: sent, LoadShed: loadShed{Active: true, Since: time.Now().Add(-time.Hour).Unix()}}
@@ -267,7 +265,7 @@ func TestBuildReportReadsNoErrorLinesUnderLoadOrThrottle(t *testing.T) {
 	}
 
 	// Held back by its throttle: nothing read, b waits for a later run.
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading { return loadReading{} }
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading { return loadReading{} }
 	prev = reportState{ServiceLogs: sent, Throttle: map[string]throttle{serviceLogsCollector: {Factor: 2}}}
 	report, next = buildReportWithState(context.Background(), nil, work, prev, time.Now())
 	if logs := failedLogs(t, report); logs != nil || len(*read) != 0 {

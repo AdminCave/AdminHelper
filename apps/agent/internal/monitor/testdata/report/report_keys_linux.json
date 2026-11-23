@@ -1,0 +1,23 @@
+{
+  "report": [
+    "credentials",
+    "discovery",
+    "docker",
+    "host",
+    "probes",
+    "proxmox",
+    "report_version",
+    "resources",
+    "self",
+    "services",
+    "smart_absent",
+    "system_state",
+    "systemd",
+    "timestamp",
+    "uptime_seconds",
+    "zfs"
+  ],
+  "systemd": [
+    "watched"
+  ]
+}

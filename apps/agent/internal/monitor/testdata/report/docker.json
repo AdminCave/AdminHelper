@@ -1,0 +1,58 @@
+{
+  "available": true,
+  "containers": [
+    {
+      "exit_code": 1,
+      "health": "",
+      "id": "611889c0d0d7",
+      "image": "alpine:3.22",
+      "name": "ah-t1-restart3",
+      "oom_killed": false,
+      "restart_count": 3,
+      "restart_policy": "on-failure",
+      "started_at": 1792172471,
+      "state": "exited",
+      "status": "Exited (1) 7 seconds ago"
+    },
+    {
+      "exit_code": 137,
+      "health": "",
+      "id": "c1f596e07951",
+      "image": "alpine:3.22",
+      "name": "ah-t1-oom",
+      "oom_killed": true,
+      "restart_count": 0,
+      "restart_policy": "no",
+      "started_at": 1792172466,
+      "state": "exited",
+      "status": "Exited (137) 12 seconds ago"
+    },
+    {
+      "exit_code": 0,
+      "health": "unhealthy",
+      "id": "6ae4d13d53eb",
+      "image": "alpine:3.22",
+      "name": "ah-t1-unhealthy",
+      "oom_killed": false,
+      "restart_count": 0,
+      "restart_policy": "no",
+      "started_at": 1792172464,
+      "state": "running",
+      "status": "Up 13 seconds (unhealthy)"
+    },
+    {
+      "exit_code": 3,
+      "health": "",
+      "id": "a39b0754602d",
+      "image": "alpine:3.22",
+      "name": "ah-t1-exit3",
+      "oom_killed": false,
+      "restart_count": 0,
+      "restart_policy": "no",
+      "started_at": 1792172463,
+      "state": "exited",
+      "status": "Exited (3) 15 seconds ago"
+    }
+  ],
+  "error": null
+}

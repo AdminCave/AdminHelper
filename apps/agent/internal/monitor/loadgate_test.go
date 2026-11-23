@@ -78,29 +78,27 @@ func TestLoadReadingOverNamesTheReadingsAtTheirLimits(t *testing.T) {
 func TestLoadReadingOfReadsTheResourcesAndTheCPUWindow(t *testing.T) {
 	stubReportHost(t)
 	stubResources(t, "linux")
-	// The CPU count as collectSwapAndCPUCount reports it, so a change of its type breaks this test.
-	resources := collectSwapAndCPUCount()
-	resources["load_1m"] = 20.0
-	resources["memory_percent"] = 92.5
+	// The CPU count as collectSwapAndCPUCount reports it.
+	resources := &Resources{
+		SwapAndCPUs: collectSwapAndCPUCount(),
+		LoadAverage: &LoadAverage{Load1m: 20},
+		MemoryUsage: &MemoryUsage{MemoryPercent: 92.5},
+	}
 	prev := &cpuSample{Unix: 1_700_000_000, Total: 1000, Iowait: 50}
 	cur := &cpuSample{Unix: 1_700_000_300, Total: 1400, Iowait: 150}
 
 	r := loadReadingOf(resources, prev, cur)
 	if want := (loadReading{LoadPerCPU: ptr(2.5), Iowait: ptr(25), MemAvailable: ptr(7.5)}); !reflect.DeepEqual(r, want) {
-		t.Fatalf("reading = %v, want %v", r.values(), want.values())
+		t.Fatalf("reading = %v, want %v", wireValue(t, r), wireValue(t, want))
 	}
-	if got := (loadShed{}).block(r); !reflect.DeepEqual(got, map[string]any{
-		"active": false,
-		"over":   []string{"load", "iowait", "memory"},
-		"values": map[string]float64{"load_per_cpu": 2.5, "iowait_percent": 25, "mem_available_percent": 7.5},
-	}) {
-		t.Errorf("block = %#v", got)
+	if got := (loadShed{}).block(r); !reflect.DeepEqual(got, LoadShedBlock{Over: []string{"load", "iowait", "memory"}, Values: r}) {
+		t.Errorf("block = %v", wireValue(t, got))
 	}
 
 	// In a container the load is the host's: not read.
 	hostFactsCalls.virtualization = func() (string, string, error) { return "lxc", "guest", nil }
 	if r := loadReadingOf(resources, prev, cur); r.LoadPerCPU != nil || r.MemAvailable == nil {
-		t.Errorf("in a container: %v, want no load per CPU and the memory", r.values())
+		t.Errorf("in a container: %v, want no load per CPU and the memory", wireValue(t, r))
 	}
 	hostFactsCalls.virtualization = func() (string, string, error) { return "kvm", "guest", nil }
 	if r := loadReadingOf(resources, prev, cur); r.LoadPerCPU == nil {
@@ -108,16 +106,15 @@ func TestLoadReadingOfReadsTheResourcesAndTheCPUWindow(t *testing.T) {
 	}
 
 	// Windows sends no load and no CPU count; a missing value is not read.
-	if r := loadReadingOf(map[string]any{"memory_percent": 40.0}, nil, cur); r.LoadPerCPU != nil || r.Iowait != nil || *r.MemAvailable != 60 {
-		t.Errorf("without load, CPU count and a CPU window: %v, want the memory only", r.values())
+	windows := &Resources{MemoryUsage: &MemoryUsage{MemoryPercent: 40}}
+	if r := loadReadingOf(windows, nil, cur); r.LoadPerCPU != nil || r.Iowait != nil || *r.MemAvailable != 60 {
+		t.Errorf("without load, CPU count and a CPU window: %v, want the memory only", wireValue(t, r))
 	}
-	if r := loadReadingOf(map[string]any{"load_1m": 3.0}, prev, cur); r.LoadPerCPU != nil || r.MemAvailable != nil {
-		t.Errorf("without a CPU count and memory: %v, want neither load nor memory", r.values())
+	if r := loadReadingOf(&Resources{LoadAverage: &LoadAverage{Load1m: 3}}, prev, cur); r.LoadPerCPU != nil || r.MemAvailable != nil {
+		t.Errorf("without a CPU count and memory: %v, want neither load nor memory", wireValue(t, r))
 	}
-	if got := (loadShed{}).block(loadReading{}); !reflect.DeepEqual(got, map[string]any{
-		"active": false, "over": []string{}, "values": map[string]float64{},
-	}) {
-		t.Errorf("block of an empty reading = %#v", got)
+	if got := (loadShed{}).block(loadReading{}); !reflect.DeepEqual(got, LoadShedBlock{Over: []string{}}) {
+		t.Errorf("block of an empty reading = %v", wireValue(t, got))
 	}
 }
 
@@ -166,31 +163,27 @@ func TestCollectCPUSinceKeepsTheIowaitCounter(t *testing.T) {
 }
 
 // selfLoadShed is the report's self.load_shed block.
-func selfLoadShed(t *testing.T, report map[string]any) map[string]any {
+func selfLoadShed(t *testing.T, report *Report) LoadShedBlock {
 	t.Helper()
-	block, ok := report["self"].(map[string]any)["load_shed"].(map[string]any)
-	if !ok {
-		t.Fatalf("self.load_shed = %#v, want a block", report["self"].(map[string]any)["load_shed"])
-	}
-	return block
+	return report.Self.LoadShed
 }
 
 func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 	stubReportHost(t)
 	over := true
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading {
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading {
 		if over {
 			return loadReading{LoadPerCPU: ptr(3), MemAvailable: ptr(50)}
 		}
 		return loadReading{LoadPerCPU: ptr(0.5), MemAvailable: ptr(50)}
 	}
 	plugins := 0
-	pluginCollectors.docker = func(context.Context) map[string]any { plugins++; return map[string]any{"available": true} }
-	pluginCollectors.proxmox = func(_ context.Context, b *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
+	pluginCollectors.docker = func(context.Context) *DockerBlock { plugins++; return &DockerBlock{Available: true} }
+	pluginCollectors.proxmox = func(_ context.Context, b *backupIndexCheck, _ time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		plugins++
-		return map[string]any{"node": "n"}, b
+		return &ProxmoxBlock{}, b
 	}
-	pluginCollectors.zfs = func(context.Context) map[string]any { plugins++; return map[string]any{"pools": []any{}} }
+	pluginCollectors.zfs = func(context.Context) *ZFSBlock { plugins++; return &ZFSBlock{Pools: []ZPool{}} }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { plugins++; return nil, "not_installed" }
 	probeCalls := stubRunProbe(t, okResult)
 	discoveries := stubDiscovery(t, discovery.Inventory{})
@@ -202,18 +195,18 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 
 	base := time.Now().Add(-time.Hour)
 	var state reportState
-	run := func(i int) map[string]any {
+	run := func(i int) *Report {
 		t.Helper()
 		// The probe is due in every run.
 		if res, ok := state.Probes["p"]; ok {
 			res.TS = time.Now().Add(-time.Hour).Unix()
 			state.Probes["p"] = res
 		}
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(context.Background(), nil, work, state, base.Add(time.Duration(i)*5*time.Minute))
 		return report
 	}
-	measuredAll := func(i int, report map[string]any, want int) {
+	measuredAll := func(i int, report *Report, want int) {
 		t.Helper()
 		if plugins != 4*want || len(*probeCalls) != want || len(*discoveries) != want {
 			t.Fatalf("run %d: %d plugin calls, %d probes, %d discoveries; want every one run %d times", i, plugins, len(*probeCalls), len(*discoveries), want)
@@ -228,8 +221,8 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 	// 1) Over the limits once: everything runs.
 	report := run(1)
 	measuredAll(1, report, 1)
-	if got := selfLoadShed(t, report); got["active"] != false || !reflect.DeepEqual(got["over"], []string{"load"}) {
-		t.Errorf("run 1: load_shed %v, want inactive and over load", got)
+	if got := selfLoadShed(t, report); got.Active || !reflect.DeepEqual(got.Over, []string{"load"}) {
+		t.Errorf("run 1: load_shed %v, want inactive and over load", wireValue(t, got))
 	}
 
 	// 2) Over the limits again: what follows the core waits.
@@ -249,15 +242,16 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 			t.Errorf("run 2: core %s stat %+v (present %v), want it measured", name, st, ok)
 		}
 	}
+	sent := reportWire(t, report)
 	for _, key := range []string{"docker", "proxmox", "zfs", "smart", "smart_absent", "discovery"} {
-		if v, ok := report[key]; ok {
+		if v, ok := sent[key]; ok {
 			t.Errorf("run 2: report %s = %v, want it left out", key, v)
 		}
 	}
-	if got := report["probes"].(probe.Results)["p"]; got.TS != before.Probes["p"].TS || got.Status != probe.StatusOK {
+	if got := report.Probes["p"]; got.TS != before.Probes["p"].TS || got.Status != probe.StatusOK {
 		t.Errorf("run 2: report probes p = %+v, want the stored result", got)
 	}
-	if _, ok := report["credentials"]; !ok {
+	if _, ok := sent["credentials"]; !ok {
 		t.Error("run 2: the credentials block is missing, want it sent as in every run")
 	}
 	if !reflect.DeepEqual(state.Throttle, before.Throttle) || !reflect.DeepEqual(state.Probes, before.Probes) {
@@ -267,15 +261,15 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 	if want := (loadShed{Active: true, Since: since.Unix()}); state.LoadShed != want {
 		t.Errorf("run 2: state %+v, want %+v", state.LoadShed, want)
 	}
-	if got := selfLoadShed(t, report); !reflect.DeepEqual(got, map[string]any{
-		"active": true,
-		"since":  since.UTC().Format("2006-01-02T15:04:05Z"),
-		"over":   []string{"load"},
-		"values": map[string]float64{"load_per_cpu": 3, "mem_available_percent": 50},
+	if got := selfLoadShed(t, report); !reflect.DeepEqual(got, LoadShedBlock{
+		Active: true,
+		Since:  since.UTC().Format("2006-01-02T15:04:05Z"),
+		Over:   []string{"load"},
+		Values: loadReading{LoadPerCPU: ptr(3), MemAvailable: ptr(50)},
 	}) {
-		t.Errorf("run 2: load_shed %#v", got)
+		t.Errorf("run 2: load_shed %v", wireValue(t, got))
 	}
-	wire, err := json.Marshal(report["self"])
+	wire, err := json.Marshal(report.Self)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,16 +291,16 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 		if plugins != 4 || len(*probeCalls) != 1 || len(*discoveries) != 1 {
 			t.Fatalf("run %d: something after the core ran, want it held back", i)
 		}
-		if got := selfLoadShed(t, report); got["active"] != true || !reflect.DeepEqual(got["over"], []string{}) {
-			t.Errorf("run %d: load_shed %v, want active and over nothing", i, got)
+		if got := selfLoadShed(t, report); !got.Active || !reflect.DeepEqual(got.Over, []string{}) {
+			t.Errorf("run %d: load_shed %v, want active and over nothing", i, wireValue(t, got))
 		}
 	}
 
 	// 4) The third run under the limits measures everything again.
 	report = run(5)
 	measuredAll(5, report, 2)
-	if got := selfLoadShed(t, report); got["active"] != false || got["since"] != nil {
-		t.Errorf("run 5: load_shed %v, want inactive without since", got)
+	if got := selfLoadShed(t, report); got.Active || got.Since != "" {
+		t.Errorf("run 5: load_shed %v, want inactive without since", wireValue(t, got))
 	}
 	if state.LoadShed != (loadShed{}) {
 		t.Errorf("run 5: state %+v, want none", state.LoadShed)
@@ -315,7 +309,7 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 
 func TestBuildReportShedsNoThrottleItHasNot(t *testing.T) {
 	stubReportHost(t)
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading {
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading {
 		return loadReading{MemAvailable: ptr(3)}
 	}
 	prev := reportState{
@@ -331,7 +325,7 @@ func TestBuildReportShedsNoThrottleItHasNot(t *testing.T) {
 	if !reflect.DeepEqual(next.Throttle, prev.Throttle) {
 		t.Errorf("throttle = %+v, want only docker's, unchanged", next.Throttle)
 	}
-	if got := selfLoadShed(t, report)["over"]; !reflect.DeepEqual(got, []string{"memory"}) {
+	if got := selfLoadShed(t, report).Over; !reflect.DeepEqual(got, []string{"memory"}) {
 		t.Errorf("over = %v, want memory", got)
 	}
 }
@@ -341,7 +335,7 @@ func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 	shortenRetryDelay(t)
 	stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading {
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading {
 		return loadReading{LoadPerCPU: ptr(5)}
 	}
 

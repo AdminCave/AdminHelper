@@ -1,0 +1,6 @@
+{
+  "available": false,
+  "error": "cli_failed",
+  "error_message": "zpool list failed: zpool did not start",
+  "pools": []
+}

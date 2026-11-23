@@ -22,16 +22,16 @@ func TestServiceHealthCounts(t *testing.T) {
 		{"unit": "broken.service", "active_state": "failed", "enabled_state": "enabled"},
 		{"unit": "slow.service", "active_state": "activating", "enabled_state": "enabled"},
 	}
-	if got := serviceCounts(linux); !reflect.DeepEqual(got, map[string]int{"active": 2, "total": 5}) {
+	if got := serviceCounts(linux); !reflect.DeepEqual(got, &ServiceCounts{Active: 2, Total: 5}) {
 		t.Errorf("linux counts = %v, want active 2 of 5", got)
 	}
 	// Windows service names carry no .service suffix (parseScQuery): they count all the same.
 	windows, _ := parseScQuery(scFixture)
-	if got := serviceCounts(windows); !reflect.DeepEqual(got, map[string]int{"active": 1, "total": 2}) {
+	if got := serviceCounts(windows); !reflect.DeepEqual(got, &ServiceCounts{Active: 1, Total: 2}) {
 		t.Errorf("windows counts = %v, want active 1 of 2", got)
 	}
 	// No inventory still yields both keys, so the server reads 0 of 0 rather than a missing count.
-	if got := serviceCounts(nil); !reflect.DeepEqual(got, map[string]int{"active": 0, "total": 0}) {
+	if got := serviceCounts(nil); !reflect.DeepEqual(got, &ServiceCounts{Active: 0, Total: 0}) {
 		t.Errorf("empty counts = %v, want active 0 of 0", got)
 	}
 }
@@ -61,3 +61,17 @@ func TestCommandFailure(t *testing.T) {
 		})
 	}
 }
+
+// watchedPID is the pid of a watched service as the wire carries it: nil while it does not run.
+func watchedPID(s WatchedService) any {
+	if s.PID == nil {
+		return nil
+	}
+	return *s.PID
+}
+
+func runningService(name, pid string) WatchedService {
+	return WatchedService{Name: name, Running: true, PID: &pid}
+}
+
+func stoppedService(name string) WatchedService { return WatchedService{Name: name} }

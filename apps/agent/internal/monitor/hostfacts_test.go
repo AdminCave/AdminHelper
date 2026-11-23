@@ -141,10 +141,10 @@ func TestBuildReportHost(t *testing.T) {
 	stubReportHost(t)
 	stubHostFacts(t, "docker")
 	report := BuildReport(nil)
-	if _, ok := report["docker"]; ok {
+	if report.Docker != nil {
 		t.Fatalf("docker block set, the stubbed collector returns none")
 	}
-	got := dockerWire(t, map[string]any{"host": report["host"]})
+	got := dockerWire(t, map[string]any{"host": report.Host})
 	want := map[string]any{"host": wantHostFacts(t, `"platform": "ubuntu", "platform_version": "24.04",
 		"virtualization": {"system": "kvm", "role": "guest"}, "subsystems": ["docker"]`)}
 	if !reflect.DeepEqual(got, want) {

@@ -70,23 +70,41 @@ const gopsutilNotImplemented = "not implemented yet"
 // platform and virtualization, and the subsystems whose binary is on the PATH. A failed part drops
 // only its own fields, never the block. The subsystems are looked up here rather than taken from the
 // plugin collectors, so a broken collector cannot hide them.
-func collectHostFacts() map[string]any {
-	facts := map[string]any{"os": runtime.GOOS}
+func collectHostFacts() HostFacts {
+	facts := HostFacts{OS: runtime.GOOS, Subsystems: []string{}}
 	if platform, _, version, err := hostFactsCalls.platform(); hostFactsPartOK("platform", err) {
-		facts["platform"] = platform
-		facts["platform_version"] = version
+		facts.HostPlatform = &HostPlatform{Platform: platform, PlatformVersion: version}
 	}
 	if system, role, err := hostFactsCalls.virtualization(); hostFactsPartOK("virtualization", err) {
-		facts["virtualization"] = map[string]string{"system": system, "role": role}
+		facts.Virtualization = &Virtualization{System: system, Role: role}
 	}
-	subsystems := []string{}
 	for _, s := range hostSubsystems {
 		if _, err := hostFactsCalls.lookPath(s.binary); err == nil {
-			subsystems = append(subsystems, s.name)
+			facts.Subsystems = append(facts.Subsystems, s.name)
 		}
 	}
-	facts["subsystems"] = subsystems
 	return facts
+}
+
+// HostFacts is the report's host block. A part gopsutil could not read is nil; one it does not
+// implement is there with empty values.
+type HostFacts struct {
+	OS string `json:"os"`
+	*HostPlatform
+	Virtualization *Virtualization `json:"virtualization,omitempty"`
+	Subsystems     []string        `json:"subsystems"`
+}
+
+// HostPlatform is the host block's platform and its version.
+type HostPlatform struct {
+	Platform        string `json:"platform"`
+	PlatformVersion string `json:"platform_version"`
+}
+
+// Virtualization is the host block's virtualization system and this host's role in it.
+type Virtualization struct {
+	System string `json:"system"`
+	Role   string `json:"role"`
 }
 
 // hostFactsPartOK reports whether a gopsutil part of the host facts succeeded and logs why not.

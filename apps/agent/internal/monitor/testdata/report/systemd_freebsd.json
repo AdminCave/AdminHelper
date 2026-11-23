@@ -1,0 +1,37 @@
+{
+  "all_services": [
+    {
+      "active_state": "active",
+      "enabled_state": "enabled",
+      "unit": "cron"
+    },
+    {
+      "active_state": "active",
+      "enabled_state": "enabled",
+      "unit": "devd"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "unit": "newsyslog"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "unit": "nginx"
+    },
+    {
+      "active_state": "active",
+      "enabled_state": "enabled",
+      "unit": "syslogd"
+    }
+  ],
+  "counts": {
+    "active": 3,
+    "total": 5
+  },
+  "enabled_inactive": [
+    "nginx"
+  ],
+  "failed": []
+}

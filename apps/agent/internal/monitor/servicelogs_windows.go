@@ -17,7 +17,7 @@ const serviceLogsSupported = true
 const serviceLogUnitsListed = true
 
 // serviceLogUnits are the services whose error lines are sent (windowsLogUnits).
-func serviceLogUnits(systemd map[string]any) ([]string, map[string]string) {
+func serviceLogUnits(systemd *ServiceHealth) ([]string, map[string]string) {
 	return windowsLogUnits(systemd)
 }
 

@@ -1,0 +1,7 @@
+{
+  "available": false,
+  "error": "node_status_failed",
+  "error_message": "exit status 1",
+  "node": null,
+  "vms": []
+}

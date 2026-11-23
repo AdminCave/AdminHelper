@@ -1,0 +1,14 @@
+{
+  "os": "linux",
+  "platform": "ubuntu",
+  "platform_version": "24.04",
+  "subsystems": [
+    "docker",
+    "zfs",
+    "proxmox"
+  ],
+  "virtualization": {
+    "role": "guest",
+    "system": "kvm"
+  }
+}

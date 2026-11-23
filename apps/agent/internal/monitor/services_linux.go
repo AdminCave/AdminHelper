@@ -21,7 +21,7 @@ import (
 
 // collectServiceHealth collects systemd service status (port of collect_systemd_health). ctx ends
 // every systemctl call.
-func collectServiceHealth(ctx context.Context) map[string]any {
+func collectServiceHealth(ctx context.Context) *ServiceHealth {
 	// 1) All service units with load state (col 1) and active_state (col 2 = UNIT LOAD ACTIVE SUB)
 	unitStates, loadStates := map[string]string{}, map[string]string{}
 	listUnits, unitsErr := runSystemctl(ctx, "list-units", "--type=service", "--all",
@@ -58,32 +58,32 @@ func collectServiceHealth(ctx context.Context) map[string]any {
 	// The failed/enabled_inactive/all_services derivation lives in assembleServiceHealth (pure) so
 	// it is unit-tested without running systemctl (6.19).
 	health := assembleServiceHealth(unitStates, enabledStates, failed)
-	health["enabled_inactive"] = filterEnabledInactive(ctx, health["enabled_inactive"].([]string))
-	resolveAliases(ctx, health["all_services"].([]ServiceEntry))
+	health.EnabledInactive = filterEnabledInactive(ctx, health.EnabledInactive)
+	resolveAliases(ctx, health.AllServices)
 	// Without list-units every active state is unknown and no unit is a candidate: counts would
 	// claim zero active units, and without the error the server would report "all OK".
 	if unitsErr != nil {
-		health["error"] = "systemctl list-units failed: " +
+		health.Error = "systemctl list-units failed: " +
 			commandFailure("systemctl", pluginTimeout, unitsErr)
 	} else {
 		// list-units --all also lists units without a unit file (not-found) and masked units that
 		// something still references; neither is a loaded service.
 		loaded := make([]ServiceEntry, 0, len(unitStates))
-		for _, e := range health["all_services"].([]ServiceEntry) {
+		for _, e := range health.AllServices {
 			_, listed := unitStates[e["unit"]]
 			if load := loadStates[e["unit"]]; listed && load != "not-found" && load != "masked" {
 				loaded = append(loaded, e)
 			}
 		}
-		health["counts"] = serviceCounts(loaded)
+		health.Counts = serviceCounts(loaded)
 		// Without the failed list a failed unit is unknown, and an empty list would read as all OK.
 		if failedErr != nil {
-			health["error"] = "systemctl list-units --state=failed: " +
+			health.Error = "systemctl list-units --state=failed: " +
 				commandFailure("systemctl", pluginTimeout, failedErr)
 		}
 		if facts, ok := queryServiceFacts(ctx, unitStates, failed); ok {
-			addServiceFacts(health["all_services"].([]ServiceEntry), facts)
-			health["failed_details"] = failedDetails(failed, facts)
+			addServiceFacts(health.AllServices, facts)
+			health.FailedDetails = failedDetails(failed, facts)
 		}
 	}
 	return health
@@ -200,16 +200,13 @@ func addServiceFacts(entries []ServiceEntry, facts map[string]ServiceEntry) {
 
 // failedDetails lists every failed unit with the reason fields of its facts (result, exit, since,
 // restarts), the base of the reason in the check text even when the inventory itself is throttled.
-func failedDetails(failed []string, facts map[string]ServiceEntry) []map[string]string {
-	details := make([]map[string]string, 0, len(failed))
+func failedDetails(failed []string, facts map[string]ServiceEntry) []FailedDetail {
+	details := make([]FailedDetail, 0, len(failed))
 	for _, unit := range failed {
-		d := map[string]string{"unit": unit}
-		for _, key := range []string{"result", "exit", "since", "restarts"} {
-			if v := facts[unit][key]; v != "" {
-				d[key] = v
-			}
-		}
-		details = append(details, d)
+		f := facts[unit]
+		details = append(details, FailedDetail{
+			Unit: unit, Result: f["result"], Exit: f["exit"], Since: f["since"], Restarts: f["restarts"],
+		})
 	}
 	return details
 }
@@ -250,7 +247,7 @@ func resolveAliases(ctx context.Context, entries []ServiceEntry) {
 // assembleServiceHealth derives the service-health report from the parsed unit states: all_services
 // is the union of both maps (missing side -> "unknown") sorted by unit, and enabled_inactive holds
 // the sorted candidates that are inactive yet enabled, before filterEnabledInactive re-checks them.
-func assembleServiceHealth(unitStates, enabledStates map[string]string, failed []string) map[string]any {
+func assembleServiceHealth(unitStates, enabledStates map[string]string, failed []string) *ServiceHealth {
 	allUnits := map[string]bool{}
 	for u := range unitStates {
 		allUnits[u] = true
@@ -289,11 +286,7 @@ func assembleServiceHealth(unitStates, enabledStates map[string]string, failed [
 	if failed == nil {
 		failed = []string{}
 	}
-	return map[string]any{
-		"failed":           failed,
-		"enabled_inactive": enabledInactive,
-		"all_services":     allServices,
-	}
+	return &ServiceHealth{Failed: failed, EnabledInactive: enabledInactive, AllServices: allServices}
 }
 
 // enabledInactiveProps are the properties filterEnabledInactive reads per candidate.
@@ -419,7 +412,7 @@ func parseSystemctlColumnsOutput(out string, col int) map[string]string {
 // collectWatchedServices checks the status of specific systemd services.
 // A name outside the systemd unit characters (reUnitName) is reported not running without asking: on
 // the batch, the allowlist would refuse the whole call, and every watched unit would pass for down.
-func collectWatchedServices(ctx context.Context, names []string) []map[string]any {
+func collectWatchedServices(ctx context.Context, names []string) []WatchedService {
 	if len(names) == 0 {
 		return nil
 	}
@@ -429,17 +422,17 @@ func collectWatchedServices(ctx context.Context, names []string) []map[string]an
 			valid = append(valid, name)
 		}
 	}
-	byName := map[string]map[string]any{}
+	byName := map[string]WatchedService{}
 	if len(valid) > 0 {
 		for _, svc := range queryWatchedServices(ctx, valid) {
-			byName[svc["name"].(string)] = svc
+			byName[svc.Name] = svc
 		}
 	}
-	services := make([]map[string]any, 0, len(names))
+	services := make([]WatchedService, 0, len(names))
 	for _, name := range names {
 		svc, ok := byName[name]
 		if !ok {
-			svc = map[string]any{"name": name, "running": false, "pid": nil}
+			svc = WatchedService{Name: name}
 		}
 		services = append(services, svc)
 	}
@@ -450,7 +443,7 @@ func collectWatchedServices(ctx context.Context, names []string) []map[string]an
 var reUnitName = regexp.MustCompile("^(?:" + argClasses["unit"] + ")$")
 
 // queryWatchedServices asks systemctl for the status of names, all valid unit names.
-func queryWatchedServices(ctx context.Context, names []string) []map[string]any {
+func queryWatchedServices(ctx context.Context, names []string) []WatchedService {
 	// One `systemctl show` for all watched units instead of is-active + show per unit — the 2N
 	// process spawns + D-Bus roundtrips per cycle become one (5.7). `--` terminates option parsing
 	// so a server-supplied name beginning with '-' is treated as an operand, not a systemctl flag
@@ -462,7 +455,7 @@ func queryWatchedServices(ctx context.Context, names []string) []map[string]any 
 	// One bad name (a template such as getty@.service) fails the whole batch: ask name by name, with
 	// the limits of filterEnabledInactive. A name whose query fails, or that is not asked, is
 	// reported not running, as every name was before.
-	services := make([]map[string]any, 0, len(names))
+	services := make([]WatchedService, 0, len(names))
 	asking := answered(err)
 	for i, name := range names {
 		if asking && i < maxSingleUnitChecks {
@@ -473,7 +466,7 @@ func queryWatchedServices(ctx context.Context, names []string) []map[string]any 
 			}
 			asking = answered(err)
 		}
-		services = append(services, map[string]any{"name": name, "running": false, "pid": nil})
+		services = append(services, WatchedService{Name: name})
 	}
 	return services
 }
@@ -484,19 +477,19 @@ const watchedProps = "Id,Names,ActiveState,MainPID"
 // parseWatchedServices maps each requested name to its status from the `systemctl show` blocks
 // (parseShowBlocks), so an alias (sshd -> ssh.service) finds its unit through Names, and a bare
 // "nginx" matches "nginx.service" too. A name with no block stays not-running.
-func parseWatchedServices(out []byte, names []string) []map[string]any {
+func parseWatchedServices(out []byte, names []string) []WatchedService {
 	byName := parseShowBlocks(out)
-	services := make([]map[string]any, 0, len(names))
+	services := make([]WatchedService, 0, len(names))
 	for _, name := range names {
-		svc := map[string]any{"name": name, "running": false, "pid": nil}
+		svc := WatchedService{Name: name}
 		props, ok := byName[name]
 		if !ok {
 			props, ok = byName[name+".service"]
 		}
 		if ok && props["ActiveState"] == "active" {
-			svc["running"] = true
+			svc.Running = true
 			if pid := props["MainPID"]; pid != "0" && pid != "" {
-				svc["pid"] = pid
+				svc.PID = &pid
 			}
 		}
 		services = append(services, svc)
