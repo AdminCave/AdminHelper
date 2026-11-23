@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import ApiKeyOrUser, get_current_admin
 from app.core.bounds import Offset
 from app.core.database import get_db
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.core.time import utcnow_naive
@@ -251,10 +251,11 @@ def create_connection(
     data["name"] = _stored_name(data.pop("label"), data.get("name"), server, connection.kind)
     conn = Connection.from_dict(data)
     db.add(conn)
-    db.commit()
+    db.flush()
     db.refresh(conn)
     result = conn.to_dict()
-    fire_event("connection.created", result)
+    queue_event(db, "connection.created", result)
+    db.commit()
     audit.record(
         db,
         "connection.created",
@@ -323,10 +324,11 @@ def update_connection(
             ]
         )
     conn.update_from_dict(data)
-    db.commit()
+    db.flush()
     db.refresh(conn)
     result = conn.to_dict()
-    fire_event("connection.updated", result)
+    queue_event(db, "connection.updated", result)
+    db.commit()
     audit.record(
         db,
         "connection.updated",
@@ -459,8 +461,8 @@ def delete_connection(
         )
     result = conn.to_dict()
     db.delete(conn)
+    queue_event(db, "connection.deleted", result)
     db.commit()
-    fire_event("connection.deleted", result)
     audit.record(
         db,
         "connection.deleted",
@@ -548,8 +550,8 @@ def import_connections(
         db.add(conn)
         imported.append(conn)
 
+    queue_event(db, "connections.imported", {"count": len(imported), "mode": req.mode})
     db.commit()
-    fire_event("connections.imported", {"count": len(imported), "mode": req.mode})
     audit.record(
         db,
         "connections.imported",

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.connections.models import Connection, own_text, shown_name
@@ -241,6 +241,11 @@ def create_tunnel(
         _reject_domain_conflict(db, tunnel)
         if data.auto_create_connection:
             _attach_auto_connection(db, tunnel, data)
+        queue_event(
+            db,
+            "frp.tunnel.created",
+            {"id": tunnel.id, "name": tunnel.display_name(), "serverId": server.id},
+        )
         db.commit()
     except IntegrityError:
         # Lost a race against a concurrent create on the same STCP visitor_port (the
@@ -250,10 +255,6 @@ def create_tunnel(
         raise HTTPException(status_code=409, detail="Visitor-Port ist bereits belegt")
     db.refresh(tunnel)
     sync_policy(db)
-    fire_event(
-        "frp.tunnel.created",
-        {"id": tunnel.id, "name": tunnel.display_name(), "serverId": server.id},
-    )
     audit.record(
         db,
         "frp.tunnel.created",
@@ -375,13 +376,13 @@ def update_tunnel(
             followed = (linked.id, linked.display_name())
         if data.auto_create_connection and not tunnel.connection_id:
             _attach_auto_connection(db, tunnel, data)
+        queue_event(db, "frp.tunnel.updated", {"id": tunnel.id, "name": tunnel.display_name()})
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Visitor-Port ist bereits belegt")
     db.refresh(tunnel)
     sync_policy(db)
-    fire_event("frp.tunnel.updated", {"id": tunnel.id, "name": tunnel.display_name()})
     audit.record(
         db,
         "frp.tunnel.updated",
@@ -415,11 +416,9 @@ def delete_tunnel(
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
     tunnel_name = tunnel.display_name()
     db.delete(tunnel)
+    queue_event(db, "frp.tunnel.deleted", {"id": tunnel_id, "name": tunnel_name})
     db.commit()
     sync_policy(db)
-    # Fire only after the commit succeeds — a rolled-back delete must not leave
-    # hooks/notifications having observed a deletion that never happened (2.48).
-    fire_event("frp.tunnel.deleted", {"id": tunnel_id, "name": tunnel_name})
     audit.record(
         db,
         "frp.tunnel.deleted",

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_admin
 from app.core.config import DATA_DIR
 from app.core.database import get_db
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.request_context import actor_from_request
 from app.modules.ansible.models import Playbook
 from app.modules.ansible.schemas import (
@@ -93,13 +93,13 @@ def create_playbook(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data.content, encoding="utf-8")
 
+    queue_event(db, "playbook.created", {"id": playbook.id, "name": playbook.name})
     try:
         db.commit()
     except Exception:
         shutil.rmtree(PLAYBOOKS_DIR / playbook_id, ignore_errors=True)
         raise
     db.refresh(playbook)
-    fire_event("playbook.created", {"id": playbook.id, "name": playbook.name})
     audit.record(
         db,
         "playbook.created",
@@ -182,9 +182,9 @@ def update_playbook(
         if old_path.exists():
             old_path.rename(new_path)
 
+    queue_event(db, "playbook.updated", {"id": playbook.id, "name": playbook.name})
     db.commit()
     db.refresh(playbook)
-    fire_event("playbook.updated", {"id": playbook.id, "name": playbook.name})
     audit.record(
         db,
         "playbook.updated",
@@ -210,6 +210,7 @@ def delete_playbook(
     pb_id, pb_name = playbook.id, playbook.name
 
     db.delete(playbook)
+    queue_event(db, "playbook.deleted", {"id": pb_id, "name": pb_name})
     db.commit()
 
     # Remove files only after the DB row is committed-deleted: a failed commit
@@ -217,7 +218,6 @@ def delete_playbook(
     playbook_dir = PLAYBOOKS_DIR / pb_id
     if playbook_dir.exists():
         shutil.rmtree(playbook_dir, ignore_errors=True)
-    fire_event("playbook.deleted", {"id": pb_id, "name": pb_name})
     audit.record(
         db,
         "playbook.deleted",

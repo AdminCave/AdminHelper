@@ -33,7 +33,7 @@ from typing import NoReturn
 from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import SessionLocal
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import Actor
 from app.core.time import utcnow_naive
@@ -75,11 +75,11 @@ def create_admin(db, username: str, password: str) -> int:
     # reach the very first admin on a fresh install.
     db.flush()
     db.add(default_admin_subscription(user.id))
+    queue_event(db, "user.created", {"id": user.id, "username": user.username, "is_admin": True})
+    # The event is not lost when the CLI exits right after the commit: concurrent.futures
+    # joins its worker threads at interpreter shutdown, so the hooks and the notification
+    # bridge still run before the process ends.
     db.commit()
-    # Not lost when the CLI exits right after: concurrent.futures registers a join
-    # of its worker threads at interpreter shutdown, so the hooks and the
-    # notification bridge still run before the process ends.
-    fire_event("user.created", {"id": user.id, "username": user.username, "is_admin": True})
     audit.record(
         db,
         "user.created",

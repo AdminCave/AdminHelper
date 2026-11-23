@@ -16,23 +16,46 @@ from pathlib import Path
 from app.modules.hooks.schemas import VALID_EVENTS
 
 _APP_DIR = Path(__file__).resolve().parent.parent / "app"
-# \s* spans newlines (Python regex), so multi-line fire_event( "..." ) calls count.
+# \s* spans newlines (Python regex), so multi-line calls count; queue_event's literal
+# follows its session argument.
 _FIRE_EVENT = re.compile(r'fire_event\(\s*"([^"]+)"')
+_QUEUE_EVENT = re.compile(r'queue_event\(\s*\w+,\s*"([^"]+)"')
+_FIRE_EVENT_CALL = re.compile(r"\bfire_event\(")
+# Sources without a transaction of their own; everything else queues on its session, so
+# a rolled-back change fires nothing (R-0689). app/main.py leaves with server.startup.
+_FIRE_EVENT_ALLOWED = {
+    "core/events.py",
+    "main.py",
+    "modules/notifications/router.py",
+    "scheduler_main.py",
+}
 
 
 def _fired_event_literals() -> set[str]:
     fired: set[str] = set()
     for py in _APP_DIR.rglob("*.py"):
-        fired.update(_FIRE_EVENT.findall(py.read_text(encoding="utf-8")))
+        text = py.read_text(encoding="utf-8")
+        fired.update(_FIRE_EVENT.findall(text))
+        fired.update(_QUEUE_EVENT.findall(text))
     return fired
+
+
+def test_only_sources_without_a_transaction_call_fire_event():
+    callers = {
+        py.relative_to(_APP_DIR).as_posix()
+        for py in _APP_DIR.rglob("*.py")
+        if _FIRE_EVENT_CALL.search(py.read_text(encoding="utf-8"))
+    }
+    assert "modules/notifications/router.py" in callers  # the scan is not silently empty
+    assert callers - _FIRE_EVENT_ALLOWED == set()
 
 
 def test_every_fired_event_is_subscribable():
     fired = _fired_event_literals()
     # Sanity: the scan actually found the known producers (not silently empty).
-    assert "connection.created" in fired
+    assert {"connection.created", "alert.triggered"} <= fired
     missing = sorted(fired - set(VALID_EVENTS))
-    assert missing == [], f"fire_event literals absent from VALID_EVENTS: {missing}"
+    assert missing == [], f"event literals absent from VALID_EVENTS: {missing}"
 
 
 def test_web_hook_picker_matches_valid_events():

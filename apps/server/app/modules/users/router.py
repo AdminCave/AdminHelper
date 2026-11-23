@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_admin, get_current_user, hash_password
 from app.core.bounds import IntPk
 from app.core.database import get_db
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import actor_from_request
 from app.core.time import iso_utc, utcnow_naive
@@ -72,11 +72,16 @@ def create_user(
     # A revocation of a former namesake stays: it is a point in time, so it keeps
     # the old certificates out and lets the new user's later ones through (R-0224).
     try:
+        db.flush()
         if data.is_admin:
             # A fresh install has zero subscriptions, so alerts would reach
             # nobody — every new admin starts with the bell-only baseline rule.
-            db.flush()
             db.add(default_admin_subscription(user.id))
+        queue_event(
+            db,
+            "user.created",
+            {"id": user.id, "username": user.username, "is_admin": user.is_admin},
+        )
         db.commit()
     except IntegrityError:
         # Lost the race against a concurrent create of the same username (the
@@ -89,9 +94,6 @@ def create_user(
     db.refresh(user)
     # A user's access is part of every STCP proxy's allowUsers, which frps' plugin checks.
     sync_policy(db)
-    fire_event(
-        "user.created", {"id": user.id, "username": user.username, "is_admin": user.is_admin}
-    )
     audit.record(
         db,
         "user.created",
@@ -156,11 +158,11 @@ def update_user(
     if data.server_ids is not None:
         servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
         user.servers = servers
+    if user.is_admin and not was_admin:
+        queue_event(db, "user.promoted", {"id": user.id, "username": user.username})
     db.commit()
     db.refresh(user)
     sync_policy(db)
-    if user.is_admin and not was_admin:
-        fire_event("user.promoted", {"id": user.id, "username": user.username})
     # detail names the changed fields and carries no value but the new admin flag.
     changed = []
     if data.password is not None:
@@ -196,7 +198,7 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
-    fire_event("user.deleted", {"id": user.id, "username": user.username})
+    queue_event(db, "user.deleted", {"id": user.id, "username": user.username})
     username = user.username
     # Deprovision the mTLS identity: the ca-issuer stops renewing this user's cert
     # and the data plane rejects it on sight (ADR 0001 §3.4 / F1).

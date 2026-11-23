@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin
 from app.core.database import get_db
-from app.core.events import fire_event
+from app.core.events import queue_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.frp.config_generator import frps_bind_port
@@ -76,6 +76,8 @@ def create_server_config(
         extra_config=json.dumps(data.extra_config) if data.extra_config else None,
     )
     db.add(config)
+    db.flush()
+    queue_event(db, "frp.config.created", {"id": config.id, "name": config.name})
     db.commit()
     db.refresh(config)
     # Best-effort like the startup path (_ensure_frps_config): the DB is the source of truth, so a
@@ -85,7 +87,6 @@ def create_server_config(
         write_frps_config(config, warn_restart=True)
     except Exception:
         logger.exception("frps.toml schreiben nach Config-Create fehlgeschlagen (id=%s)", config.id)
-    fire_event("frp.config.created", {"id": config.id, "name": config.name})
     audit.record(
         db,
         "frp.config.created",
@@ -174,6 +175,7 @@ def update_server_config(
     if config.dashboard_port and not config.dashboard_password:
         config.dashboard_password = secrets.token_urlsafe(24)
 
+    queue_event(db, "frp.config.updated", {"id": config.id, "name": config.name})
     db.commit()
     db.refresh(config)
     try:
@@ -181,7 +183,6 @@ def update_server_config(
     except Exception:
         logger.exception("frps.toml schreiben nach Config-Update fehlgeschlagen (id=%s)", config.id)
     sync_policy(db)
-    fire_event("frp.config.updated", {"id": config.id, "name": config.name})
     audit.record(
         db,
         "frp.config.updated",
@@ -208,10 +209,8 @@ def delete_server_config(
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
     config_name = config.name
     db.delete(config)
+    queue_event(db, "frp.config.deleted", {"id": config_id, "name": config_name})
     db.commit()
-    # Fire only after the commit succeeds — a rolled-back delete must not leave
-    # hooks/notifications having observed a deletion that never happened (2.48).
-    fire_event("frp.config.deleted", {"id": config_id, "name": config_name})
     remove_frps_config()
     sync_policy(db)
     audit.record(
