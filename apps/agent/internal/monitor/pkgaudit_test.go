@@ -288,7 +288,7 @@ func TestFreebsdSystemState(t *testing.T) {
 			calls := stubFreeBSDCalls(t, c.hasPkg, c.replies)
 			logs := captureWarnings(t)
 			block, next := freebsdSystemState(context.Background(), reportState{})
-			if !reflect.DeepEqual(block, c.want) {
+			if !reflect.DeepEqual(wireValue(t, block), wireValue(t, c.want)) {
 				t.Errorf("block = %v, want %v", block, c.want)
 			}
 			var argv []string
@@ -390,7 +390,7 @@ func TestFreebsdSystemStateFailure(t *testing.T) {
 			calls := stubFreeBSDCalls(t, true, c.replies)
 			logs := captureWarnings(t)
 			block, next := freebsdSystemState(context.Background(), reportState{})
-			if !reflect.DeepEqual(block, c.block) {
+			if !reflect.DeepEqual(wireValue(t, block), wireValue(t, c.block)) {
 				t.Errorf("block = %v, want %v", block, c.block)
 			}
 			if next.Updates == nil || next.Updates.Security != nil || next.Updates.CheckedUnix != pkgAuditNow.Unix() {
@@ -401,7 +401,7 @@ func TestFreebsdSystemStateFailure(t *testing.T) {
 			before := len(*calls)
 			updatesCalls.now = func() time.Time { return pkgAuditNow.Add(55 * time.Minute) }
 			block, again := freebsdSystemState(context.Background(), next)
-			if _, ok := block["security_updates"]; ok {
+			if block.SecurityUpdates != nil {
 				t.Errorf("next report: block = %v, want no security_updates", block)
 			}
 			for _, call := range (*calls)[before:] {

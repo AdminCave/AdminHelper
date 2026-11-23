@@ -74,9 +74,9 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// time stays the base for the next report.
 	var next reportState
 	m.core(ctx, "system_state", func(ctx context.Context) {
-		var systemState map[string]any
+		var systemState *SystemState
 		systemState, next = systemStateCollector(ctx, prev)
-		if len(systemState) > 0 {
+		if !systemState.empty() {
 			report["system_state"] = systemState
 		}
 	})

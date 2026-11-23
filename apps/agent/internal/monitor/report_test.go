@@ -37,7 +37,7 @@ func stubReportHost(t *testing.T) {
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func(context.Context) *ServiceHealth { return &ServiceHealth{} }
 	oldSystemState := systemStateCollector
-	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) { return nil, st }
+	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) { return nil, st }
 	oldHostFacts := hostFactsCalls
 	hostFactsCalls.platform = func() (string, string, string, error) { return "", "", "", nil }
 	hostFactsCalls.virtualization = func() (string, string, error) { return "", "", nil }
@@ -170,7 +170,7 @@ func TestBuildReportPassesItsContextToTheSystemState(t *testing.T) {
 	type ctxKey struct{}
 	stubReportHost(t)
 	var got context.Context
-	systemStateCollector = func(ctx context.Context, st reportState) (map[string]any, reportState) {
+	systemStateCollector = func(ctx context.Context, st reportState) (*SystemState, reportState) {
 		got = ctx
 		return nil, st
 	}
@@ -184,16 +184,16 @@ func TestBuildReportPassesItsContextToTheSystemState(t *testing.T) {
 func TestBuildReportSystemState(t *testing.T) {
 	// The key comes only with a field: a block without one (nothing measured) is no block.
 	for name, tc := range map[string]struct {
-		block map[string]any
+		block *SystemState
 		want  bool
 	}{
-		"with a field": {map[string]any{"oom_kills": uint64(2)}, true},
-		"empty block":  {map[string]any{}, false},
+		"with a field": {&SystemState{OOMKills: new(uint64(2))}, true},
+		"empty block":  {&SystemState{}, false},
 		"no block":     {nil, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			stubReportHost(t)
-			systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) { return tc.block, st }
+			systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) { return tc.block, st }
 			got, ok := BuildReport(nil)["system_state"]
 			if ok != tc.want || (ok && !reflect.DeepEqual(got, tc.block)) {
 				t.Errorf("system_state = %v (present %v), want %v (present %v)", got, ok, tc.block, tc.want)
@@ -211,10 +211,11 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	saved, measured := uint64(5), uint64(7)
 	var handed []reportState
-	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) {
+	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) {
 		handed = append(handed, st)
 		st.OOMKill = &measured
-		return map[string]any{"oom_kills": measured - saved}, st
+		kills := measured - saved
+		return &SystemState{OOMKills: &kills}, st
 	}
 
 	prevCPU := &cpuSample{Unix: now.Add(-5 * time.Minute).Unix(), Total: 1000, Busy: 200}

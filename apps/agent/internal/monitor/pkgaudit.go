@@ -49,15 +49,16 @@ type freebsdVersions struct {
 // hourly count replaced. reboot_required compares the installed kernel with the running one, outside
 // a jail only; security_updates is pkgSecurityUpdates. A field is set only when measured; why one is
 // missing goes to the log. ctx ends its tool calls.
-func freebsdSystemState(ctx context.Context, st reportState) (map[string]any, reportState) {
-	block := map[string]any{}
+func freebsdSystemState(ctx context.Context, st reportState) (*SystemState, reportState) {
+	block := &SystemState{}
 	jailed := inContainer()
 	versions, why := readFreeBSDVersions(ctx, jailed)
 	if !jailed {
 		if why != "" {
 			logger.Warnf("system state: %s, reboot_required left out", why)
 		} else {
-			block["reboot_required"] = versions.kernel != versions.running
+			required := versions.kernel != versions.running
+			block.RebootRequired = &required
 		}
 	}
 	st.Updates = pkgSecurityUpdates(ctx, st.Updates, versions, why)

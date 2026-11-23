@@ -312,10 +312,10 @@ func TestSystemStateUpdatesFailure(t *testing.T) {
 			calls := stubUpdates(t, updatesNow, c.reply)
 			logs := captureWarnings(t)
 			block, next := collectSystemState(context.Background(), reportState{})
-			if _, ok := block["security_updates"]; ok {
+			if block.SecurityUpdates != nil {
 				t.Errorf("block = %v, want no security_updates", block)
 			}
-			if _, ok := block["security_packages"]; ok {
+			if block.SecurityPackages != nil {
 				t.Errorf("block = %v, want no security_packages", block)
 			}
 			if next.Updates == nil || next.Updates.Security != nil || next.Updates.Packages != nil ||
@@ -337,7 +337,7 @@ func TestSystemStateUpdatesFailure(t *testing.T) {
 			}
 			updatesCalls.now = func() time.Time { return updatesNow.Add(55 * time.Minute) }
 			block, next = collectSystemState(context.Background(), loadReportState(path))
-			if _, ok := block["security_updates"]; ok || len(*calls) != 1 {
+			if block.SecurityUpdates != nil || len(*calls) != 1 {
 				t.Errorf("next report: block = %v after %d call(s), want no security_updates and no new call",
 					block, len(*calls))
 			}

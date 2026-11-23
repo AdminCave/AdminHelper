@@ -214,7 +214,7 @@ func TestSystemStateOOMFirstRun(t *testing.T) {
 	stubSystemCLI(t, nil)
 	stubVMStat(t, vmstatWithOOMKill(0))
 	block, next := collectSystemState(context.Background(), reportState{})
-	if len(block) != 0 {
+	if !block.empty() {
 		t.Errorf("first run block = %v, want no field", block)
 	}
 	if next.OOMKill == nil || *next.OOMKill != 0 {
@@ -252,7 +252,7 @@ func TestSystemStateOOMKills(t *testing.T) {
 			cpu := &cpuSample{Unix: 1_700_000_000, Total: 1000, Busy: 200}
 			saved := c.saved
 			block, next := collectSystemState(context.Background(), reportState{CPU: cpu, OOMKill: &saved})
-			if want := map[string]any{"oom_kills": c.want}; !reflect.DeepEqual(block, want) {
+			if want := map[string]any{"oom_kills": c.want}; !reflect.DeepEqual(wireValue(t, block), wireValue(t, want)) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
 			if next.OOMKill == nil || *next.OOMKill != c.count {
@@ -291,7 +291,7 @@ func TestSystemStateOOMUnreadable(t *testing.T) {
 			logs := captureWarnings(t)
 			saved := uint64(4)
 			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
-			if len(block) != 0 {
+			if !block.empty() {
 				t.Errorf("block = %v, want no field", block)
 			}
 			if next.OOMKill == nil || *next.OOMKill != 4 {
@@ -324,7 +324,7 @@ func TestSystemStateOOMContainer(t *testing.T) {
 			logs := captureWarnings(t)
 			saved := uint64(1)
 			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
-			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
+			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(wireValue(t, block), wireValue(t, want)) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
 			assertOOMState(t, next, 3, oomSourceCgroup)
@@ -358,7 +358,7 @@ func TestSystemStateOOMNotContainer(t *testing.T) {
 			stubMemoryEvents(t, memoryEventsWithOOMKill(100))
 			saved := uint64(5)
 			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved, OOMKillSource: oomSourceVMStat})
-			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
+			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(wireValue(t, block), wireValue(t, want)) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
 			assertOOMState(t, next, 7, oomSourceVMStat)
@@ -391,7 +391,7 @@ func TestSystemStateOOMContainerUnreadable(t *testing.T) {
 			logs := captureWarnings(t)
 			saved := uint64(4)
 			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
-			if len(block) != 0 {
+			if !block.empty() {
 				t.Errorf("block = %v, want no field", block)
 			}
 			assertOOMState(t, next, 4, oomSourceCgroup)
@@ -429,7 +429,7 @@ func TestSystemStateOOMSourceChange(t *testing.T) {
 				t.Fatal(err)
 			}
 			block, next := collectSystemState(context.Background(), loadReportState(path))
-			if len(block) != 0 {
+			if !block.empty() {
 				t.Errorf("first run on the new source: block = %v, want no field", block)
 			}
 			assertOOMState(t, next, c.count, c.source)
@@ -562,7 +562,7 @@ func TestSystemStateOOMProcessesNoCall(t *testing.T) {
 			calls := stubSystemCLI(t, map[string]dockerReply{"journalctl": {out: oomJournal}})
 			c.stub(t)
 			block, _ := collectSystemState(context.Background(), c.state)
-			if _, ok := block["oom_processes"]; ok || len(*calls) != 0 {
+			if block.OOMProcesses != nil || len(*calls) != 0 {
 				t.Errorf("block = %v after %q, want no oom_processes and no call", block, *calls)
 			}
 		})
@@ -596,7 +596,7 @@ func TestSystemStateOOMProcessesUnavailable(t *testing.T) {
 			logs := captureWarnings(t)
 			saved := uint64(5)
 			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
-			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
+			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(wireValue(t, block), wireValue(t, want)) {
 				t.Errorf("block = %v, want %v", block, want)
 			}
 			assertOOMState(t, next, 7, oomSourceVMStat)
@@ -874,7 +874,7 @@ func TestSystemStateBlock(t *testing.T) {
 	t.Run("nothing measured", func(t *testing.T) {
 		stubSystemCLI(t, map[string]dockerReply{"timedatectl": {err: context.DeadlineExceeded}})
 		stubVMStat(t, "pgmajfault 1042\n")
-		if block, _ := collectSystemState(context.Background(), reportState{}); len(block) != 0 {
+		if block, _ := collectSystemState(context.Background(), reportState{}); !block.empty() {
 			t.Errorf("block = %v, want no field", block)
 		}
 	})
@@ -937,10 +937,10 @@ func TestSystemStateEndsAtTheEndOfTheContext(t *testing.T) {
 			logs := captureWarnings(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
-			var block map[string]any
+			var block *SystemState
 			var next reportState
 			endsWithin(t, 3*time.Second, func() { block, next = collectSystemState(ctx, reportState{}) })
-			if !reflect.DeepEqual(block, tc.want) {
+			if !reflect.DeepEqual(wireValue(t, block), wireValue(t, tc.want)) {
 				t.Errorf("block = %v, want %v", block, tc.want)
 			}
 			if next.Updates == nil || next.Updates.Security != nil {

@@ -17,8 +17,8 @@ var w32tmStatus = func(ctx context.Context) ([]byte, error) {
 // collectSystemState reports the system_state block of a Windows host: only time_synchronized, set
 // when w32tm answered readably; why it is missing goes to the log. The state passes through
 // unchanged.
-func collectSystemState(ctx context.Context, st reportState) (map[string]any, reportState) {
-	block := map[string]any{}
+func collectSystemState(ctx context.Context, st reportState) (*SystemState, reportState) {
+	block := &SystemState{}
 	out, err := w32tmStatus(ctx)
 	if err != nil {
 		logger.Warnf("system state: w32tm /query /status failed: %s, time_synchronized left out",
@@ -30,6 +30,6 @@ func collectSystemState(ctx context.Context, st reportState) (map[string]any, re
 		logger.Warnf("system state: no leap indicator in w32tm /query /status, time_synchronized left out")
 		return block, st
 	}
-	block["time_synchronized"] = synced
+	block.TimeSynchronized = &synced
 	return block, st
 }

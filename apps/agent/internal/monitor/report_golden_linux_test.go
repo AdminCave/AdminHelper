@@ -94,8 +94,9 @@ func TestReportGoldenKeys(t *testing.T) {
 		return map[string]any{"available": true}, nil
 	}
 	pluginCollectors.zfs = func(context.Context) map[string]any { return map[string]any{"available": true} }
-	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) {
-		return map[string]any{"reboot_required": false}, st
+	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) {
+		required := false
+		return &SystemState{RebootRequired: &required}, st
 	}
 	runDiscovery = func(context.Context, []probe.Marker) discovery.Inventory { return discovery.Inventory{} }
 	// A name systemctl is never asked for: the watched list is there without this host's answer.

@@ -24,13 +24,13 @@ func TestCollectSystemStateTimeSynchronized(t *testing.T) {
 	st := reportState{}
 	stubW32tm(t, "Leap Indicator: 3(not synchronized)\r\nSource: Local CMOS Clock\r\n", nil)
 	block, _ := collectSystemState(context.Background(), st)
-	if !reflect.DeepEqual(block, map[string]any{"time_synchronized": false}) {
+	if !reflect.DeepEqual(wireValue(t, block), wireValue(t, map[string]any{"time_synchronized": false})) {
 		t.Errorf("block = %v, want time_synchronized false", block)
 	}
 
 	stubW32tm(t, "Leap Indicator: 0(no warning)\r\nSource: time.windows.com,0x9\r\n", nil)
 	block, _ = collectSystemState(context.Background(), st)
-	if !reflect.DeepEqual(block, map[string]any{"time_synchronized": true}) {
+	if !reflect.DeepEqual(wireValue(t, block), wireValue(t, map[string]any{"time_synchronized": true})) {
 		t.Errorf("block = %v, want time_synchronized true", block)
 	}
 }
@@ -46,7 +46,7 @@ func TestCollectSystemStateLeavesTimeOutWhenUnreadable(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			stubW32tm(t, stub.out, stub.err)
 			block, _ := collectSystemState(context.Background(), reportState{})
-			if len(block) != 0 {
+			if !block.empty() {
 				t.Errorf("block = %v, want no field", block)
 			}
 		})
@@ -56,7 +56,7 @@ func TestCollectSystemStateLeavesTimeOutWhenUnreadable(t *testing.T) {
 func TestCollectSystemStateOnThisHost(t *testing.T) {
 	// The real w32tm on the runner: the block is empty or carries a bool, never anything else.
 	block, _ := collectSystemState(context.Background(), reportState{})
-	if v, ok := block["time_synchronized"]; ok {
+	if v, ok := wireValue(t, block).(map[string]any)["time_synchronized"]; ok {
 		if _, isBool := v.(bool); !isBool {
 			t.Errorf("time_synchronized = %#v, want a bool", v)
 		}

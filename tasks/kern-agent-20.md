@@ -33,8 +33,10 @@ Review: approve (.ah-out/review/kern-agent-20/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T4 — R-0688: Systemzustand, Updates und Paket-Audit typisiert  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_freebsd.go, apps/agent/internal/monitor/system_windows.go, apps/agent/internal/monitor/system_other.go, apps/agent/internal/monitor/updates.go, apps/agent/internal/monitor/pkgaudit.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/report.go
+### T4 — R-0688: Systemzustand, Updates und Paket-Audit typisiert  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_freebsd.go, apps/agent/internal/monitor/system_windows.go, apps/agent/internal/monitor/system_other.go, apps/agent/internal/monitor/updates.go, apps/agent/internal/monitor/pkgaudit.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/systemstate.go, apps/agent/internal/monitor/pkgaudit_test.go, apps/agent/internal/monitor/report_golden_linux_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/system_freebsd_test.go, apps/agent/internal/monitor/system_windows_test.go, apps/agent/internal/monitor/updates_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ca5c3c105 2026-11-23T13:32:33+01:00
+Review: approve (.ah-out/review/kern-agent-20/T4.verdict.json)
 Änderung: `SystemState` mit den Unterblöcken (Updates, Reboot, Uhrzeit, Paket-Audit …) als Structs; `collectSystemState` liefert ihn auf allen Plattformen, `reportState` bleibt wie er ist. Plattform-Tests per `set-files`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
