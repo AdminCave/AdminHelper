@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.bounds import IntPk
@@ -236,7 +236,9 @@ def gen_bulk_zip(
         stcp_tunnels = without_unbindable_visitor(
             [t for t in all_tunnels if t.tunnel_type == "stcp"]
         )
-        users_with_servers = db.query(User).filter(User.servers.any()).all()
+        users_with_servers = (
+            db.query(User).options(selectinload(User.servers)).filter(User.servers.any()).all()
+        )
         if users_with_servers:
             for user in users_with_servers:
                 # The generator cannot write a name the API refuses; filtered here, not

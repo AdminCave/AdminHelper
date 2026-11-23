@@ -5,7 +5,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin, get_current_user, hash_password
 from app.core.bounds import IntPk
@@ -45,7 +45,7 @@ def _user_response(user: User) -> dict:
 
 @router.get("", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    users = db.query(User).all()
+    users = db.query(User).options(selectinload(User.servers)).all()
     return [_user_response(u) for u in users]
 
 

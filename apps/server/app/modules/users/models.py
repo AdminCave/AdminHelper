@@ -54,4 +54,6 @@ class User(Base):
     email = Column(String, nullable=True)
     telegram_chat_id = Column(String, nullable=True)
 
-    servers = relationship("Server", secondary=user_server_assoc, lazy="selectin")
+    # Not selectin: every authenticated request loads its user, and the servers would pull
+    # their connections and tunnels along (R-0692). Lists of users load them explicitly.
+    servers = relationship("Server", secondary=user_server_assoc)
