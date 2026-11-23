@@ -407,11 +407,11 @@ def _notices(db) -> list[Notification]:
 
 
 def _clean(db, caplog) -> str:
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="app.main"):
-        m._check_frps_server_configs(db)
+    with caplog.at_level(logging.INFO, logger="app.modules.frp.startup_checks"):
+        m.check_frps_server_configs(db)
     return caplog.text
 
 
@@ -607,7 +607,7 @@ def test_startup_tells_the_admins_once_about_a_token_frps_is_not_started_with(
 def test_startup_tells_the_admins_once_about_a_dashboard_port_frps_refuses(
     dashboard_port, db_session, admin_user, caplog, monkeypatch
 ):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     monkeypatch.setattr(m, "FRP_BIND_PORT", 7200)
     db_session.add_all(
@@ -636,7 +636,7 @@ def test_startup_tells_the_admins_once_about_a_dashboard_port_frps_refuses(
 def test_startup_names_every_field_with_its_rule_in_one_notice(
     db_session, admin_user, caplog, monkeypatch
 ):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     monkeypatch.setattr(m, "FRP_BIND_PORT", 7000)
     db_session.add(
@@ -655,7 +655,7 @@ def test_startup_names_every_field_with_its_rule_in_one_notice(
 
 
 def test_every_string_field_has_its_label_for_the_bell():
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     # A field without one would end the check with a KeyError, and nobody would be told.
     assert set(m._FRPS_FIELD_LABELS) == set(STRING_FIELDS.values()) | {"dashboard_port"}
@@ -667,8 +667,12 @@ def test_startup_checks_the_configs_before_it_writes_frps_toml(monkeypatch):
     calls = []
     monkeypatch.setattr(m, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
     monkeypatch.setattr(m, "_ensure_admin", lambda db: calls.append("admin"))
-    monkeypatch.setattr(m, "_check_frps_server_configs", lambda db: calls.append("check"))
-    monkeypatch.setattr(m, "_ensure_frps_config", lambda db: calls.append("write"))
+    monkeypatch.setattr(
+        m.frp_startup_checks, "check_frps_server_configs", lambda db: calls.append("check")
+    )
+    monkeypatch.setattr(
+        m.frp_startup_checks, "ensure_frps_config", lambda db: calls.append("write")
+    )
     monkeypatch.setattr(m.frp_policy, "sync_policy", lambda db: calls.append("policy"))
 
     m._run_startup_tasks()

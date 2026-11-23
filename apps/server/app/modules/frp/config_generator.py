@@ -397,7 +397,7 @@ def _frps_groups(config: FrpServerConfig) -> list[list[tuple[str, FrpsValue]]]:
 
     # Operator-supplied extra frps.toml fields: keys of extra_config.ALLOWED_KEYS with values
     # that pass value_allowed. _check_frps_extra_config holds the API to that and the startup
-    # check in main.py the stored rows, so they can be emitted verbatim.
+    # check in startup_checks.py the stored rows, so they can be emitted verbatim.
     extra = json.loads(config.extra_config) if config.extra_config else None
     if extra:
         groups.append(list(extra.items()))

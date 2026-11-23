@@ -139,7 +139,7 @@ def test_update_response_masks_secrets(db_session, monkeypatch):
 def test_create_survives_frps_write_failure(db_session, monkeypatch):
     # 4.135: a failed frps.toml write (full/read-only volume) AFTER the commit must NOT turn a
     # committed create into a 500 whose retry would duplicate — the DB is the source of truth and
-    # the write is best-effort (like the startup _ensure_frps_config path).
+    # the write is best-effort (like the startup ensure_frps_config path).
     from types import SimpleNamespace
 
     import app.modules.frp.config_router as cr

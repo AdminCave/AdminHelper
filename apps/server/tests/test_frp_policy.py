@@ -550,8 +550,9 @@ def test_periodic_sync_puts_back_a_removed_or_changed_file(
 def test_startup_writes_the_policy(db_session, monkeypatch, _policy_dir):
     _seed(db_session)
     monkeypatch.setattr(m, "SessionLocal", _own_sessions(db_session))
-    for step in ("_ensure_admin", "_check_frps_server_configs", "_ensure_frps_config"):
-        monkeypatch.setattr(m, step, lambda _db: None)
+    monkeypatch.setattr(m, "_ensure_admin", lambda _db: None)
+    for step in ("check_frps_server_configs", "ensure_frps_config"):
+        monkeypatch.setattr(m.frp_startup_checks, step, lambda _db: None)
 
     m._run_startup_tasks()
 

@@ -80,9 +80,10 @@ def create_server_config(
     queue_event(db, "frp.config.created", {"id": config.id, "name": config.name})
     db.commit()
     db.refresh(config)
-    # Best-effort like the startup path (_ensure_frps_config): the DB is the source of truth, so a
-    # full/read-only FRP volume must not turn a committed change into a 500 whose retry would then
-    # create a duplicate. The next successful write / restart reconciles frps.toml (4.135).
+    # Best-effort like the startup path (frp.startup_checks.ensure_frps_config): the DB is the
+    # source of truth, so a full/read-only FRP volume must not turn a committed change into a 500
+    # whose retry would then create a duplicate. The next successful write / restart reconciles
+    # frps.toml (4.135).
     try:
         write_frps_config(config, warn_restart=True)
     except Exception:

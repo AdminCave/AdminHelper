@@ -878,8 +878,8 @@ class TestIngress:
     ):
         # Taken from the writers, not spelled out: a renamed source type on the
         # server's side turns this red instead of reopening the ingress for it.
-        import app.main as m
         from app.modules.enrollment import expiry
+        from app.modules.frp import startup_checks as m
         from app.modules.frp import supervisor_watch
         from app.modules.frp.models import FrpServerConfig
 

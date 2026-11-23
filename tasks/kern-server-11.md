@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generato
 Doku: keine (interne Struktur, frps.toml unverändert)
 Abhängt von: T1
 
-### T3 — R-0690: FRP-Startprüfungen nach frp/startup_checks.py  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/startup_checks.py, apps/server/app/main.py, apps/server/tests/test_frp_extra_config.py, apps/server/tests/test_frp_docker_manager.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_notifications.py, apps/server/tests/test_notification_category_migration.py
+### T3 — R-0690: FRP-Startprüfungen nach frp/startup_checks.py  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/startup_checks.py, apps/server/app/main.py, apps/server/tests/test_frp_extra_config.py, apps/server/tests/test_frp_docker_manager.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_notifications.py, apps/server/tests/test_notification_category_migration.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/docker_manager.py, apps/server/app/modules/frp/config_router.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f7281b24d 2026-11-23T17:11:32+01:00
+Review: approve (.ah-out/review/kern-server-11/T3.verdict.json)
 Änderung: `_tell_admins`, `_remove_rejected_extra_config`, `_report_rejected_fields`, `_check_frps_server_configs` und `_ensure_frps_config` ziehen unverändert in die neue Datei (SPDX, öffentliche Namen ohne Unterstrich für die beiden Einstiege); `_run_startup_tasks` ruft sie von dort. Die Tests patchen den neuen Ort. Acht Dateien, weil sechs Tests die verschobenen Funktionen über `app.main` erreichen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_config.py tests/test_frp_docker_manager.py tests/test_frp_policy.py tests/test_frp_config.py tests/test_notifications.py tests/test_notification_category_migration.py tests/test_bootstrap.py
 Doku: → T4
