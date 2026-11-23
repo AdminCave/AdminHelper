@@ -1,2 +1,5 @@
 ### Fixed
-- Agent DEB package: the maintainer scripts no longer abort installation, upgrade or removal when systemd is not PID 1 (containers, chroots); a failed `systemctl daemon-reload` is ignored silently, as in the RPM package.
+
+- **Agent-DEB: Paketskripte brechen ohne systemd nicht mehr ab:** Installation, Upgrade und Entfernen scheitern in
+  Containern und chroots ohne systemd als PID 1 nicht mehr; ein fehlgeschlagenes `systemctl daemon-reload` wird still
+  uebergangen wie im RPM-Paket.

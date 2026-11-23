@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- **Monitoring: Verlauf:** Zustandswechsel desselben Objekts innerhalb einer Minute erscheinen wieder einzeln, und
+- **Monitoring: Verlauf:** Zustandswechsel desselben Checks innerhalb einer Minute erscheinen wieder einzeln, und
   „nicht erhoben“ steht in den Metriken als ok statt als unbekannt.
 - **Monitoring: Zustand gleichzeitiger Ergebnisse:** Das erste Ergebnis eines Checks und das Aufraeumen verschwundener
   Objekte laufen geordnet mit anderen Ergebnissen desselben Checks.

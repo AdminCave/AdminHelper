@@ -9,7 +9,7 @@ Jeder Branch schreibt seine Einträge in **`changelog.d/<slug>.md`** statt in `C
 Branches nie dieselbe Datei (GitHub ignoriert die Union-Merge-Regel aus `.gitattributes`).
 
 Ein Fragment enthält nur Keep-a-Changelog-Unterabschnitte mit ihren Einträgen, in der Form von `CHANGELOG.md`
-(umlautfrei, Gedankenstrich „—", `.claude/rules/docs.md`):
+(deutsch, umlautfrei, Gedankenstrich „—", Eintrag als `- **Bereich: Titel:** Text`, `.claude/rules/docs.md`):
 
 ```
 ### Fixed

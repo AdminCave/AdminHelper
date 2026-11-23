@@ -37,8 +37,10 @@ Beweis: reviewer kern-dashboard-1 branch 2026-11-20, Dashboard.svelte:109, monit
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard.load.test.ts src/pages/Dashboard.layout.test.ts
 Doku: keine (der Wortlaut von changelog.d/kern-dashboard-1.md deckt das ab)
 
-### T4 — R-1676, R-1669: Changelog-Fragmente deutsch und umlautfrei  [ ]
+### T4 — R-1676, R-1669: Changelog-Fragmente deutsch und umlautfrei  [x]
 Komponente: scripts · Dateien: changelog.d/kern-agent-17.md, changelog.d/kern-dashboard-1.md, changelog.d/kern-monitoring-53.md, changelog.d/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fb1b7923b 2026-11-23T11:20:23+01:00
+Review: approve (.ah-out/review/klein-nachlese-18/T4.verdict.json)
 Beweis: reviewer kern-agent-17 branch 2026-11-20 (changelog.d/kern-agent-17.md:2); reviewer klein-nachlese-17 2026-11-20 (kern-monitoring-53.md:12). Dedup-Key: ref:nachlese:klein-nachlese-17
 Änderung: (zusätzlich von Hand: `python3 scripts/release/changelog-assemble.py --check`) die beiden englischen Fragmente als `- **Bereich: Titel:** Text`, deutsch, ae/oe/ue, mit dem Inhalt von heute; in `kern-monitoring-53.md:12` „desselben Checks“ statt „desselben Objekts“; `README.md` nennt Deutsch und fetten Titel ausdrücklich.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
