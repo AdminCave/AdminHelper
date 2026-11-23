@@ -5,8 +5,10 @@ Heavy: linux-full — Server-Handler aller CRUD-Routen (Events, Hooks, Benachric
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-0689: Outbox je Session, begrenzte Warteschlange, Shutdown  [ ]
+### T1 — R-0689: Outbox je Session, begrenzte Warteschlange, Shutdown  [x]
 Komponente: server · Dateien: apps/server/app/core/events.py, apps/server/app/core/database.py, apps/server/app/main.py, apps/server/tests/test_events_after_commit.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @75b9576dc 2026-11-23T14:58:05+01:00
+Review: approve (.ah-out/review/kern-events-1/T1.verdict.json)
 Änderung: `queue_event(db, type, data)` legt in `db.info` ab; Listener auf der Klasse `Session`: `after_commit` der Wurzel (nicht nested) gibt an den Executor, `after_transaction_end` der Wurzel verwirft, ein Fehler beim Abgeben wird geloggt. Executor mit Deckel 1000 (jedes weitere Event verworfen, Warnung mit Typ) und `shutdown_events(timeout=10)` am Ende des Lifespans. Neue Testdatei (SPDX): Commit → 1, Rollback → 0, `close()` → 0, SAVEPOINT-Commit → 0 bis zum äußeren Commit, `submit` wirft → `commit()` wirft nicht, Deckel, Shutdown.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_events_after_commit.py
 Doku: → T4

@@ -407,7 +407,7 @@ def _run_startup_tasks():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.config import REDIS_URL
-    from app.core.events import fire_event
+    from app.core.events import fire_event, shutdown_events
     from app.modules.monitoring_proxy import router as monitoring_proxy_mod
     from app.modules.notifications import stream_hub
 
@@ -444,6 +444,8 @@ async def lifespan(app: FastAPI):
     await stream_hub.stop()
     # Close the process-wide proxy client's connection pool (5.30).
     await monitoring_proxy_mod._client.aclose()
+    # Event hooks still pending get up to SHUTDOWN_TIMEOUT before the worker exits.
+    await asyncio.to_thread(shutdown_events)
 
 
 app = FastAPI(
