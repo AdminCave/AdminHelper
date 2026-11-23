@@ -1,5 +1,5 @@
 # kern-events-1 — Server-Events nach dem Commit — Task-Ledger
-Status: aktiv · Branch: feature/kern-events-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-events-1 · Review: pro Task
 Spec: docs/features/kern-events-1.md (Roadmap R-0689)
 Heavy: linux-full — Server-Handler aller CRUD-Routen (Events, Hooks, Benachrichtigungen) und Scheduler-Start
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_schem
 Doku: → T4
 Abhängt von: T1
 
-### T4 — R-0689: Doku DE+EN und Changelog  [ ]
+### T4 — R-0689: Doku DE+EN und Changelog  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-events-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @aae749927 2026-11-23T15:38:22+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `hooks.html`: `queue_event` vor dem Commit statt `fire_event`, Zeitpunkt (nach dem Commit, verworfen bei Rollback), Deckel 1000, Shutdown 10 s. `server.html:179`: `server.startup` einmal je Start, vom Scheduler. Changelog-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-events-1.md
