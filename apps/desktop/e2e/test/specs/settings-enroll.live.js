@@ -36,6 +36,14 @@ function invoke(cmd, args = {}) {
   );
 }
 
+// invoke that fails the spec with the rejection's text and resolves to the value (R-0573), as
+// in tunnel-connect.live.js; a bare .value of a rejection would only show up as undefined.
+async function invokeValue(cmd, args = {}) {
+  const out = await invoke(cmd, args);
+  if (out.rejected !== undefined) throw new Error(`${cmd} failed: ${out.rejected}`);
+  return out.value;
+}
+
 async function openSettings() {
   // The gear in the sidebar footer opens the settings.
   await $('.sidebar-bottom .sidebar-item').click();
@@ -148,7 +156,7 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
   it('registers again after a reset while the tunnel runs, and a new frpc takes over (R-0246)', async () => {
     // Where the second step ends: signed in, identity from the settings, tunnel connected,
     // the settings still open.
-    const before = (await invoke('tunnel_status')).value;
+    const before = await invokeValue('tunnel_status');
     expect(before && before.running).toBe(true);
     expect(before.connectedSince).toBeTruthy();
 
@@ -198,7 +206,7 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
     // alone proves nothing here, it may still read "connected" from the step before.
     await browser.waitUntil(
       async () => {
-        const now = (await invoke('tunnel_status')).value;
+        const now = await invokeValue('tunnel_status');
         return Boolean(
           now && now.running && now.connectedSince && now.connectedSince !== before.connectedSince,
         );
