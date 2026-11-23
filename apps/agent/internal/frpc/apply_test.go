@@ -250,8 +250,8 @@ func TestReprovisionWarnsWhenSystemctlDoesNotAnswer(t *testing.T) {
 	}
 	out := captureLog(t)
 
-	if err := applyBundle(bundleToml); err != nil {
-		t.Fatalf("Apply without an answer from systemctl: %v, want only a warning", err)
+	if err := applyBundle(bundleToml); !errors.Is(err, ErrServiceDeferred) {
+		t.Fatalf("Apply without an answer from systemctl = %v, want ErrServiceDeferred", err)
 	}
 	for _, want := range []string{"level=WARN", "context deadline exceeded", "next agent run tries again"} {
 		if !strings.Contains(out.String(), want) {
@@ -294,8 +294,10 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			enableService = restartService
 			out := captureLog(t)
 
-			if err := applyBundle(bundleToml); err != nil {
-				t.Fatalf("Apply with a failing start: %v, want only a warning", err)
+			// R-1682: Apply reports the failed start to provision, which then prints no success line.
+			n, err := applyBundleCount(bundleToml)
+			if !errors.Is(err, ErrServiceDeferred) || n != 1 {
+				t.Fatalf("Apply with a failing start = %d, %v, want 1 tunnel and ErrServiceDeferred", n, err)
 			}
 			for _, want := range []string{"frpc.toml geschrieben", "level=WARN", "systemctl failed",
 				"next agent run tries again", "systemctl status frpc"} {
@@ -392,8 +394,8 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			disableService = func(context.Context) error { return errors.New("systemctl failed") }
 			out := captureLog(t)
 
-			if err := tc.provision(); err != nil {
-				t.Fatalf("provisioning with a failing stop: %v, want only a warning", err)
+			if err := tc.provision(); !errors.Is(err, ErrServiceDeferred) {
+				t.Fatalf("provisioning with a failing stop = %v, want ErrServiceDeferred", err)
 			}
 			for _, want := range []string{"level=WARN", "systemctl failed", "next agent run tries again"} {
 				if !strings.Contains(out.String(), want) {
