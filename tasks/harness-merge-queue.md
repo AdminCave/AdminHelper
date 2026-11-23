@@ -5,8 +5,10 @@ Heavy: none — nur Harness-Skripte, Skill-Text und Entwickler-Doku; kein Stack-
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1345: queue-wait.sh wartet auf den Merge aus der Queue  [ ]
+### T1 — R-1345: queue-wait.sh wartet auf den Merge aus der Queue  [x]
 Komponente: scripts · Dateien: scripts/dev/queue-wait.sh, scripts/tests/queue_wait_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @467313b4b 2026-11-23T09:58:23+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neues `scripts/dev/queue-wait.sh <pr>` (SPDX) fragt per `gh api graphql` `state`, `mergeCommit.oid` und `mergeQueueEntry.state` ab, alle `AH_QUEUE_POLL` Sekunden (Standard 30) bis `AH_QUEUE_TIMEOUT` (Standard 5400). `MERGED` → druckt `merged <sha>`, Exit 0; `CLOSED` oder `OPEN` ohne Queue-Eintrag → druckt den Grund, Exit 1; Zeitüberschreitung Exit 3; Bedienfehler oder gh-Fehler Exit 2. Der hermetische Test `queue_wait_test.sh` (SPDX) legt ein falsches `gh` in den PATH und prüft jeden Ausgang samt Gegenprobe (ein Ausgang, der nicht fallen kann, zählt nicht); er kommt in die Testliste von `run.sh`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- queue_wait_test
 Doku: → T3
