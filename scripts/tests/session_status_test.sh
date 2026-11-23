@@ -437,6 +437,37 @@ grep -q -- '--event' "$WORK/gh.log" && bad "the query filters by event (a dispat
   || ok "no event filter: a green dispatch on main closes a red cron"
 rm "$CLEAN/.github/workflows/nightly.yaml"
 
+# ══ case 10: the merge watcher (merge-watch.sh, R-1724) ══════════════════════
+echo "── merge watcher: its line, ACTION -> WARN, no answer -> '?' ──"
+# Without AH_MERGE_WATCH the hook runs the real script next to it; the shim
+# fails `gh api`, so the real one answers "Merge: ?" and the hook says the same.
+OUT=$(AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN")
+grep -qx 'Merge: ?' <<<"$OUT" && ok "the real watcher without GitHub: 'Merge: ?'" \
+  || bad "real watcher: $(grep -m1 '^Merge' <<<"$OUT")"
+FAKE_MW="$WORK/merge-watch.sh"
+# CLEAN carries other WARN lines by now: count only the watcher's ($MWW).
+MWW='^WARN: .* — \(gehört dem Vorhaben dieses PRs\|zuständig ist der letzte Merge\)'
+mw_hook() { printf '%s\n' "$1" > "$FAKE_MW"; OUT=$(AH_MERGE_WATCH="$FAKE_MW" AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN"); rc=$?; }
+mw_hook 'echo "Merge: Queue 1 (#7) · main abcdef1 success"'
+grep -qx 'Merge: Queue 1 (#7) · main abcdef1 success' <<<"$OUT" && ! grep -q "$MWW" <<<"$OUT" \
+  && ok "a quiet watcher: its line, no WARN" || bad "quiet: [$(grep -E '^(Merge|WARN)' <<<"$OUT")]"
+mw_hook 'echo "Merge: Queue 0 · main abcdef1 failure"; echo "ACTION: #9 ist aus der Merge Queue gefallen (x, t)"; echo "ACTION: main ist rot: y"; exit 1'
+[ $rc -eq 0 ] && grep -q '^WARN: #9 ist aus der Merge Queue gefallen (x, t) — gehört dem Vorhaben dieses PRs' <<<"$OUT" \
+  && grep -q '^WARN: main ist rot: y — zuständig ist der letzte Merge (/feature-build §4.8)\.$' <<<"$OUT" && [ "$(grep -c "$MWW" <<<"$OUT")" = 2 ] \
+  && ok "each ACTION line is one WARN line, exit 0" || bad "action: rc=$rc [$(grep '^WARN' <<<"$OUT")]"
+mw_hook 'echo "noise"; exit 2'
+[ $rc -eq 0 ] && grep -qx 'Merge: ?' <<<"$OUT" && ! grep -q "$MWW" <<<"$OUT" \
+  && ok "a watcher without a Merge line: 'Merge: ?', nothing else" || bad "noise: rc=$rc [$OUT]"
+# A hanging watcher must not take the hook past its 10 s: its deadline is 5 s
+# from the hook's start, and the hook still answers.
+t0=$SECONDS
+mw_hook 'sleep 30; echo "Merge: Queue 0 · main abcdef1 success"'
+[ $rc -eq 0 ] && grep -qx 'Merge: ?' <<<"$OUT" && [ $((SECONDS - t0)) -lt 7 ] \
+  && ok "a hanging watcher: 'Merge: ?', exit 0, under 7 s ($((SECONDS - t0)) s)" \
+  || bad "hang: rc=$rc $((SECONDS - t0)) s [$(grep -m1 '^Merge' <<<"$OUT")]"
+OUT=$(AH_MERGE_WATCH="$WORK/missing.sh" AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN"); rc=$?
+[ $rc -eq 0 ] && grep -qx 'Merge: ?' <<<"$OUT" && ok "no watcher script: 'Merge: ?', exit 0" || bad "missing: rc=$rc"
+
 echo ""
 echo "session_status_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
