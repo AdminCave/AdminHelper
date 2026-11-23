@@ -10,8 +10,10 @@ Heavy: none — Tests, ein Desktop-UI-Anzeigefehler, Doku und Changelog-Fragment
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1673: Katalogtests für leeren DHCP-Server und nie aktualisierte Defender-Signatur  [ ]
+### T1 — R-1673: Katalogtests für leeren DHCP-Server und nie aktualisierte Defender-Signatur  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_catalog_windows_server.py, apps/monitoring/tests/test_catalog_windows_roles.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @15a8ea494 2026-11-23T10:49:20+01:00
+Review: approve (.ah-out/review/klein-nachlese-18/T1.verdict.json)
 Beweis: reviewer kern-agent-15 branch 2026-11-20, test_catalog_windows_server.py:155. Dedup-Key: REF:nachlese:kern-agent-15
 Änderung: Zeile `("windows-dhcp", "scopes", {"scopes": 0}, "unknown")` in der Regeltabelle und ein Defender-Fall mit `signature_age_d: 65535` (sonst gesund) → `critical`; beide müssen ohne die Agent-Änderung fallen können (Gegenprobe).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_windows_server.py tests/test_catalog_windows_roles.py
