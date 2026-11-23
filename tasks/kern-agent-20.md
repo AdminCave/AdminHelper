@@ -57,8 +57,10 @@ Review: approve (.ah-out/review/kern-agent-20/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T7 — R-0688: ZFS und SMART typisiert  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/report.go
+### T7 — R-0688: ZFS und SMART typisiert  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/report_golden_linux_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/selfmeasure_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c28518786 2026-11-23T14:04:08+01:00
+Review: approve (.ah-out/review/kern-agent-20/T7.verdict.json)
 Änderung: `ZFSBlock` und `ZPool` als Structs (`collectZFS`, `zfsUnavailable`, `parseZpoolList`, `parseZpoolStatus`); `getFloat` entfällt, wenn kein Leser mehr übrig ist; `smart_absent` als Struct.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9

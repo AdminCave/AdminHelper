@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net"
 	"net/netip"
 	"os"
@@ -840,11 +839,56 @@ func runZpool(ctx context.Context, args ...string) ([]byte, error) {
 	return runTimed(ctx, pluginTimeout, "zpool", args...)
 }
 
+// ZFSBlock is the zfs block. Pools is never nil (the wire carries [] for none, also when
+// unavailable); Error is null while available. Errors is the text of `zpool status -x`, sent only when
+// a pool is not ONLINE and the call succeeded.
+type ZFSBlock struct {
+	Available    bool    `json:"available"`
+	Error        *string `json:"error"`
+	ErrorMessage string  `json:"error_message,omitempty"`
+	Pools        []ZPool `json:"pools"`
+	Errors       *string `json:"errors,omitempty"`
+}
+
+// ZPool is a pool of the zfs block as `zpool list` prints it, with its details (zpoolDetail) when
+// `zpool status -j` gave them.
+type ZPool struct {
+	Name                 string `json:"name"`
+	Size                 string `json:"size"`
+	Allocated            string `json:"allocated"`
+	Free                 string `json:"free"`
+	CapacityPercent      int    `json:"capacity_percent"`
+	Health               string `json:"health"`
+	FragmentationPercent *int   `json:"fragmentation_percent,omitempty"`
+	zpoolDetail
+}
+
+// zpoolDetail is what parseZpoolStatus reads of a pool: its last scrub and the vdevs with errors.
+type zpoolDetail struct {
+	Scrub      *ZPoolScrub      `json:"scrub,omitempty"`
+	VdevErrors []ZPoolVdevError `json:"vdev_errors,omitempty"`
+}
+
+// ZPoolScrub is a pool's last scrub; End is left out while it runs or when zpool names none.
+type ZPoolScrub struct {
+	State  string `json:"state"`
+	Errors uint64 `json:"errors"`
+	End    uint64 `json:"end,omitempty"`
+}
+
+// ZPoolVdevError is a vdev with a read, write or checksum error.
+type ZPoolVdevError struct {
+	Name     string `json:"name"`
+	Read     uint64 `json:"read"`
+	Write    uint64 `json:"write"`
+	Checksum uint64 `json:"checksum"`
+}
+
 // collectZFS collects ZFS pool information (Linux only). No zpool binary means ZFS is not installed
 // and stays silent (nil). With the CLI present the block is always sent: a failing or hanging
 // `zpool list` is available=false with an error code, so the monitoring service can raise it instead
 // of seeing no data.
-func collectZFS(ctx context.Context) map[string]any {
+func collectZFS(ctx context.Context) *ZFSBlock {
 	if _, err := zpoolCLI.lookPath("zpool"); err != nil {
 		return nil
 	}
@@ -856,14 +900,15 @@ func collectZFS(ctx context.Context) map[string]any {
 	}
 
 	pools := parseZpoolList(out)
-	result := map[string]any{"available": true, "error": nil, "pools": pools}
+	result := &ZFSBlock{Available: true, Pools: pools}
 
 	// Error details for non-ONLINE pools
 	for _, p := range pools {
-		if p["health"] != "ONLINE" {
+		if p.Health != "ONLINE" {
 			statusOut, err := zpoolCLI.run(ctx, "status", "-x")
 			if err == nil {
-				result["errors"] = strings.TrimSpace(string(statusOut))
+				text := strings.TrimSpace(string(statusOut))
+				result.Errors = &text
 			}
 			break
 		}
@@ -871,9 +916,8 @@ func collectZFS(ctx context.Context) map[string]any {
 
 	if len(pools) > 0 {
 		details := zpoolDetails(ctx)
-		for _, p := range pools {
-			name, _ := p["name"].(string)
-			maps.Copy(p, details[name])
+		for i := range pools {
+			pools[i].zpoolDetail = details[pools[i].Name]
 		}
 	}
 	return result
@@ -882,26 +926,21 @@ func collectZFS(ctx context.Context) map[string]any {
 // zfsUnavailable is the block for an installed zpool whose `zpool list` failed: error is timeout for
 // a call the timeout killed, cli_failed otherwise; error_message names the exit status, never stderr
 // or a path (as dockerUnavailable).
-func zfsUnavailable(err error) map[string]any {
+func zfsUnavailable(err error) *ZFSBlock {
 	code, text := "cli_failed", "zpool list failed: "+commandFailure("zpool", pluginTimeout, err)
 	if errors.Is(err, context.DeadlineExceeded) {
 		code, text = "timeout", fmt.Sprintf("zpool list timed out after %s", pluginTimeout)
 	}
 	logger.Warnf("%s, zfs reported as unavailable (%s)", text, code)
-	return map[string]any{
-		"available":     false,
-		"error":         code,
-		"error_message": text,
-		"pools":         []map[string]any{},
-	}
+	return &ZFSBlock{Error: &code, ErrorMessage: text, Pools: []ZPool{}}
 }
 
 // parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health,frag` (tab-separated) into
 // pool maps, skipping lines with too few columns and stripping the % from the capacity column — the
 // positional parsing, testable without running zpool (6.16). fragmentation_percent is left out where
 // zpool prints "-" (unknown, zpoolprops(7)) or something else than a percentage.
-func parseZpoolList(out []byte) []map[string]any {
-	pools := []map[string]any{}
+func parseZpoolList(out []byte) []ZPool {
+	pools := []ZPool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		parts := strings.Split(line, "\t")
 		if len(parts) < 6 {
@@ -909,19 +948,14 @@ func parseZpoolList(out []byte) []map[string]any {
 		}
 		capStr := strings.TrimRight(parts[4], "%")
 		capPct, _ := strconv.Atoi(capStr)
-		pools = append(pools, map[string]any{
-			"name":             parts[0],
-			"size":             parts[1],
-			"allocated":        parts[2],
-			"free":             parts[3],
-			"capacity_percent": capPct,
-			"health":           parts[5],
-		})
+		pool := ZPool{Name: parts[0], Size: parts[1], Allocated: parts[2], Free: parts[3], CapacityPercent: capPct,
+			Health: parts[5]}
 		if len(parts) > 6 {
 			if frag, ok := zpoolPercent(parts[6]); ok {
-				pools[len(pools)-1]["fragmentation_percent"] = frag
+				pool.FragmentationPercent = &frag
 			}
 		}
+		pools = append(pools, pool)
 	}
 	return pools
 }
@@ -970,7 +1004,7 @@ type zpoolStatus struct {
 // zpoolDetails are the details of each pool by name (parseZpoolStatus). A zpool without -j (OpenZFS
 // 2.2 and older), a call that fails or times out, or output it cannot read gives none and no error:
 // the pools go out as before, like without `zpool status -x`.
-func zpoolDetails(ctx context.Context) map[string]map[string]any {
+func zpoolDetails(ctx context.Context) map[string]zpoolDetail {
 	out, err := zpoolCLI.run(ctx, "status", "-j", "--json-int", "--json-flat-vdevs")
 	if err != nil {
 		return nil
@@ -983,43 +1017,35 @@ func zpoolDetails(ctx context.Context) map[string]map[string]any {
 // vdev_errors, the vdevs with a read, write or checksum error {name, read, write, checksum}, sorted by
 // name, at most maxZpoolVdevErrors; a pool with neither has no entry. Output it cannot read, a count
 // as a string included, gives nil.
-func parseZpoolStatus(out []byte) map[string]map[string]any {
+func parseZpoolStatus(out []byte) map[string]zpoolDetail {
 	var status zpoolStatus
 	if err := json.Unmarshal(out, &status); err != nil {
 		return nil
 	}
-	details := map[string]map[string]any{}
+	details := map[string]zpoolDetail{}
 	for pool, st := range status.Pools {
-		detail := map[string]any{}
+		var detail zpoolDetail
 		if scan := st.Scan; scan != nil && scan.Function == "SCRUB" && zpoolScanStates[scan.State] {
-			scrub := map[string]any{"state": scan.State, "errors": scan.Errors}
+			detail.Scrub = &ZPoolScrub{State: scan.State, Errors: scan.Errors}
 			if scan.State == "SCANNING" && scan.Pause > 0 {
-				scrub["state"] = "PAUSED"
+				detail.Scrub.State = "PAUSED"
 			}
-			if scan.State != "SCANNING" && scan.EndTime > 0 {
-				scrub["end"] = scan.EndTime
+			if scan.State != "SCANNING" {
+				detail.Scrub.End = scan.EndTime
 			}
-			detail["scrub"] = scrub
 		}
-		var vdevs []map[string]any
 		for _, v := range st.Vdevs {
 			if v.Read == 0 && v.Write == 0 && v.Checksum == 0 {
 				continue
 			}
-			vdevs = append(vdevs, map[string]any{
-				"name": labelText(v.Name), "read": v.Read, "write": v.Write, "checksum": v.Checksum,
-			})
+			detail.VdevErrors = append(detail.VdevErrors,
+				ZPoolVdevError{Name: labelText(v.Name), Read: v.Read, Write: v.Write, Checksum: v.Checksum})
 		}
-		slices.SortFunc(vdevs, func(a, b map[string]any) int {
-			return strings.Compare(a["name"].(string), b["name"].(string))
-		})
-		if len(vdevs) > maxZpoolVdevErrors {
-			vdevs = vdevs[:maxZpoolVdevErrors]
+		slices.SortFunc(detail.VdevErrors, func(a, b ZPoolVdevError) int { return strings.Compare(a.Name, b.Name) })
+		if len(detail.VdevErrors) > maxZpoolVdevErrors {
+			detail.VdevErrors = detail.VdevErrors[:maxZpoolVdevErrors]
 		}
-		if len(vdevs) > 0 {
-			detail["vdev_errors"] = vdevs
-		}
-		if len(detail) > 0 {
+		if detail.Scrub != nil || len(detail.VdevErrors) > 0 {
 			details[pool] = detail
 		}
 	}

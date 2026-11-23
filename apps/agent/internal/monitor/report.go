@@ -126,7 +126,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 		if smart, absent := pluginCollectors.smart(ctx); smart != nil {
 			report["smart"] = smart
 		} else {
-			report["smart_absent"] = map[string]string{"reason": absent}
+			report["smart_absent"] = SmartAbsent{Reason: absent}
 		}
 	})
 	// The error lines of a failed unit go out once per failure while the plan asks for them
@@ -254,7 +254,7 @@ var pushRetryDelay = 10 * time.Second
 var pluginCollectors = struct {
 	docker  func(context.Context) *DockerBlock
 	proxmox func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck)
-	zfs     func(context.Context) map[string]any
+	zfs     func(context.Context) *ZFSBlock
 	smart   func(context.Context) ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 

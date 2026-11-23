@@ -93,7 +93,7 @@ func TestReportGoldenKeys(t *testing.T) {
 	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		return &ProxmoxBlock{Available: true}, nil
 	}
-	pluginCollectors.zfs = func(context.Context) map[string]any { return map[string]any{"available": true} }
+	pluginCollectors.zfs = func(context.Context) *ZFSBlock { return &ZFSBlock{Available: true} }
 	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) {
 		required := false
 		return &SystemState{RebootRequired: &required}, st

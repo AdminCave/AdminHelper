@@ -187,7 +187,7 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 		plugins++
 		return &ProxmoxBlock{}, b
 	}
-	pluginCollectors.zfs = func(context.Context) map[string]any { plugins++; return map[string]any{"pools": []any{}} }
+	pluginCollectors.zfs = func(context.Context) *ZFSBlock { plugins++; return &ZFSBlock{Pools: []ZPool{}} }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { plugins++; return nil, "not_installed" }
 	probeCalls := stubRunProbe(t, okResult)
 	discoveries := stubDiscovery(t, discovery.Inventory{})

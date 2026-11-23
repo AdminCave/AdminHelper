@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+// SmartAbsent is the smart_absent block: why the report carries no smart list.
+type SmartAbsent struct {
+	Reason string `json:"reason"`
+}
+
 // SmartDisk holds the SMART health data of a disk.
 type SmartDisk struct {
 	Device string `json:"device"`

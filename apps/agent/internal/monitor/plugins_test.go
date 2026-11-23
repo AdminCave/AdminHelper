@@ -339,7 +339,11 @@ func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
 		proxmox(ctx)
 		return nil, nil
 	}
-	pluginCollectors.zfs = record("zfs")
+	zfs := record("zfs")
+	pluginCollectors.zfs = func(ctx context.Context) *ZFSBlock {
+		zfs(ctx)
+		return nil
+	}
 
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
 	buildReportWithState(ctx, nil, nil, reportState{}, time.Now())
@@ -640,15 +644,15 @@ func TestParseZpoolList(t *testing.T) {
 	if len(pools) != 2 {
 		t.Fatalf("want 2 pools, got %d: %v", len(pools), pools)
 	}
-	if pools[0]["name"] != "tank" || pools[0]["capacity_percent"] != 33 || pools[0]["health"] != "ONLINE" ||
-		pools[0]["fragmentation_percent"] != 12 {
-		t.Errorf("tank: %v", pools[0])
+	if pools[0].Name != "tank" || pools[0].CapacityPercent != 33 || pools[0].Health != "ONLINE" ||
+		pools[0].FragmentationPercent == nil || *pools[0].FragmentationPercent != 12 {
+		t.Errorf("tank: %+v", pools[0])
 	}
-	if pools[1]["capacity_percent"] != 90 || pools[1]["health"] != "DEGRADED" {
-		t.Errorf("backup: %v", pools[1])
+	if pools[1].CapacityPercent != 90 || pools[1].Health != "DEGRADED" {
+		t.Errorf("backup: %+v", pools[1])
 	}
-	if frag, ok := pools[1]["fragmentation_percent"]; ok {
-		t.Errorf("backup: fragmentation_percent = %v, want none for \"-\" (unknown)", frag)
+	if frag := pools[1].FragmentationPercent; frag != nil {
+		t.Errorf("backup: fragmentation_percent = %v, want none for \"-\" (unknown)", *frag)
 	}
 	if short := parseZpoolList([]byte("tank\t3.62T")); len(short) != 0 {
 		t.Errorf("line with too few columns should be skipped: %v", short)
@@ -664,16 +668,19 @@ func TestParseZpoolList(t *testing.T) {
 		if len(pools) != 1 {
 			t.Fatalf("frag %q: want 1 pool, got %v", frag, pools)
 		}
-		got, ok := pools[0]["fragmentation_percent"]
-		if (want == nil && ok) || (want != nil && got != want) {
-			t.Errorf("frag %q: fragmentation_percent = %v (present %v), want %v", frag, got, ok, want)
+		var got any
+		if p := pools[0].FragmentationPercent; p != nil {
+			got = *p
 		}
-		if pools[0]["health"] != "ONLINE" || pools[0]["capacity_percent"] != 33 {
-			t.Errorf("frag %q: pool = %v, want the other columns unchanged", frag, pools[0])
+		if got != want {
+			t.Errorf("frag %q: fragmentation_percent = %v, want %v", frag, got, want)
+		}
+		if pools[0].Health != "ONLINE" || pools[0].CapacityPercent != 33 {
+			t.Errorf("frag %q: pool = %+v, want the other columns unchanged", frag, pools[0])
 		}
 	}
 	if pools := parseZpoolList([]byte("tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE")); len(pools) != 1 ||
-		pools[0]["fragmentation_percent"] != nil {
+		pools[0].FragmentationPercent != nil {
 		t.Errorf("six columns: %v, want one pool without fragmentation_percent", pools)
 	}
 }
@@ -972,13 +979,13 @@ func TestCollectZFSParseStatus(t *testing.T) {
 			vdevs = append(vdevs, fmt.Sprintf(`%q: {"name": %q, "read_errors": 0, "write_errors": 0, "checksum_errors": %d}`, name, name, i))
 		}
 		got := parseZpoolStatus([]byte(`{"pools": {"p": {"vdevs": {` + strings.Join(vdevs, ",") + `}}}}`))
-		errs, _ := got["p"]["vdev_errors"].([]map[string]any)
+		errs := got["p"].VdevErrors
 		if len(errs) != maxZpoolVdevErrors {
 			t.Fatalf("vdev_errors = %d entries, want %d", len(errs), maxZpoolVdevErrors)
 		}
 		for i, e := range errs {
-			if want := fmt.Sprintf("da%02d", i+1); e["name"] != want {
-				t.Errorf("vdev_errors[%d] = %v, want %s (sorted by name, the first %d kept)", i, e["name"], want, maxZpoolVdevErrors)
+			if want := fmt.Sprintf("da%02d", i+1); e.Name != want {
+				t.Errorf("vdev_errors[%d] = %v, want %s (sorted by name, the first %d kept)", i, e.Name, want, maxZpoolVdevErrors)
 			}
 		}
 	})

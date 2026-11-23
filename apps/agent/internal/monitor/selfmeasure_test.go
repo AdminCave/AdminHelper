@@ -106,7 +106,7 @@ func TestBuildReportMeasuresEveryCollector(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 		return &DockerBlock{Available: true}
 	}
-	pluginCollectors.zfs = func(context.Context) map[string]any {
+	pluginCollectors.zfs = func(context.Context) *ZFSBlock {
 		// Busy until the process has used 50 ms of CPU time: what the frame must count.
 		for start := processCPUTime(); processCPUTime()-start < 50*time.Millisecond; {
 		}

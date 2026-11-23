@@ -32,7 +32,7 @@ func stubReportHost(t *testing.T) {
 	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		return nil, nil
 	}
-	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
+	pluginCollectors.zfs = func(context.Context) *ZFSBlock { return nil }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func(context.Context) *ServiceHealth { return &ServiceHealth{} }
