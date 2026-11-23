@@ -1,5 +1,5 @@
 # Merge über die Merge Queue — Task-Ledger
-Status: aktiv · Branch: feature/harness-merge-queue · Review: am Ende
+Status: bereit · Branch: feature/harness-merge-queue · Review: am Ende
 Spec: docs/features/harness-merge-queue.md (Roadmap R-1345)
 Heavy: none — nur Harness-Skripte, Skill-Text und Entwickler-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: → T3
 Abhängt von: T1
 
-### T3 — R-1345: Entwickler-Doku und CHANGELOG  [ ]
+### T3 — R-1345: Entwickler-Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/harness-merge-queue.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d97a38493 2026-11-23T10:06:13+01:00
+Review: am Ende (Branch-Review)
 Änderung: Branch-Schutz und Trigger-Matrix DE+EN: die Merge Queue ist aktiv (Methode Merge, Build-Konkurrenz 2, Gruppengröße 1, Check-Timeout 60 min), `ci.yml` läuft auf `merge_group` voll und prüft `main` + PR vor dem Merge. Fragment `changelog.d/harness-merge-queue.md` (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/harness-merge-queue.md
