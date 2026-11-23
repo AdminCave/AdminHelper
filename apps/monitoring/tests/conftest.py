@@ -12,7 +12,9 @@ import.
 """
 
 import os
+import sys
 import tempfile
+from pathlib import Path
 
 import hypothesis
 import pytest
@@ -25,6 +27,9 @@ os.environ.setdefault("DATA_DIR", os.path.join(tempfile.gettempdir(), "adminhelp
 # Disable the notification-hub push by default — these are pure-logic tests with
 # no server to reach; the hub-emit tests set the URL explicitly.
 os.environ.setdefault("SERVER_HUB_URL", "")
+# The images copy apps/pycommon/ah_common next to app/ (/app/ah_common); the tests
+# take it from the tree.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pycommon"))
 
 # One seed, not a new one per run. A property suite that draws different data every
 # time is a gate that goes red on a commit which touched nothing, and whose failure

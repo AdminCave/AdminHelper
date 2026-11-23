@@ -649,8 +649,8 @@ layer_lint() {
   if ! only server monitoring ca-issuer; then
     skip ruff "ruff check" "AH_ONLY"; skip ruff "ruff format check" "AH_ONLY"
   elif [ -n "$ruff_bin" ]; then
-    run_step ruff "ruff check"        -- "$ruff_bin" check apps/server apps/monitoring apps/ca-issuer
-    run_step ruff "ruff format check" -- "$ruff_bin" format --check apps/server apps/monitoring apps/ca-issuer
+    run_step ruff "ruff check"        -- "$ruff_bin" check apps/server apps/monitoring apps/ca-issuer apps/pycommon
+    run_step ruff "ruff format check" -- "$ruff_bin" format --check apps/server apps/monitoring apps/ca-issuer apps/pycommon
   else
     skip ruff "ruff check" "ruff not installed (not on PATH, no component venv)"
     skip ruff "ruff format check" "ruff not installed (not on PATH, no component venv)"

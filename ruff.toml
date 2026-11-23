@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Lint + Format für die Python-Komponenten (apps/server, apps/monitoring,
-# apps/ca-issuer) und die Python-Skripte unter scripts/.
-# CI: eigener python-lint-Job (ruff check + ruff format --check) über alle vier
+# apps/ca-issuer, apps/pycommon) und die Python-Skripte unter scripts/.
+# CI: eigener python-lint-Job (ruff check + ruff format --check) über alle fünf
 # Pfade; `scripts/tests/run.sh lint` prüft dieselben (Schritte ruff und ruff-vm).
-# Lokal: `ruff check apps/server apps/monitoring apps/ca-issuer scripts`.
+# Lokal: `ruff check apps/server apps/monitoring apps/ca-issuer apps/pycommon scripts`.
 
 # Genau das ruff, das CI pinnt (ci.yml, scripts/vm/bootstrap_linux.sh,
 # apps/server/requirements-dev.txt; scripts/dev/toolchain-lockstep.sh prüft die
@@ -26,4 +26,4 @@ extend-exclude = ["docs", "data"]
 select = ["E4", "E7", "E9", "F", "I"]
 
 [lint.isort]
-known-first-party = ["app"]
+known-first-party = ["app", "ah_common"]

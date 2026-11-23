@@ -24,6 +24,9 @@ os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
 # default to permissive here. Tests that assert the enforced path set config.MTLS_ENFORCE
 # =True explicitly (see test_mtls_scope).
 os.environ.setdefault("MTLS_ENFORCE", "false")
+# The images copy apps/pycommon/ah_common next to app/ (/app/ah_common); the tests
+# take it from the tree.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pycommon"))
 
 import hypothesis
 import pytest

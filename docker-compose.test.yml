@@ -86,7 +86,8 @@ services:
   monitoring:
     image: adminhelper-test/monitoring:latest
     build:
-      context: apps/monitoring
+      context: .
+      dockerfile: apps/monitoring/Dockerfile
 
 # Docker publishes no port of a container that sits on internal networks only: the loopback
 # port of redis above needs its network to be a plain bridge here. Still no other service

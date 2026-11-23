@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ah_common.pagination import paginate
 from app.alerter import bell_record, emit_to_hub, muted_reasons, release_hub_slot
 from app.bell_catch_up import closed_message
 from app.check_configs import (
@@ -33,7 +34,6 @@ from app.core import database
 from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
-from app.core.pagination import paginate
 from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import escape_label_value, victoria
 from app.history import (

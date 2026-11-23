@@ -13,13 +13,13 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ah_common.pagination import paginate
 from app.core.auth import get_current_admin, require_internal_key
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.events import queue_event
 from app.core.identity import SCOPE_AGENT
 from app.core.monitoring_client import request as monitoring_request
-from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity

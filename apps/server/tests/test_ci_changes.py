@@ -109,6 +109,10 @@ def _on(*names: str) -> dict:
         (["apps/monitoring/app/main.py"], _on("server", "monitoring", "schemathesis")),
         (["apps/monitoring/tests/test_x.py"], _on("monitoring", "schemathesis")),
         (
+            ["apps/pycommon/ah_common/pagination.py"],
+            _on("server", "monitoring", "schemathesis"),
+        ),
+        (
             ["apps/monitoring/requirements.txt"],
             _on("server", "monitoring", "schemathesis", "lock-monitoring"),
         ),
@@ -206,13 +210,15 @@ _GATED = {
 # The required checks of the sharded jobs: they always run and report a leg the changes did not
 # ask for as green (test_ci_shards.py).
 _GATES = {"server-result", "python-lock-server-result"}
-# What the server image (context ., root .dockerignore), the images of apps/monitoring,
-# apps/ca-issuer and apps/gateway (their directory as context) and the frps image (context .,
-# apps/frps/Dockerfile.dockerignore) take from apps/.
+# What the server image (context ., root .dockerignore), the monitoring image (context .,
+# apps/monitoring/Dockerfile.dockerignore), the images of apps/ca-issuer and apps/gateway (their
+# directory as context) and the frps image (context ., apps/frps/Dockerfile.dockerignore) take
+# from apps/.
 _IMAGES = (
     "apps/server/**",
     "apps/web/**",
     "apps/monitoring/**",
+    "apps/pycommon/**",
     "apps/ca-issuer/**",
     "apps/gateway/**",
     "apps/frps/**",
@@ -240,7 +246,7 @@ _ALWAYS_ON = {
         "apps/agent/freebsd/**",
         "apps/agent/opnsense/**",
     ),
-    "openapi-compat": ("apps/server/**", "apps/monitoring/**"),
+    "openapi-compat": ("apps/server/**", "apps/monitoring/**", "apps/pycommon/**"),
     # Reads every changed path and tests none of them.
     "public-repo-guard": (),
     "ops-scripts": ("apps/*/docker-entrypoint.sh", "apps/frps/frps-supervisor.sh"),

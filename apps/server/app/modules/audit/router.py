@@ -12,10 +12,10 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from ah_common.pagination import paginate
 from app.core.auth import get_current_admin
 from app.core.bounds import Offset
 from app.core.database import get_db
-from app.core.pagination import paginate
 from app.modules.audit.models import AuditLog
 from app.modules.audit.schemas import AuditLogOut
 
