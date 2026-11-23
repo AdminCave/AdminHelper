@@ -335,7 +335,7 @@ func TestReportStateNotUsedByBuildReport(t *testing.T) {
 	s.times = cpuTimes(300, 1100)
 
 	report := BuildReport(nil)
-	if got := report["resources"].(*Resources).CPUPercent; got != sampledCPU || s.samples != 1 {
+	if got := report.Resources.CPUPercent; got != sampledCPU || s.samples != 1 {
 		t.Errorf("cpu_percent = %v after %d samples, want the 1s sample %v", got, s.samples, sampledCPU)
 	}
 	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {

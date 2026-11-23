@@ -65,8 +65,10 @@ Review: approve (.ah-out/review/kern-agent-20/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T8 — R-0688: `Report` als Struct, `BuildReport` liefert ihn  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/servicelogs_linux.go, apps/agent/internal/monitor/servicelogs_windows.go, apps/agent/internal/monitor/servicelogs_other.go, apps/agent/internal/monitor/plan_test.go
+### T8 — R-0688: `Report` als Struct, `BuildReport` liefert ihn  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/servicelogs_linux.go, apps/agent/internal/monitor/servicelogs_windows.go, apps/agent/internal/monitor/servicelogs_other.go, apps/agent/internal/monitor/plan_test.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/hostfacts_test.go, apps/agent/internal/monitor/inventory.go, apps/agent/internal/monitor/inventory_test.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/report_golden_linux_test.go, apps/agent/internal/monitor/selfmeasure_test.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/servicelogs_windows_test.go, apps/agent/internal/monitor/services.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2e92761da 2026-11-23T14:25:27+01:00
+Review: approve (.ah-out/review/kern-agent-20/T8.verdict.json)
 Änderung: `Report` mit `ReportVersion` (4), den Blöcken aus T2–T7, Probes, Credentials, Discovery und Self; `buildReportWithState` und `BuildReport` liefern ihn, `collectServiceLogs` liefert ein Struct, `PushReport` marshalt ihn. Keine `map[string]any` bleibt im Report-Pfad; was übrig bleibt (externe Eingaben), nennt der Commit-Body. Die Schlüsselmenge aus T1 bleibt gleich.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9

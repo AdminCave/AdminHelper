@@ -64,7 +64,7 @@ func TestReportGoldenServiceLogs(t *testing.T) {
 	stubFailedUnits(t, &failed, since, &details)
 	stubServiceLogReader(t, map[string]bool{"b.service": true})
 	report, _ := buildReportWithState(context.Background(), nil, &probeWork{serviceLogs: true}, reportState{}, time.Now())
-	checkGolden(t, "systemd_failed_logs", wireValue(t, report["systemd"]))
+	checkGolden(t, "systemd_failed_logs", wireValue(t, report.Systemd))
 }
 
 // TestReportGoldenShape holds the report's keys and their JSON types with the collectors stubbed;

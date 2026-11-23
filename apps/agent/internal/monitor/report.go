@@ -23,9 +23,33 @@ import (
 	"adminhelper-agent/internal/probe"
 )
 
+// Report is the monitoring report (report_version 4) as the monitoring service receives it; the
+// contract of each block is held in testdata/report/. A block whose collector did not run (held back by
+// the load gate or its throttle, or not installed) is left out; resources, uptime_seconds, host,
+// timestamp, systemd, probes and self are always sent.
+type Report struct {
+	ReportVersion int                  `json:"report_version"`
+	Timestamp     string               `json:"timestamp"`
+	Resources     *Resources           `json:"resources"`
+	UptimeSeconds int                  `json:"uptime_seconds"`
+	Host          HostFacts            `json:"host"`
+	SystemState   *SystemState         `json:"system_state,omitempty"`
+	Services      []WatchedService     `json:"services,omitzero"`
+	Systemd       *ServiceHealth       `json:"systemd"`
+	Docker        *DockerBlock         `json:"docker,omitempty"`
+	Proxmox       *ProxmoxBlock        `json:"proxmox,omitempty"`
+	ZFS           *ZFSBlock            `json:"zfs,omitempty"`
+	Smart         []SmartDisk          `json:"smart,omitzero"`
+	SmartAbsent   *SmartAbsent         `json:"smart_absent,omitempty"`
+	Credentials   map[string]bool      `json:"credentials,omitzero"`
+	Probes        probe.Results        `json:"probes"`
+	Discovery     *discovery.Inventory `json:"discovery,omitempty"`
+	Self          SelfBlock            `json:"self"`
+}
+
 // BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
 // with the 1s sample; monitor init's test push neither reads nor writes the state, and runs no probe.
-func BuildReport(serviceNames []string) map[string]any {
+func BuildReport(serviceNames []string) *Report {
 	report, _ := buildReportWithState(context.Background(), serviceNames, nil, reportState{}, time.Now())
 	return report
 }
@@ -56,19 +80,19 @@ var runDiscovery = discovery.Run
 // measuring frame (self.collectors); the optional ones and the probes are throttled by their
 // time-limit hits, and under load the load gate holds them and a discovery back (self.load_shed).
 // Without work no probe runs and the report names no credential.
-func buildReportWithState(ctx context.Context, serviceNames []string, work *probeWork, prev reportState, now time.Time) (map[string]any, reportState) {
+func buildReportWithState(ctx context.Context, serviceNames []string, work *probeWork, prev reportState, now time.Time) (*Report, reportState) {
 	m := newSelfMeasure(prev.Throttle)
-	report := map[string]any{"report_version": 4}
+	report := &Report{ReportVersion: 4}
 
 	var cpuNow *cpuSample
 	var resources *Resources
 	m.core(ctx, "resources", func(ctx context.Context) {
 		resources, cpuNow = collectResources(ctx, prev.CPU, now)
-		report["resources"] = resources
-		report["uptime_seconds"] = collectUptime()
-		report["host"] = collectHostFacts()
+		report.Resources = resources
+		report.UptimeSeconds = collectUptime()
+		report.Host = collectHostFacts()
 	})
-	report["timestamp"] = time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	report.Timestamp = time.Now().UTC().Format("2006-01-02T15:04:05Z")
 
 	// The collector hands prev on with what it measured replaced, so a value it could not read this
 	// time stays the base for the next report.
@@ -77,7 +101,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 		var systemState *SystemState
 		systemState, next = systemStateCollector(ctx, prev)
 		if !systemState.empty() {
-			report["system_state"] = systemState
+			report.SystemState = systemState
 		}
 	})
 	next.CPU = cpuNow
@@ -92,9 +116,9 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			// per cycle and two snapshots that could disagree if a service flips.
 			watched := collectWatchedServices(ctx, serviceNames)
 			svcHealth.Watched = watched
-			report["services"] = watched
+			report.Services = watched
 		}
-		report["systemd"] = svcHealth
+		report.Systemd = svcHealth
 		svc = svcHealth
 	})
 
@@ -106,27 +130,23 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
 	m.optional(ctx, "docker", func(ctx context.Context) {
 		if docker := pluginCollectors.docker(ctx); docker != nil {
-			report["docker"] = docker
+			report.Docker = docker
 		}
 	})
 	// A throttled run leaves next.ProxmoxBackups as prev had it, so the saved index stays.
 	m.optional(ctx, "proxmox", func(ctx context.Context) {
 		proxmox, backups := pluginCollectors.proxmox(ctx, prev.ProxmoxBackups, now)
 		next.ProxmoxBackups = backups
-		if proxmox != nil {
-			report["proxmox"] = proxmox
-		}
+		report.Proxmox = proxmox
 	})
 	m.optional(ctx, "zfs", func(ctx context.Context) {
-		if zfs := pluginCollectors.zfs(ctx); zfs != nil {
-			report["zfs"] = zfs
-		}
+		report.ZFS = pluginCollectors.zfs(ctx)
 	})
 	m.optional(ctx, "smart", func(ctx context.Context) {
 		if smart, absent := pluginCollectors.smart(ctx); smart != nil {
-			report["smart"] = smart
+			report.Smart = smart
 		} else {
-			report["smart_absent"] = SmartAbsent{Reason: absent}
+			report.SmartAbsent = &SmartAbsent{Reason: absent}
 		}
 	})
 	// The error lines of a failed unit go out once per failure while the plan asks for them
@@ -167,7 +187,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			for _, ref := range credentials.Refs(work.creds) {
 				stored[ref] = true
 			}
-			report["credentials"] = stored
+			report.Credentials = stored
 		}
 	}
 	if m.shedding {
@@ -186,7 +206,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 		})
 		m.record(probesCollector, st, postponed)
 	}
-	report["probes"] = next.Probes
+	report.Probes = next.Probes
 	next.Brake = acc.KeptBrake()
 	next.Bindings = acc.KeptBindings()
 	next.Cursors = acc.KeptCursors(probes)
@@ -196,14 +216,15 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// holds back stays asked for until one is sent.
 	if work != nil && work.scan {
 		m.optional(ctx, discoveryCollector, func(ctx context.Context) {
-			report["discovery"] = runDiscovery(ctx, work.markers)
+			inventory := runDiscovery(ctx, work.markers)
+			report.Discovery = &inventory
 		})
 	} else if t, ok := prev.Throttle[discoveryCollector]; ok {
 		m.next[discoveryCollector] = t
 	}
 
 	next.Throttle = m.next
-	report["self"] = SelfBlock{Collectors: m.stats, LoadShed: next.LoadShed.block(reading)}
+	report.Self = SelfBlock{Collectors: m.stats, LoadShed: next.LoadShed.block(reading)}
 	return report, next
 }
 
@@ -269,7 +290,7 @@ type PushReportParams struct {
 	URL      string
 	APIKey   string
 	ServerID string
-	Report   map[string]any
+	Report   *Report
 	TLS      config.TLSOpts
 }
 
@@ -378,12 +399,18 @@ func stillFailed(sent map[string]string, failed []string, since map[string]strin
 	return kept
 }
 
+// ServiceLog is one unit's entry of systemd.failed_logs: since is left out for a unit without one.
+type ServiceLog struct {
+	Since string   `json:"since,omitempty"`
+	Lines []string `json:"lines"`
+}
+
 // collectServiceLogs reads the error lines of every failed unit whose failure has not been sent,
 // at most maxLogUnits, and marks each read one in sent (unit → since). A unit whose lines could
 // not be read stays unmarked and is asked again in the next report. The result is the
 // systemd.failed_logs block: {unit: {since, lines}}, lines oldest first.
-func collectServiceLogs(ctx context.Context, failed []string, since, sent map[string]string) map[string]any {
-	logs := map[string]any{}
+func collectServiceLogs(ctx context.Context, failed []string, since, sent map[string]string) map[string]ServiceLog {
+	logs := map[string]ServiceLog{}
 	read := serviceLogReader()
 	for _, unit := range failed {
 		if len(logs) == maxLogUnits {
@@ -396,11 +423,7 @@ func collectServiceLogs(ctx context.Context, failed []string, since, sent map[st
 		if !ok {
 			continue
 		}
-		entry := map[string]any{"lines": lines}
-		if since[unit] != "" {
-			entry["since"] = since[unit]
-		}
-		logs[unit] = entry
+		logs[unit] = ServiceLog{Since: since[unit], Lines: lines}
 		sent[unit] = since[unit]
 	}
 	return logs

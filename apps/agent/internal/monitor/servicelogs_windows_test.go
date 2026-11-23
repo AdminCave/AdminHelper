@@ -36,27 +36,27 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 	}
 	work := &probeWork{serviceLogs: true}
 	var state reportState
-	run := func() map[string]any {
+	run := func() *Report {
 		t.Helper()
 		read = nil
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(context.Background(), nil, work, state, time.Now())
 		return report
 	}
 
 	report := run()
-	svc, _ := report["systemd"].(*ServiceHealth)
+	svc := report.Systemd
 	if !reflect.DeepEqual(svc.LogUnits, []string{"Spooler"}) {
 		t.Fatalf("log_units = %#v, want [Spooler]", svc.LogUnits)
 	}
-	want := map[string]any{"Spooler": map[string]any{"since": "2026-11-19T08:00:00Z", "lines": []string{"error of Spooler"}}}
+	want := map[string]any{"Spooler": map[string]any{"since": "2026-11-19T08:00:00Z", "lines": []any{"error of Spooler"}}}
 	if logs := failedLogs(t, report); !reflect.DeepEqual(logs, want) {
 		t.Fatalf("failed_logs = %#v, want %#v", logs, want)
 	}
 
 	// Same failure: log_units again, nothing read, nothing sent.
 	report = run()
-	if svc, _ := report["systemd"].(*ServiceHealth); !reflect.DeepEqual(svc.LogUnits, []string{"Spooler"}) {
+	if svc := report.Systemd; !reflect.DeepEqual(svc.LogUnits, []string{"Spooler"}) {
 		t.Errorf("second run: log_units = %#v", svc.LogUnits)
 	}
 	if logs := failedLogs(t, report); logs != nil || len(read) != 0 {
@@ -71,10 +71,11 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 }
 
 // failedLogs is the failed_logs of the report's systemd block (as in servicelogs_linux_test.go).
-func failedLogs(t *testing.T, report map[string]any) map[string]any {
+// failedLogs is the systemd.failed_logs block as the monitoring service decodes it.
+func failedLogs(t *testing.T, report *Report) map[string]any {
 	t.Helper()
-	if svc, _ := report["systemd"].(*ServiceHealth); svc != nil {
-		return svc.FailedLogs
+	if report.Systemd == nil {
+		return nil
 	}
-	return nil
+	return dockerWire(t, report.Systemd.FailedLogs)
 }

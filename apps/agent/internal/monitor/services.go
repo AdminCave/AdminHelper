@@ -24,15 +24,15 @@ type ServiceEntry = map[string]string
 // empty list and leaves out one never set (nil): the server tells "no units" from "not collected",
 // and a platform without a part (failed_details off Linux, counts after a failed call) sends no key.
 type ServiceHealth struct {
-	Failed          []string         `json:"failed,omitzero"`
-	EnabledInactive []string         `json:"enabled_inactive,omitzero"`
-	AllServices     []ServiceEntry   `json:"all_services,omitzero"`
-	Counts          *ServiceCounts   `json:"counts,omitempty"`
-	Error           string           `json:"error,omitempty"`
-	FailedDetails   []FailedDetail   `json:"failed_details,omitzero"`
-	Watched         []WatchedService `json:"watched,omitzero"`
-	LogUnits        []string         `json:"log_units,omitzero"`
-	FailedLogs      map[string]any   `json:"failed_logs,omitempty"`
+	Failed          []string              `json:"failed,omitzero"`
+	EnabledInactive []string              `json:"enabled_inactive,omitzero"`
+	AllServices     []ServiceEntry        `json:"all_services,omitzero"`
+	Counts          *ServiceCounts        `json:"counts,omitempty"`
+	Error           string                `json:"error,omitempty"`
+	FailedDetails   []FailedDetail        `json:"failed_details,omitzero"`
+	Watched         []WatchedService      `json:"watched,omitzero"`
+	LogUnits        []string              `json:"log_units,omitzero"`
+	FailedLogs      map[string]ServiceLog `json:"failed_logs,omitempty"`
 }
 
 // ServiceCounts is the "x/y active" display of the loaded services (serviceCounts).

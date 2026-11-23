@@ -91,13 +91,9 @@ func TestThrottleHoldsBackAllButEveryNthRun(t *testing.T) {
 }
 
 // selfStats is the self.collectors block of report.
-func selfStats(t *testing.T, report map[string]any) map[string]collectorStat {
+func selfStats(t *testing.T, report *Report) map[string]collectorStat {
 	t.Helper()
-	self, ok := report["self"].(SelfBlock)
-	if !ok {
-		t.Fatalf("report self = %#v, want a block", report["self"])
-	}
-	return self.Collectors
+	return report.Self.Collectors
 }
 
 func TestBuildReportMeasuresEveryCollector(t *testing.T) {
@@ -143,7 +139,7 @@ func TestBuildReportMeasuresEveryCollector(t *testing.T) {
 			t.Errorf("the core collector %s has a throttle", name)
 		}
 	}
-	data, err := json.Marshal(report["self"])
+	data, err := json.Marshal(report.Self)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,9 +186,9 @@ func TestBuildReportThrottlesAnOptionalCollectorThatHitsItsTimeLimit(t *testing.
 		return &DockerBlock{Error: &code}
 	}
 	var state reportState
-	run := func() map[string]any {
+	run := func() *Report {
 		t.Helper()
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(context.Background(), nil, nil, state, time.Now())
 		return report
 	}
@@ -201,8 +197,8 @@ func TestBuildReportThrottlesAnOptionalCollectorThatHitsItsTimeLimit(t *testing.
 	for i := 1; i <= 2; i++ {
 		report := run()
 		st := selfStats(t, report)["docker"]
-		if calls != i || report["docker"] == nil || st.Timeouts != 1 || st.Throttled || st.Factor != i {
-			t.Fatalf("run %d: %d calls, docker %v, stat %+v; want it run with a hit at factor %d", i, calls, report["docker"], st, i)
+		if calls != i || report.Docker == nil || st.Timeouts != 1 || st.Throttled || st.Factor != i {
+			t.Fatalf("run %d: %d calls, docker %v, stat %+v; want it run with a hit at factor %d", i, calls, report.Docker, st, i)
 		}
 	}
 
@@ -212,7 +208,7 @@ func TestBuildReportThrottlesAnOptionalCollectorThatHitsItsTimeLimit(t *testing.
 	if calls != 2 || st != (collectorStat{Factor: 2, Throttled: true}) {
 		t.Fatalf("throttled run: %d calls, stat %+v; want docker held back at factor 2", calls, st)
 	}
-	if _, ok := report["docker"]; ok {
+	if report.Docker != nil {
 		t.Error("the throttled docker block is in the report")
 	}
 	if th := state.Throttle["docker"]; th.Skipped != 1 || th.Factor != 2 {
@@ -246,17 +242,15 @@ func TestBuildReportLeavesTheBlockOfAHeldBackCollectorOut(t *testing.T) {
 	if called {
 		t.Error("the held-back smart collector ran")
 	}
-	for _, key := range []string{"smart", "smart_absent"} {
-		if v, ok := report[key]; ok {
-			t.Errorf("report %s = %v, want it left out with the held-back collector", key, v)
-		}
+	if report.Smart != nil || report.SmartAbsent != nil {
+		t.Errorf("report smart = %v, smart_absent = %v, want both left out with the held-back collector", report.Smart, report.SmartAbsent)
 	}
 	stats := selfStats(t, report)
 	if st := stats["smart"]; !st.Throttled || st.Factor != 2 {
 		t.Errorf("smart stat = %+v, want throttled at factor 2", st)
 	}
-	if st := stats["services"]; st.Throttled || st.Factor != 1 || report["systemd"] == nil {
-		t.Errorf("services stat = %+v, systemd %v; want the core collector run", st, report["systemd"])
+	if st := stats["services"]; st.Throttled || st.Factor != 1 || report.Systemd == nil {
+		t.Errorf("services stat = %+v, systemd %v; want the core collector run", st, report.Systemd)
 	}
 	if th := next.Throttle["smart"]; th != (throttle{Factor: 2, Skipped: 1}) {
 		t.Errorf("smart throttle = %+v, want one run skipped at factor 2", th)
@@ -271,14 +265,14 @@ func TestBuildReportThrottlesTheProbePhaseByThePostponedProbes(t *testing.T) {
 	var state reportState
 	for i := 1; i <= 2; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(ctx, nil, &probeWork{probes: long}, state, time.Now())
 		cancel()
 		st := selfStats(t, report)[probesCollector]
 		if st.Timeouts != 1 || st.Factor != i || st.Throttled {
 			t.Fatalf("run %d: probes stat %+v, want one postponed at factor %d", i, st, i)
 		}
-		if _, ok := report["probes"]; !ok {
+		if _, ok := reportWire(t, report)["probes"]; !ok {
 			t.Fatalf("run %d: the probes block is missing, want it in every run", i)
 		}
 	}
@@ -293,7 +287,7 @@ func TestBuildReportThrottlesTheProbePhaseByThePostponedProbes(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Errorf("ran %v at factor 2, want the probe not due yet", *calls)
 	}
-	if got := report["probes"].(probe.Results)["p"]; got.TS != state.Probes["p"].TS {
+	if got := report.Probes["p"]; got.TS != state.Probes["p"].TS {
 		t.Errorf("report probes p = %+v, want its last result", got)
 	}
 	if st := selfStats(t, report)[probesCollector]; st.Throttled || st.Timeouts != 0 {

@@ -163,13 +163,9 @@ func TestCollectCPUSinceKeepsTheIowaitCounter(t *testing.T) {
 }
 
 // selfLoadShed is the report's self.load_shed block.
-func selfLoadShed(t *testing.T, report map[string]any) LoadShedBlock {
+func selfLoadShed(t *testing.T, report *Report) LoadShedBlock {
 	t.Helper()
-	self, ok := report["self"].(SelfBlock)
-	if !ok {
-		t.Fatalf("self = %#v, want a block", report["self"])
-	}
-	return self.LoadShed
+	return report.Self.LoadShed
 }
 
 func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
@@ -199,18 +195,18 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 
 	base := time.Now().Add(-time.Hour)
 	var state reportState
-	run := func(i int) map[string]any {
+	run := func(i int) *Report {
 		t.Helper()
 		// The probe is due in every run.
 		if res, ok := state.Probes["p"]; ok {
 			res.TS = time.Now().Add(-time.Hour).Unix()
 			state.Probes["p"] = res
 		}
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(context.Background(), nil, work, state, base.Add(time.Duration(i)*5*time.Minute))
 		return report
 	}
-	measuredAll := func(i int, report map[string]any, want int) {
+	measuredAll := func(i int, report *Report, want int) {
 		t.Helper()
 		if plugins != 4*want || len(*probeCalls) != want || len(*discoveries) != want {
 			t.Fatalf("run %d: %d plugin calls, %d probes, %d discoveries; want every one run %d times", i, plugins, len(*probeCalls), len(*discoveries), want)
@@ -246,15 +242,16 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 			t.Errorf("run 2: core %s stat %+v (present %v), want it measured", name, st, ok)
 		}
 	}
+	sent := reportWire(t, report)
 	for _, key := range []string{"docker", "proxmox", "zfs", "smart", "smart_absent", "discovery"} {
-		if v, ok := report[key]; ok {
+		if v, ok := sent[key]; ok {
 			t.Errorf("run 2: report %s = %v, want it left out", key, v)
 		}
 	}
-	if got := report["probes"].(probe.Results)["p"]; got.TS != before.Probes["p"].TS || got.Status != probe.StatusOK {
+	if got := report.Probes["p"]; got.TS != before.Probes["p"].TS || got.Status != probe.StatusOK {
 		t.Errorf("run 2: report probes p = %+v, want the stored result", got)
 	}
-	if _, ok := report["credentials"]; !ok {
+	if _, ok := sent["credentials"]; !ok {
 		t.Error("run 2: the credentials block is missing, want it sent as in every run")
 	}
 	if !reflect.DeepEqual(state.Throttle, before.Throttle) || !reflect.DeepEqual(state.Probes, before.Probes) {
@@ -272,7 +269,7 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 	}) {
 		t.Errorf("run 2: load_shed %v", wireValue(t, got))
 	}
-	wire, err := json.Marshal(report["self"])
+	wire, err := json.Marshal(report.Self)
 	if err != nil {
 		t.Fatal(err)
 	}

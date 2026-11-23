@@ -59,12 +59,13 @@ func stubServiceLogReader(t *testing.T, broken map[string]bool) *[]string {
 	return &read
 }
 
-func failedLogs(t *testing.T, report map[string]any) map[string]any {
+// failedLogs is the systemd.failed_logs block as the monitoring service decodes it.
+func failedLogs(t *testing.T, report *Report) map[string]any {
 	t.Helper()
-	if svc, _ := report["systemd"].(*ServiceHealth); svc != nil {
-		return svc.FailedLogs
+	if report.Systemd == nil {
+		return nil
 	}
-	return nil
+	return dockerWire(t, report.Systemd.FailedLogs)
 }
 
 func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
@@ -76,10 +77,10 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	read := stubServiceLogReader(t, nil)
 	work := &probeWork{serviceLogs: true}
 	var state reportState
-	run := func() map[string]any {
+	run := func() *Report {
 		t.Helper()
 		*read = nil
-		var report map[string]any
+		var report *Report
 		report, state = buildReportWithState(context.Background(), nil, work, state, time.Now())
 		return report
 	}
@@ -87,8 +88,8 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	// First run: both failures go out with their since, oldest line first.
 	logs := failedLogs(t, run())
 	want := map[string]any{
-		"a.service": map[string]any{"since": since["a.service"], "lines": []string{"error of a.service"}},
-		"b.service": map[string]any{"since": since["b.service"], "lines": []string{"error of b.service"}},
+		"a.service": map[string]any{"since": since["a.service"], "lines": []any{"error of a.service"}},
+		"b.service": map[string]any{"since": since["b.service"], "lines": []any{"error of b.service"}},
 	}
 	if !reflect.DeepEqual(logs, want) {
 		t.Fatalf("failed_logs = %#v, want %#v", logs, want)
@@ -98,7 +99,7 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	}
 
 	// The failed units are the ones with lines: the block names no log_units (a Windows block does).
-	if svc, _ := run()["systemd"].(*ServiceHealth); svc.LogUnits != nil {
+	if svc := run().Systemd; svc.LogUnits != nil {
 		t.Errorf("log_units = %#v, want none on Linux", svc.LogUnits)
 	}
 

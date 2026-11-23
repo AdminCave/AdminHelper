@@ -92,8 +92,8 @@ func shouldSendFullInventory(st *inventoryState, hash string, now time.Time) boo
 // after a SUCCESSFUL full send (persisting before/without success would let
 // the server miss a full inventory for up to an hour) and whether the report
 // still contains the full inventory.
-func throttleInventory(report map[string]any, statePath string, now time.Time) (inventoryState, bool) {
-	systemd, _ := report["systemd"].(*ServiceHealth)
+func throttleInventory(report *Report, statePath string, now time.Time) (inventoryState, bool) {
+	systemd := report.Systemd
 	if systemd == nil || systemd.AllServices == nil {
 		// No inventory collected: leave the report untouched (full send), no state.
 		return inventoryState{}, false
