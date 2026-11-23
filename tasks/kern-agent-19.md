@@ -1,5 +1,5 @@
 # kern-agent-19 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-19 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-19 · Review: am Ende
 Spec: docs/features/kern-agent-19.md (Roadmap R-1682)
 Heavy: linux-full — apps/agent (Provisionierung); nur Ausgabe und Fehlerklassifikation, kein Cross-Host-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
