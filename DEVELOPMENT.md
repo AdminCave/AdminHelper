@@ -1461,6 +1461,21 @@ SKIP und fehlen im Artefakt, die Summary nennt sie, eine unbekannte Id ist Exit 
   jedem Lauf um genau diese Frist (warm.sh merkt sie je Slot als `desktop_ttl` bzw.
   `gui_ttl` in `.vm/warm.env`), eine bewusst kurze Box bleibt also kurz.
 
+### Merge-Waechter (merge-watch.sh)
+
+Seit der Merge Queue reiht eine Session ihren Pull Request mit `gh pr merge <n>` ein und wartet mit
+`scripts/dev/queue-wait.sh <n>` im Hintergrund (`/feature-build` §4.7). Faellt der Pull Request aus der
+Queue oder wird `ci.yml` auf `main` rot, nachdem diese Session schon beendet ist, zeigt es
+`scripts/dev/merge-watch.sh`: zwei `gh`-Abfragen ohne Modell und ohne Cron, die Queue von `main`, offene
+Pull Requests, deren letztes Queue-Ereignis ein Rauswurf ist, und der neueste zu Ende gelaufene
+`ci.yml`-Push-Lauf auf `main`. Der SessionStart-Hook druckt seine Zeile `Merge:` im AH-STATUS und macht
+aus jedem Befund eine `WARN:`-Zeile; reagieren muss das Vorhaben des Pull Requests. Der Waechter
+repariert nichts.
+
+```bash
+bash scripts/dev/merge-watch.sh   # Exit 0 nichts zu tun, 1 mindestens ein Befund, 2 gh nicht erreichbar
+```
+
 ### Wochenlauf (heavy.sh)
 
 Der schwere Tier laeuft nicht mehr „wenn man daran denkt", sondern als ein Lauf mit

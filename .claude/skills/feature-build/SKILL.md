@@ -133,7 +133,9 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
    Remote-Branch danach mit `git push origin --delete feature/<slug>` löschen. Exit 1 (aus der Queue gefallen) → den
    roten `merge_group`-Lauf lesen (`gh run list --workflow ci.yml --event merge_group -L 5`): Konflikt → 6, dann
    erneut 7; flaky → einmal neu einreihen plus Roadmap-Zeile; echt rot → Task ins Ledger wie 4.4 oder Übergabe.
-   Exit 2 oder 3 → melden (Infrastruktur oder hängende Queue), nicht von Hand mergen. Sonst → Übergabe an Kevin:
+   Exit 2 oder 3 → melden (Infrastruktur oder hängende Queue), nicht von Hand mergen. Ist die wartende Session
+   weg, meldet der Merge-Wächter (`scripts/dev/merge-watch.sh`, eine `WARN:`-Zeile im AH-STATUS) denselben Rauswurf:
+   die Session des Vorhabens reagiert wie auf Exit 1, auf „main ist rot“ wie in 8. Sonst → Übergabe an Kevin:
    rote CI, ein Lauf aus 3 rot, ein Urteil nicht `approve`, eine Ersatzprüfung, oder der PR ändert
    `.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` (Kevin reiht ein).
 8. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits (`<merge-sha>` aus `queue-wait.sh`) beobachten: `gh run
