@@ -232,8 +232,13 @@ func (h *rpmHost) run(t *testing.T, steps []scriptletStep) []stepLog {
 		}
 		cmd := exec.Command("/bin/sh", script, strconv.Itoa(s.arg))
 		cmd.Env = append(os.Environ(), "PATH="+h.path, "AH_SYSTEMCTL_STATE="+h.state)
-		if out, err := cmd.CombinedOutput(); err != nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
 			t.Fatalf("%s ($1=%d): %v\n%s", s.name, s.arg, err, out)
+		}
+		// A failed systemctl call must stay out of the output rpm and dnf show the admin.
+		if strings.Contains(string(out), "has not been booted") {
+			t.Errorf("%s ($1=%d) shows the failed systemctl call:\n%s", s.name, s.arg, out)
 		}
 		logs = append(logs, stepLog{s.name, h.lines(t, "calls"), h.lines(t, "starts")})
 	}

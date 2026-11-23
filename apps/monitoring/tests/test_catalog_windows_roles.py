@@ -280,6 +280,13 @@ def test_only_an_sql_server_service_takes_the_pattern():
             {"realtime_on": True, "detections_24h": 0, "signature_age_d": 4},
             "critical",
         ),
+        # R-1481: signatures that were never updated reach the check as age 65535.
+        (
+            "defender",
+            "status",
+            {"realtime_on": True, "detections_24h": 0, "signature_age_d": 65535},
+            "critical",
+        ),
         (
             "defender",
             "status",

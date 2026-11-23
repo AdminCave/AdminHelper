@@ -153,6 +153,8 @@ def test_a_stopped_service_or_another_case_finds_nothing(module_id):
             "critical",
         ),
         ("windows-dhcp", "scopes", {"scopes": 3, "scopes_over_80": 0, "scopes_over_95": 0}, "ok"),
+        # R-1465: a server without a scope sends only the count; nothing to rate is unknown.
+        ("windows-dhcp", "scopes", {"scopes": 0}, "unknown"),
         ("windows-dhcp", "scopes", {"scopes_over_80": 1, "scopes_over_95": 0}, "warning"),
         ("windows-dhcp", "scopes", {"scopes_over_80": 1, "scopes_over_95": 1}, "critical"),
         ("windows-dns", "answers", {"rcode": "nxdomain", "answers": 0}, "ok"),

@@ -15,6 +15,7 @@ import type { MonitorCheck, MonitorDiscovery, MonitorFinding } from '$lib/api/ty
 const h = vi.hoisted(() => ({
   session: { session: {}, settings: {} } as unknown,
   fetchStatus: vi.fn(),
+  fetchServers: vi.fn(),
   fetchTemplates: vi.fn(),
   assignTemplate: vi.fn(),
   unassignTemplate: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('./session', () => ({ currentSession: () => h.session }));
 vi.mock('$lib/api/monitoring', () => ({
   monitoringApi: {
     fetchStatus: h.fetchStatus,
+    fetchServers: h.fetchServers,
     fetchTemplates: h.fetchTemplates,
     assignTemplate: h.assignTemplate,
     unassignTemplate: h.unassignTemplate,
@@ -56,6 +58,9 @@ import {
   loadMonitoring,
   selectedServerId,
   monitoringChecks,
+  monitoringServers,
+  monitoringServersLoaded,
+  loadServers,
   setSelectedServer,
   assignTemplateToServers,
   unassignTemplateFromServer,
@@ -388,5 +393,22 @@ describe('server link of the cross views (arch-monitoring-ui T7)', () => {
     expect(get(monitoring).tab).toBe('overview');
     expect(get(overviewView)).toBe('list');
     expect(get(selectedServerId)).toBe('srv-b');
+  });
+});
+
+describe('monitoring store: the server list signal (R-1675)', () => {
+  beforeEach(() => h.fetchServers.mockReset());
+
+  it('is set by a successful load and cleared, with the list, by a failed one', async () => {
+    expect(get(monitoringServersLoaded)).toBe(false);
+    h.fetchServers.mockResolvedValueOnce([{ id: 's1' }]);
+    await loadServers();
+    expect(get(monitoringServersLoaded)).toBe(true);
+    expect(get(monitoringServers)).toHaveLength(1);
+
+    h.fetchServers.mockRejectedValueOnce(new Error('boom'));
+    await loadServers();
+    expect(get(monitoringServersLoaded)).toBe(false);
+    expect(get(monitoringServers)).toEqual([]);
   });
 });

@@ -40,6 +40,7 @@ vi.mock('$lib/stores/monitoring', async () => {
     monitoringServers: writable([]),
     // Loaded: the monitoring panel shows no loading text of its own here.
     monitoringHasLoaded: writable(true),
+    monitoringServersLoaded: writable(true),
     monitoringError: writable(null),
   };
 });

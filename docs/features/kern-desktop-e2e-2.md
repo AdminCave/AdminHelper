@@ -27,9 +27,13 @@ Keine.
 Keine (Tauri-Bridge unverändert).
 
 ## Trade-offs & Alternativen
-In `waitUntil` (Zeile 201) wirft der Helfer beim ersten abgelehnten Aufruf statt bis zum Timeout zu warten. Das ist
-gewollt: Ein abgelehntes `tunnel_status` ist kein Zwischenzustand, sondern ein Fehler, und die Meldung trägt nun
-seinen Text.
+In `waitUntil` (Zeile 208) wirft der Helfer `invokeValue('tunnel_status')` bei einem abgelehnten Aufruf. `waitUntil`
+bricht deshalb nicht beim ersten Wurf ab: wdio wiederholt eine werfende Bedingung im Intervall bis zum Timeout
+(`Timer._checkCondition`) und lehnt dann mit dem zuletzt geworfenen Fehler ab, als `waitUntil condition failed with
+the following reason: <Text>`; `timeoutMsg` gilt nur, wenn die Bedingung bis zuletzt `false` lieferte. Ein dauerhaft
+abgelehntes `tunnel_status` ist ein Fehler, kein Zwischenzustand, und die Meldung trägt nun seinen Text. Belegt am
+Quelltext von wdio 9.29.0 (lokal installiert); das Lockfile nennt 10.1.0, dessen Quelltext war hier nicht
+installiert, die Logik ist dort nicht verifiziert.
 
 ## Risiken & Rollback
 Gering; nur Testcode. Der Beweis läuft im nächtlichen Sammellauf (`desktop_e2e_tunnel`). Rollback: Revert.
