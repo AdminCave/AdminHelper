@@ -1,5 +1,5 @@
 # kern-server-11 — Ein Weg für neue Benutzer, FRP-Startprüfungen aus main.py — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-11 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-11 · Review: pro Task
 Spec: docs/features/kern-server-11.md (Roadmap R-0690)
 Heavy: linux-full — Server-API (Bootstrap, Benutzer anlegen) und der Start des Servers (frps.toml)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_confi
 Doku: → T4
 Abhängt von: T2
 
-### T4 — R-0690: Doku DE+EN und Changelog  [ ]
-Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-11.md
+### T4 — R-0690: Doku DE+EN und Changelog  [x]
+Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-11.md, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @715bafb31 2026-11-23T17:16:19+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Event-Katalog: `user.created` feuert jeder Weg, der einen Benutzer anlegt (API, Bootstrap, CLI, `ADMIN_PASSWORD` beim Start). API-Referenz: der Bootstrap feuert `user.created`. Changelog-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-11.md
