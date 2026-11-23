@@ -22,11 +22,15 @@
 #
 # Below line 4, one `Geplant:` line per workflow with a `schedule:` (line 4b):
 # the newest completed run on main, "kein Lauf" without one, "?" without gh.
+# Then one `Merge:` line from scripts/dev/merge-watch.sh (line 4c): the merge
+# queue of main and its newest ci.yml run; a pull request out of the queue or a
+# red main is a WARN line.
 #
 # Implemented: version bumped without a tag · main ahead of origin · an open draft
 # release · .claude/rules or .claude/agents gitignored · an env block in the public
 # settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing ·
-# a scheduled workflow whose last run on main is red or older than 8 days.
+# a scheduled workflow whose last run on main is red or older than 8 days ·
+# a pull request out of the merge queue, or a red ci.yml run on main.
 #
 # NOT implemented, so their silence means nothing: CLAUDE.md §3 trigger 1 (a
 # stage whose `Hängt ab von` is unmerged), 2 for a release without a green weekly
@@ -195,6 +199,22 @@ scheduled_line() {  # scheduled_line <workflow file> — prints the line, may wa
 for f in .github/workflows/*.yml .github/workflows/*.yaml; do
   [ -f "$f" ] && grep -qE '^[[:space:]]+schedule:' "$f" && scheduled_line "$f"
 done
+
+# ── line 4c: merge queue and main (merge-watch.sh, R-1724) ────────────────────
+# From the checkout this hook lives in, like roadmap.py; AH_MERGE_WATCH replaces
+# the script in a test. Its ACTION lines (a pull request out of the queue, a red
+# main) become WARN lines; anything else it says, or no answer, is "Merge: ?".
+MERGE_WATCH="${AH_MERGE_WATCH:-$(dirname "$ROADMAP_PY")/merge-watch.sh}"
+mw_line="Merge: ?"
+if [ -f "$MERGE_WATCH" ]; then
+  while IFS= read -r l; do
+    case "$l" in
+      "Merge: "*) mw_line="$l" ;;
+      "ACTION: "*) warn "${l#ACTION: } — gehört dem Vorhaben dieses PRs (/feature-build §4.7, §4.8)." ;;
+    esac
+  done < <(timeout 8 bash "$MERGE_WATCH" 2>/dev/null)
+fi
+echo "$mw_line"
 
 # ── line 5: warm boxes ────────────────────────────────────────────────────────
 # Nothing but the role slots and their VM ids, the keys vm.py's warm_vmids reads:

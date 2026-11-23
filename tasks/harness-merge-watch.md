@@ -18,8 +18,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- merge_watch_test
 Doku: → T3
 
-### T2 — R-1724: AH-STATUS zeigt den Wächter, /feature-build verweist darauf  [ ]
+### T2 — R-1724: AH-STATUS zeigt den Wächter, /feature-build verweist darauf  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, .claude/skills/feature-build/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @750d990f5 2026-11-23T12:39:22+01:00
+Review: am Ende (Branch-Review)
 Änderung: `session-status.sh` ruft `merge-watch.sh` aus seinem eigenen Checkout (wie `roadmap.py`) mit Zeitdeckel, druckt die `Merge:`-Zeile nach den `Geplant:`-Zeilen und macht jede `ACTION:`-Zeile zu `warn`; fehlt das Skript oder scheitert es, `Merge: ?`, Exit bleibt 0. `session_status_test.sh` prüft Zeile, WARN und den Fehlerfall. `/feature-build` §4.7: eine `WARN:`-Zeile des Wächters zu einem PR gehört dem Vorhaben dieses PRs (Reaktion wie bei `queue-wait.sh` Exit 1); rotes main wie §4.8.
 Verify: bash scripts/dev/verify.sh scripts --strict -- session_status_test
 Doku: → T3
