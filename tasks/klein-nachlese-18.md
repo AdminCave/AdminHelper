@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-18 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-18 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-18 · Review: pro Task
 Spec: docs/features/klein-nachlese-18.md (Roadmap R-1673, R-1674, R-1675, R-1669, R-1676, R-1677, R-1685)
 Heavy: none — Tests, ein Desktop-UI-Anzeigefehler, Doku und Changelog-Fragmente, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -46,8 +46,10 @@ Beweis: reviewer kern-agent-17 branch 2026-11-20 (changelog.d/kern-agent-17.md:2
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: changelog.d/README.md
 
-### T5 — R-1669, R-1677, R-1685: Doku-Nachträge (Satzbau, Self-Update, waitUntil)  [ ]
+### T5 — R-1669, R-1677, R-1685: Doku-Nachträge (Satzbau, Self-Update, waitUntil)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/features/ci-19.md, docs/features/kern-desktop-e2e-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b7b36ee6a 2026-11-23T11:26:49+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: reviewer klein-nachlese-17 (monitoring.html:296, ci-19.md:33), reviewer branch windows-self-update 2026-11-20, reviewer kern-desktop-e2e-2 branch 2026-11-23 (Spec:30). Dedup-Key: ref:nachlese:klein-nachlese-17
 Änderung: `monitoring.html` DE+EN: die zwei Klammern hinter `history.server_events` zu einem Satz; `ci-19.md:33` auf höchstens 120 Zeichen umbrechen; `agent.html` DE+EN: `internal/selfupdate`, `self-update-apply <version>` (main.go:68) und die Gesund-Marke (`selfupdate.MarkHealthy`, `run_windows.go`) in Verzeichnisbaum und Windows-Abschnitt, nach dem Code belegt; `kern-desktop-e2e-2.md`: `waitUntil` wiederholt eine werfende Bedingung bis zum Timeout und trägt dessen Text (nach wdio-Quelltext belegt).
 Task-Review: am Ende
