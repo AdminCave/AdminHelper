@@ -33,7 +33,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from app.modules.frp.config_generator import generate_frps_toml
+from app.modules.frp.config_generator import frps_fields, generate_frps_toml
 from app.modules.frp.extra_config import ALLOWED_KEYS, STRING_FIELDS, value_allowed
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.schemas import FrpServerConfigCreate, FrpServerConfigUpdate
@@ -151,6 +151,16 @@ def test_the_string_fields_are_the_quoted_lines_the_generator_writes_from_the_co
     assert quoted - {"auth.method", "webServer.addr"} == set(STRING_FIELDS)
     for key, field in STRING_FIELDS.items():
         assert f'{key} = "{getattr(_config(**FULL), field)}"' in toml
+
+
+def test_the_startup_check_reads_the_fields_the_generator_writes():
+    # R-0690: _report_rejected_fields reads frps_fields; it must carry every line before
+    # the TLS table, with the value the line holds.
+    config = _config(**FULL)
+    lines = [line for line in generate_frps_toml(config).split(TABLE)[0].splitlines() if line]
+    fields = frps_fields(config)
+    assert list(fields) == [line.split(" = ")[0] for line in lines]
+    assert all(isinstance(fields[key], str) for key in STRING_FIELDS)
 
 
 VALUES = [
@@ -397,11 +407,11 @@ def _notices(db) -> list[Notification]:
 
 
 def _clean(db, caplog) -> str:
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="app.main"):
-        m._check_frps_server_configs(db)
+    with caplog.at_level(logging.INFO, logger="app.modules.frp.startup_checks"):
+        m.check_frps_server_configs(db)
     return caplog.text
 
 
@@ -597,7 +607,7 @@ def test_startup_tells_the_admins_once_about_a_token_frps_is_not_started_with(
 def test_startup_tells_the_admins_once_about_a_dashboard_port_frps_refuses(
     dashboard_port, db_session, admin_user, caplog, monkeypatch
 ):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     monkeypatch.setattr(m, "FRP_BIND_PORT", 7200)
     db_session.add_all(
@@ -626,7 +636,7 @@ def test_startup_tells_the_admins_once_about_a_dashboard_port_frps_refuses(
 def test_startup_names_every_field_with_its_rule_in_one_notice(
     db_session, admin_user, caplog, monkeypatch
 ):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     monkeypatch.setattr(m, "FRP_BIND_PORT", 7000)
     db_session.add(
@@ -645,7 +655,7 @@ def test_startup_names_every_field_with_its_rule_in_one_notice(
 
 
 def test_every_string_field_has_its_label_for_the_bell():
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     # A field without one would end the check with a KeyError, and nobody would be told.
     assert set(m._FRPS_FIELD_LABELS) == set(STRING_FIELDS.values()) | {"dashboard_port"}
@@ -657,8 +667,12 @@ def test_startup_checks_the_configs_before_it_writes_frps_toml(monkeypatch):
     calls = []
     monkeypatch.setattr(m, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
     monkeypatch.setattr(m, "_ensure_admin", lambda db: calls.append("admin"))
-    monkeypatch.setattr(m, "_check_frps_server_configs", lambda db: calls.append("check"))
-    monkeypatch.setattr(m, "_ensure_frps_config", lambda db: calls.append("write"))
+    monkeypatch.setattr(
+        m.frp_startup_checks, "check_frps_server_configs", lambda db: calls.append("check")
+    )
+    monkeypatch.setattr(
+        m.frp_startup_checks, "ensure_frps_config", lambda db: calls.append("write")
+    )
     monkeypatch.setattr(m.frp_policy, "sync_policy", lambda db: calls.append("policy"))
 
     m._run_startup_tasks()

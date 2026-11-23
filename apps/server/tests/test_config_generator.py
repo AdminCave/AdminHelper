@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from app.core import config as core_config
 from app.modules.frp.config_generator import (
+    frps_fields,
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
@@ -136,6 +137,79 @@ class TestGenerateFrpsToml:
     def test_no_extra_config_lines_when_none(self):
         toml = generate_frps_toml(_make_config(extra_config=None))
         assert "maxPoolCount" not in toml
+
+
+# R-0690: frps.toml is written from frps_fields; the text before the TLS block is the one
+# the generator wrote before that, byte for byte.
+_FRPS_HEADS = {
+    "minimal": (
+        {},
+        "bindPort = 7000\nmaxPortsPerClient = 16\ndetailedErrorsToClient = false\n\n"
+        'auth.method = "token"\nauth.token = "secret-token"\n\n',
+    ),
+    "full": (
+        {
+            "vhost_https_port": 8443,
+            "subdomain_host": "ops.example.net",
+            "max_ports_per_client": 7,
+            "dashboard_port": 7500,
+            "dashboard_user": "admin",
+            "dashboard_password": "pw",
+            "extra_config": json.dumps(
+                {"log.level": "info", "transport.tcpMux": True, "log.maxDays": 3}
+            ),
+        },
+        'bindPort = 7000\nvhostHTTPSPort = 8443\nsubDomainHost = "ops.example.net"\n'
+        "maxPortsPerClient = 7\ndetailedErrorsToClient = false\n\n"
+        'webServer.addr = "0.0.0.0"\nwebServer.port = 7500\nwebServer.user = "admin"\n'
+        'webServer.password = "pw"\n\nauth.method = "token"\nauth.token = "secret-token"\n\n'
+        'log.level = "info"\ntransport.tcpMux = true\nlog.maxDays = 3\n\n',
+    ),
+    "dashboard_without_credentials": (
+        {"dashboard_port": 7500, "extra_config": json.dumps({"userConnTimeout": 10})},
+        "bindPort = 7000\nmaxPortsPerClient = 16\ndetailedErrorsToClient = false\n\n"
+        'webServer.addr = "0.0.0.0"\nwebServer.port = 7500\n\n'
+        'auth.method = "token"\nauth.token = "secret-token"\n\nuserConnTimeout = 10\n\n',
+    ),
+}
+
+
+class TestFrpsFields:
+    def test_text_before_the_tls_block_is_unchanged(self):
+        for name, (overrides, head) in _FRPS_HEADS.items():
+            toml = generate_frps_toml(_make_config(**overrides))
+            assert toml.count("[transport.tls]") == 1, name
+            assert toml.split("[transport.tls]")[0] == head, name
+
+    def test_fields_are_the_written_keys_with_typed_values(self):
+        overrides, _ = _FRPS_HEADS["full"]
+        fields = frps_fields(_make_config(**overrides))
+        assert fields == {
+            "bindPort": 7000,
+            "vhostHTTPSPort": 8443,
+            "subDomainHost": "ops.example.net",
+            "maxPortsPerClient": 7,
+            "detailedErrorsToClient": False,
+            "webServer.addr": "0.0.0.0",
+            "webServer.port": 7500,
+            "webServer.user": "admin",
+            "webServer.password": "pw",
+            "auth.method": "token",
+            "auth.token": "secret-token",
+            "log.level": "info",
+            "transport.tcpMux": True,
+            "log.maxDays": 3,
+        }
+        # The text parses back to the same values.
+        toml = tomllib.loads(generate_frps_toml(_make_config(**overrides)))
+        assert toml["webServer"]["port"] == fields["webServer.port"]
+        assert toml["bindPort"] == fields["bindPort"]
+
+    def test_unset_optional_fields_are_absent(self):
+        fields = frps_fields(_make_config())
+        assert "webServer.port" not in fields
+        assert "subDomainHost" not in fields
+        assert "vhostHTTPSPort" not in fields
 
 
 class TestGenerateFrpcToml:

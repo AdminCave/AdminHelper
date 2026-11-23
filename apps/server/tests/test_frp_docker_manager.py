@@ -218,32 +218,32 @@ def test_delete_route_answers_204_when_the_file_cannot_be_removed(
 
 
 def test_startup_without_a_db_config_removes_frps_toml(db_session, frp_dir):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     (frp_dir / "frps.toml").write_text("# previous config\n")
-    m._ensure_frps_config(db_session)
+    m.ensure_frps_config(db_session)
     assert not (frp_dir / "frps.toml").exists()
 
 
 def test_startup_with_a_db_config_writes_frps_toml(db_session, frp_dir):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     config = _cfg(id="cfg-start", name="cfg-start", created_at=datetime(2020, 1, 1))
     db_session.add(config)
     db_session.commit()
     (frp_dir / "frps.toml").write_text("# previous config\n")
 
-    m._ensure_frps_config(db_session)
+    m.ensure_frps_config(db_session)
     path = frp_dir / "frps.toml"
     assert path.read_text() == generate_frps_toml(config)
     assert path.stat().st_mode & 0o777 == 0o600
 
 
 def _startup_reconcile_log(db, caplog) -> list[logging.LogRecord]:
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     with caplog.at_level(logging.INFO, logger=m.logger.name):
-        m._ensure_frps_config(db)
+        m.ensure_frps_config(db)
     return [r for r in caplog.records if r.name == m.logger.name]
 
 
@@ -293,7 +293,7 @@ def test_startup_removes_old_temp_files_and_keeps_fresh_ones(db_session, frp_dir
     # A SIGKILL or OOM between mkstemp and os.replace leaves the 0600 temp file, with the token of
     # its time, in the volume. Every uvicorn worker runs the startup: a temp file younger than a
     # minute may be the one another worker is writing right now, so it stays.
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     if with_db_config:
         db_session.add(_cfg(id="cfg-start", name="cfg-start", created_at=datetime(2020, 1, 1)))
@@ -301,7 +301,7 @@ def test_startup_removes_old_temp_files_and_keeps_fresh_ones(db_session, frp_dir
     old = _temp_file(frp_dir, "k1lled", age=3600)
     fresh = _temp_file(frp_dir, "wr1ting", age=0)
 
-    m._ensure_frps_config(db_session)
+    m.ensure_frps_config(db_session)
 
     assert not old.exists()
     assert fresh.exists()
@@ -329,7 +329,7 @@ def test_the_cleanup_leaves_frps_toml_other_names_and_symlinks_alone(frp_dir, tm
 
 
 def test_a_failed_removal_is_logged_and_the_rest_goes_on(db_session, frp_dir, monkeypatch, caplog):
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     config = _cfg(id="cfg-start", name="cfg-start", created_at=datetime(2020, 1, 1))
     db_session.add(config)
@@ -350,7 +350,7 @@ def test_a_failed_removal_is_logged_and_the_rest_goes_on(db_session, frp_dir, mo
 
     monkeypatch.setattr(os, "unlink", unlink)
     with caplog.at_level(logging.INFO, logger=docker_manager.logger.name):
-        m._ensure_frps_config(db_session)
+        m.ensure_frps_config(db_session)
 
     assert stuck.exists()
     assert not gone.exists() and not any(path.exists() for path in rest)

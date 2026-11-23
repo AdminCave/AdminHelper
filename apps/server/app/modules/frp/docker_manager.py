@@ -130,7 +130,7 @@ def remove_stale_temp_files() -> int:
 def remove_frps_config() -> None:
     """Removes frps.toml from FRP_CONFIG_DIR, best effort: the DB is the source of truth, so
     a failed removal is logged, never raised; the next server start removes a file that no
-    DB config backs (_ensure_frps_config)."""
+    DB config backs (frp.startup_checks.ensure_frps_config)."""
     path = FRP_CONFIG_DIR / "frps.toml"
     try:
         path.unlink()

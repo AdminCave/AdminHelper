@@ -157,9 +157,9 @@ def test_downgrade_maps_tunnel_and_agent_back_to_lifecycle(before_split):
 
 
 def test_frp_config_notices_of_the_server_are_tunnel(db_session, admin_user):
-    """The startup notices of main (frp_config) write the category the upgrade gives
+    """The startup notices of frp.startup_checks (frp_config) write the category the upgrade gives
     their old rows; the other producers are covered in their own tests."""
-    import app.main as m
+    from app.modules.frp import startup_checks as m
 
     m._tell_admins(db_session, "lifecycle.frp.config.field_rejected", "t", "b", "frps-1")
 

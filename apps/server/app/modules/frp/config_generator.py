@@ -360,25 +360,22 @@ def _tls_client_block() -> list[str]:
     ]
 
 
-def generate_frps_toml(config: FrpServerConfig) -> str:
-    """Generates a complete frps.toml from the DB configuration."""
-    lines = [
-        f"bindPort = {_bind_port(config)}",
-    ]
+FrpsValue = str | int | float | bool
 
+
+def _frps_groups(config: FrpServerConfig) -> list[list[tuple[str, FrpsValue]]]:
+    """The key/value pairs before [transport.tls], in blocks frps.toml separates by a blank
+    line. Pairs, not a dict: a stored extra_config row may name a key twice over."""
+    head: list[tuple[str, FrpsValue]] = [("bindPort", _bind_port(config))]
     vhost_https_port = _optional_port(config, "vhost_https_port")
     if vhost_https_port:
-        lines.append(f"vhostHTTPSPort = {vhost_https_port}")
-
+        head.append(("vhostHTTPSPort", vhost_https_port))
     if config.subdomain_host:
-        lines.append(f'subDomainHost = "{config.subdomain_host}"')
+        head.append(("subDomainHost", config.subdomain_host))
+    head.append(("maxPortsPerClient", _max_ports_per_client(config)))
+    head.append(("detailedErrorsToClient", False))
+    groups = [head]
 
-    lines.append(f"maxPortsPerClient = {_max_ports_per_client(config)}")
-
-    lines.append("detailedErrorsToClient = false")
-    lines.append("")
-
-    # Dashboard
     dashboard_port = _optional_port(config, "dashboard_port")
     if dashboard_port:
         # Bind all interfaces, not loopback: in compose the frps supervisor asks the dashboard
@@ -386,31 +383,48 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
         # FRPS_DASHBOARD_URL (frps in another topology) the server asks it over the network.
         # The dashboard port is never published in compose, and frps sits alone in the
         # network frpedge, so neither the host nor the public internet reaches it (4.6).
-        lines.append('webServer.addr = "0.0.0.0"')
-        lines.append(f"webServer.port = {dashboard_port}")
+        dashboard: list[tuple[str, FrpsValue]] = [
+            ("webServer.addr", "0.0.0.0"),
+            ("webServer.port", dashboard_port),
+        ]
         if config.dashboard_user:
-            lines.append(f'webServer.user = "{config.dashboard_user}"')
+            dashboard.append(("webServer.user", config.dashboard_user))
         if config.dashboard_password:
-            lines.append(f'webServer.password = "{config.dashboard_password}"')
-        lines.append("")
+            dashboard.append(("webServer.password", config.dashboard_password))
+        groups.append(dashboard)
 
-    # Auth
-    lines.append('auth.method = "token"')
-    lines.append(f'auth.token = "{config.auth_token}"')
+    groups.append([("auth.method", "token"), ("auth.token", config.auth_token)])
 
     # Operator-supplied extra frps.toml fields: keys of extra_config.ALLOWED_KEYS with values
     # that pass value_allowed. _check_frps_extra_config holds the API to that and the startup
-    # check in main.py the stored rows, so they can be emitted verbatim.
+    # check in startup_checks.py the stored rows, so they can be emitted verbatim.
     extra = json.loads(config.extra_config) if config.extra_config else None
     if extra:
-        lines.append("")
-        for key, value in extra.items():
-            if isinstance(value, bool):
-                lines.append(f"{key} = {'true' if value else 'false'}")
-            elif isinstance(value, str):
-                lines.append(f'{key} = "{value}"')
-            else:
-                lines.append(f"{key} = {value}")
+        groups.append(list(extra.items()))
+    return groups
+
+
+def frps_fields(config: FrpServerConfig) -> dict[str, FrpsValue]:
+    """The keys generate_frps_toml writes before [transport.tls], with their values; of a
+    key written twice, the last value (the one a reader of the text would take)."""
+    return {key: value for group in _frps_groups(config) for key, value in group}
+
+
+def _toml_value(value: FrpsValue) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return f'"{value}"'
+    return f"{value}"
+
+
+def generate_frps_toml(config: FrpServerConfig) -> str:
+    """Generates a complete frps.toml from the DB configuration."""
+    lines: list[str] = []
+    for i, group in enumerate(_frps_groups(config)):
+        if i:
+            lines.append("")
+        lines.extend(f"{key} = {_toml_value(value)}" for key, value in group)
 
     lines.extend(_tls_server_block())
 
