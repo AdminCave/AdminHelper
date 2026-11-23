@@ -12,13 +12,13 @@ meldet der Pfad ohne Paket "frpc stopped", wenn der Stopp gescheitert ist.
 
 ## Ziel & Nicht-Ziele
 - **Ziel:** Die Ergebniszeile von `provision` sagt, was wirklich ist. Scheitert der Dienst, lautet sie etwa
-  "FRP client configured (N tunnels), but frpc did not start: <Ursache>. The next agent run tries again." bzw. für
-  den Stopp "frpc could not be stopped: <Ursache> …". Die Provisionierung bleibt erfolgreich (das Token ist
+  "FRP client configured (N tunnels), but frpc did not start — the next agent run tries again." bzw. für den
+  Stopp "No active FRP tunnel, but frpc did not stop — …"; die Ursache nennt die Warnzeile davor. Die Provisionierung bleibt erfolgreich (das Token ist
   verbraucht), wie bisher; der Hash wird wie bisher entfernt, damit der nächste Lauf erneut anwendet.
 - `Apply` und `ApplyWithoutBundle` geben den Dienstfehler als eigenen, exportierten Fehlerwert zurück
   (`frpc.ErrServiceDeferred`, umschließt die Ursache), statt ihn zu schlucken; `provision` unterscheidet ihn per
   `errors.Is` von einem echten Fehler (Schreibfehler bleibt fatal wie heute).
-- Eine einzige Meldung statt Warnzeile plus Erfolgszeile.
+- Nach der Warnzeile (bleibt, sie trägt die Ursache und steht im Agent-Log) keine Erfolgszeile mehr.
 - **Nicht-Ziele:** kein Wiederholversuch beim Provisionieren, keine Änderung an Sync, am Hash-Verhalten oder am
   Exit-Code von `provision`.
 

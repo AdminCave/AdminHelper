@@ -113,7 +113,8 @@ func writeSyncConfig(p SyncConfigParams) error {
 // host) stops and disables it. It holds the frpc lock from securing the FRP directory to the
 // end. NO HTTP call happens here anymore — the token-activate call has been centralized since
 // v0.23.0 in the `provision` subcommand, which invokes `Apply` with the already-decoded values.
-// It returns the number of tunnels in the applied text (0: frpc stopped).
+// It returns the number of tunnels in the applied text (0: frpc stopped), also along with
+// ErrServiceDeferred.
 func Apply(p ApplyParams) (int, error) {
 	unlock, err := lockSyncConfigDir()
 	if err != nil {
@@ -135,6 +136,9 @@ func Apply(p ApplyParams) (int, error) {
 	}
 
 	if err := warnOnServiceFailure(applyConfig(context.Background(), serverToml, false)); err != nil {
+		if errors.Is(err, ErrServiceDeferred) {
+			return countProxies(serverToml), err
+		}
 		return 0, err
 	}
 	return countProxies(serverToml), nil
@@ -157,10 +161,15 @@ func ApplyWithoutBundle() error {
 	return warnOnServiceFailure(syncWithoutFrpConfig(context.Background()))
 }
 
-// warnOnServiceFailure turns a failed start or stop of frpc at provisioning into a warning, as
-// before for the start: the provision token is spent by now. Removing the hash makes the next
-// agent run apply the config again, also when the stored hash already matched the bundle's
-// (provisioned again with unchanged tunnels). A failed write stays an error.
+// ErrServiceDeferred marks a provisioning that wrote frpc's config but whose start or stop of
+// frpc failed and was left to the next agent run; it wraps the failure. provision then prints
+// no success line (R-1682).
+var ErrServiceDeferred = errors.New("frpc left to the next agent run")
+
+// warnOnServiceFailure turns a failed start or stop of frpc at provisioning into a warning and
+// ErrServiceDeferred, as before for the start: the provision token is spent by now. Removing the
+// hash makes the next agent run apply the config again, also when the stored hash already
+// matched the bundle's (provisioned again with unchanged tunnels). A failed write stays an error.
 func warnOnServiceFailure(err error) error {
 	if !errors.Is(err, errFrpcService) {
 		return err
@@ -169,5 +178,5 @@ func warnOnServiceFailure(err error) error {
 		return fmt.Errorf("remove the config hash: %w", rmErr)
 	}
 	logger.Warnf("%v. The next agent run tries again; if it keeps failing, see systemctl status frpc.", err)
-	return nil
+	return fmt.Errorf("%w: %w", ErrServiceDeferred, err)
 }
