@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Merge-Wächter ohne Modell — Task-Ledger
-Status: aktiv · Branch: feature/harness-merge-watch · Review: am Ende
+Status: bereit · Branch: feature/harness-merge-watch · Review: am Ende
 Spec: docs/features/harness-merge-watch.md (Roadmap R-1724)
 Heavy: none — nur Harness-Skripte, SessionStart-Hook, Skill-Text und Entwickler-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -27,8 +27,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- session_status_test
 Doku: → T3
 Abhängt von: T1
 
-### T3 — R-1724: Entwickler-Doku und CHANGELOG  [ ]
+### T3 — R-1724: Entwickler-Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, changelog.d/harness-merge-watch.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2d284bcd0 2026-11-23T12:42:04+01:00
+Review: am Ende (Branch-Review)
 Änderung: `DEVELOPMENT.md` neben dem Sammellauf: was der Wächter prüft, wo seine Zeile steht, wie man ihn von Hand fährt. Fragment `changelog.d/harness-merge-watch.md` (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md · changelog.d/harness-merge-watch.md
