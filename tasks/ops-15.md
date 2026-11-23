@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/ops-15/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- image_pins_test
 Doku: keine (Fehlermeldung des Release-Laufs)
 
-### T2 — R-1684: release.yml löst die Image-Pins in einem eigenen Job auf  [ ]
+### T2 — R-1684: release.yml löst die Image-Pins in einem eigenen Job auf  [x]
 Komponente: server · Dateien: .github/workflows/release.yml, apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @73f591a37 2026-11-23T09:53:01+01:00
+Review: approve (.ah-out/review/ops-15/T2.verdict.json)
 Änderung: Neuer Job `image-pins` (`permissions: contents: read`, ohne Secrets) installiert buildx und cosign, ruft `image-pins.sh` und lädt `IMAGES` als Artefakt hoch; der Job `release` hängt von ihm ab, lädt das Artefakt nach `stage/IMAGES` und installiert weder buildx noch cosign für den Pin. `test_release_images.py` prüft die Struktur (eigener Job, keine `secrets.`, Artefakt-Übergabe, `needs`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: → T5

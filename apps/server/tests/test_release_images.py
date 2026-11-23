@@ -174,16 +174,32 @@ def _pin_pairs() -> list[tuple[str, str]]:
 
 
 def test_the_release_pins_every_published_image_before_the_bundle():
-    names = [step.get("name") for step in _workflow("release.yml")["jobs"]["release"]["steps"]]
+    jobs = _workflow("release.yml")["jobs"]
+    pins = [step.get("name") for step in jobs["image-pins"]["steps"]]
     pin = "Pin the signed tag images by digest"
-    assert names.index("Install cosign") < names.index(pin), names
+    assert pins.index("Install cosign") < pins.index(pin), pins
     assert (
-        names.index(pin) < names.index("Build runtime bundle") < names.index("Create draft release")
+        'scripts/release/image-pins.sh "${GITHUB_REF_NAME}" pins/IMAGES'
+        in _step("release.yml", "image-pins", pin)["run"]
     )
+    upload = jobs["image-pins"]["steps"][pins.index(pin) + 1]
+    assert upload["uses"].startswith("actions/upload-artifact@"), upload
+    assert upload["with"] == {
+        "name": "image-pins",
+        "path": "pins/IMAGES",
+        "if-no-files-found": "error",
+    }
+    # The release job waits for the pins and builds the bundle only with them.
+    assert "image-pins" in jobs["release"]["needs"]
+    assert "needs.image-pins.result == 'success'" in jobs["release"]["if"]
+    names = [step.get("name") for step in jobs["release"]["steps"]]
+    take = "Take the image pins"
     assert (
-        'scripts/release/image-pins.sh "${GITHUB_REF_NAME}" stage/IMAGES'
-        in _step("release.yml", "release", pin)["run"]
+        names.index(take)
+        < names.index("Build runtime bundle")
+        < names.index("Create draft release")
     )
+    assert "Install cosign" not in names and "Set up Buildx" not in names, names
     # IMAGES under MANIFEST.sha256, so under the minisign signature of SHA256SUMS.
     bundle = _step("release.yml", "release", "Build runtime bundle")["run"]
     assert "find docker-compose.yml .env.example IMAGES scripts -type f" in bundle, bundle
@@ -194,6 +210,37 @@ def test_the_release_pins_every_published_image_before_the_bundle():
     compose = (_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     for key, image in pairs:
         assert f"${{{key}:-ghcr.io/admincave/adminhelper/{image}:latest}}" in compose, (key, image)
+
+
+def test_the_pin_job_runs_read_only_and_without_secrets():
+    jobs = _workflow("release.yml")["jobs"]
+    job = jobs["image-pins"]
+    assert job["permissions"] == {"contents": "read"}
+    assert "secrets." not in yaml.safe_dump(job), job
+    # Polls as late as before the split: after the builds the release job waits for.
+    assert job["needs"] == [n for n in jobs["release"]["needs"] if n != "image-pins"]
+    assert job["if"] == jobs["release"]["if"].replace(
+        " && needs.image-pins.result == 'success'", ""
+    )
+    checkout = job["steps"][0]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["persist-credentials"] is False
+
+
+def test_the_release_moves_the_pins_into_the_bundle_not_into_the_assets(tmp_path):
+    step = _step("release.yml", "release", "Take the image pins")
+    work = tmp_path / "work"
+    (work / "artifacts" / "image-pins").mkdir(parents=True)
+    (work / "artifacts" / "agent").mkdir()
+    (work / "artifacts" / "image-pins" / "IMAGES").write_text("SERVER_IMAGE=x\n", encoding="utf-8")
+    done = _run_step(step, tmp_path, work, os.environ["PATH"])
+    assert done.returncode == 0, done.stderr
+    assert (work / "stage" / "IMAGES").read_text(encoding="utf-8") == "SERVER_IMAGE=x\n"
+    assert sorted(p.name for p in (work / "artifacts").iterdir()) == ["agent"]
+    # Without the artifact the release stops here instead of building a bundle without pins.
+    (work / "artifacts" / "image-pins").mkdir()
+    (work / "stage" / "IMAGES").unlink()
+    assert _run_step(step, tmp_path, work, os.environ["PATH"]).returncode != 0
 
 
 def test_only_a_stable_release_moves_latest():
