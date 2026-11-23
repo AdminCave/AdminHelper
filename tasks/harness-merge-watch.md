@@ -10,8 +10,10 @@ Heavy: none — nur Harness-Skripte, SessionStart-Hook, Skill-Text und Entwickle
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1724: merge-watch.sh meldet Queue-Rauswürfe und rotes main  [ ]
+### T1 — R-1724: merge-watch.sh meldet Queue-Rauswürfe und rotes main  [x]
 Komponente: scripts · Dateien: scripts/dev/merge-watch.sh, scripts/tests/merge_watch_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dacf38cb4 2026-11-23T12:35:29+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neues `scripts/dev/merge-watch.sh` (SPDX): ein `gh api graphql` (Queue-Einträge auf `main`, je offenem PR das letzte Queue-Ereignis) und ein `gh run list` (neuester abgeschlossener `ci.yml`-Push-Lauf auf `main`). Druckt eine Zeile `Merge: Queue <n> (#a …) · main <sha7> <conclusion>` und je Befund eine Zeile `ACTION: …` (PR raus aus der Queue mit Grund und Zeit; main rot mit Lauf-ID). Exit 0 ohne Befund, 1 mit Befund, 2 bei gh-Fehler (dann `Merge: ?`). Hermetischer Test `merge_watch_test.sh` (SPDX) mit falschem `gh`, jeder Ausgang samt Gegenprobe; in die Testliste von `run.sh`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- merge_watch_test
 Doku: → T3
