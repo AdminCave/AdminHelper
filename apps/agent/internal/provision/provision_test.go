@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -990,6 +991,58 @@ func captureStdout(t *testing.T, fn func()) string {
 	_ = w.Close()
 	os.Stdout = orig
 	return <-done
+}
+
+// R-1682: a frpc that did not start or stop at provisioning gets no success line after the
+// warning; the provisioning still ends, the token is spent.
+func TestRunPrintsNoSuccessWhenFrpcDidNotFollow(t *testing.T) {
+	deferred := fmt.Errorf("%w: frpc service action failed: systemctl failed", frpc.ErrServiceDeferred)
+	cases := map[string]struct {
+		frp     any
+		tunnels int
+		want    string
+		stale   string
+	}{
+		"bundle with tunnels":    {map[string]any{"config": "eA=="}, 2, "FRP client configured (2 tunnels), but frpc did not start", "set up ("},
+		"bundle without tunnels": {map[string]any{"config": "eA=="}, 0, "No active FRP tunnel, but frpc did not stop", "frpc stopped"},
+		"without a bundle":       {nil, 0, "No active FRP tunnel, but frpc did not stop", "frpc stopped"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+			t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k", "frp": tc.frp})
+			}))
+			defer srv.Close()
+			u, _ := url.Parse(srv.URL)
+			port, _ := strconv.Atoi(u.Port())
+			orig := activatePort
+			activatePort = port
+			t.Cleanup(func() { activatePort = orig })
+			origBundle := applyBundle
+			applyBundle = func(frpc.ApplyParams) (int, error) { return tc.tunnels, deferred }
+			t.Cleanup(func() { applyBundle = origBundle })
+			origApply := applyWithoutBundle
+			applyWithoutBundle = func() error { return deferred }
+			t.Cleanup(func() { applyWithoutBundle = origApply })
+			stubEnableTimer(t, nil)
+
+			var runErr error
+			out := captureStdout(t, func() { runErr = Run(srv.URL, "tok", "srv-1", "", true, "") })
+			if runErr != nil {
+				t.Fatalf("Run: %v, want the provisioning to end", runErr)
+			}
+			for _, want := range []string{tc.want, "the next agent run tries again", "Provisioning abgeschlossen"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output %q is missing %q", out, want)
+				}
+			}
+			if strings.Contains(out, tc.stale) {
+				t.Errorf("output %q still reports success (%q)", out, tc.stale)
+			}
+		})
+	}
 }
 
 // R-0443: provision prints what happened to frpc, not what it is about to do: the set-up
