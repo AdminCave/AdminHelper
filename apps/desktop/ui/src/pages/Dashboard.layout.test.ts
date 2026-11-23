@@ -45,6 +45,7 @@ vi.mock('$lib/stores/monitoring', async () => {
     monitoringChecks: w([]),
     monitoringServers: w([]),
     monitoringHasLoaded: w(false),
+    monitoringServersLoaded: w(false),
     monitoringError: w<string | null>(null),
   };
 });
@@ -72,6 +73,7 @@ const session = sessionMod.sessionStore as unknown as W<unknown>;
 const checks = monMod.monitoringChecks as unknown as W<Partial<MonitorCheck>[]>;
 const servers = monMod.monitoringServers as unknown as W<Partial<Server>[]>;
 const hasLoaded = monMod.monitoringHasLoaded as unknown as W<boolean>;
+const serversLoaded = monMod.monitoringServersLoaded as unknown as W<boolean>;
 const monError = monMod.monitoringError as unknown as W<string | null>;
 const mappings = tunnelMod.tunnelMappings as unknown as W<unknown[]>;
 
@@ -103,6 +105,7 @@ beforeEach(() => {
   checks.set([]);
   servers.set([]);
   hasLoaded.set(false);
+  serversLoaded.set(false);
   monError.set(null);
   mappings.set([]);
 });
@@ -171,6 +174,7 @@ describe('Dashboard layout', () => {
       { id: 'x2', serverId: 's2', checkType: 'tcp', enabled: true, state: { status: 'ok' } },
     ] as Partial<MonitorCheck>[]);
     hasLoaded.set(true);
+    serversLoaded.set(true);
     mappings.set([
       {
         id: 'm1',
@@ -219,6 +223,20 @@ describe('Dashboard layout', () => {
     expect(panels(container)).toEqual(['recent', 'tunnel']);
     expect(h.loadServers).not.toHaveBeenCalled();
     expect(h.loadMonitoring).not.toHaveBeenCalled();
+  });
+
+  it('a failed server list shows "-", not zero servers, while the checks are loaded', async () => {
+    session.set(SERVER);
+    // loadServers failed (checks fine): the list is empty because the fetch failed (R-1675).
+    hasLoaded.set(true);
+    serversLoaded.set(false);
+    servers.set([]);
+    const { container } = render(Dashboard);
+    await tick();
+
+    expect(value(container, 'servers')).toBe('-');
+    expect(container.textContent).not.toContain(tNow('dashboard.serversHint', { count: 0 }));
+    expect(value(container, 'problems')).toBe('0');
   });
 
   it('a failed monitoring load shows the error, not a healthy monitoring', async () => {

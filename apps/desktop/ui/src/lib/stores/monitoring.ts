@@ -86,6 +86,7 @@ function pickWorstServerId(checks: MonitorCheck[]): string | null {
 interface MonitoringState {
   tab: MonitoringTab;
   servers: Server[];
+  serversLoaded: boolean;
   checks: MonitorCheck[];
   alerts: AlertRule[];
   templates: MonitoringTemplateFull[];
@@ -114,6 +115,7 @@ interface MonitoringState {
 const initial: MonitoringState = {
   tab: 'overview',
   servers: [],
+  serversLoaded: false,
   checks: [],
   alerts: [],
   templates: [],
@@ -150,6 +152,7 @@ export const monitoringTab = derived(_state, ($s) => $s.tab);
 export const monitoringFilters = derived(_state, ($s) => $s.filters);
 export const monitoringChecks = derived(_state, ($s) => $s.checks);
 export const monitoringServers = derived(_state, ($s) => $s.servers);
+export const monitoringServersLoaded = derived(_state, ($s) => $s.serversLoaded);
 export const monitoringAlerts = derived(_state, ($s) => $s.alerts);
 export const monitoringTemplates = derived(_state, ($s) => $s.templates);
 export const monitoringLog = derived(_state, ($s) => $s.log);
@@ -233,9 +236,13 @@ export async function loadServers(): Promise<void> {
   if (!session) return;
   try {
     const servers = await monitoringApi.fetchServers(session);
-    _state.update((s) => ({ ...s, servers: Array.isArray(servers) ? servers : [] }));
+    _state.update((s) => ({
+      ...s,
+      servers: Array.isArray(servers) ? servers : [],
+      serversLoaded: true,
+    }));
   } catch (err) {
-    _state.update((s) => ({ ...s, servers: [] }));
+    _state.update((s) => ({ ...s, servers: [], serversLoaded: false }));
     const msg = errMsg(err);
     if (!isSessionExpired(err)) reportError(tNow('error.monitoring', { message: msg }));
   }

@@ -28,11 +28,13 @@ Beweis: reviewer kern-agent-16 branch 2026-11-20, packaging_rpm_test.go:342. Ded
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/adminhelper-agent -run RPM
 Doku: keine (nur Test)
 
-### T3 — R-1675: Server-Kachel zeigt „-“, wenn die Serverliste nicht lädt  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Dashboard.svelte, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/pages/Dashboard.load.test.ts
+### T3 — R-1675: Server-Kachel zeigt „-“, wenn die Serverliste nicht lädt  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Dashboard.svelte, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/pages/Dashboard.load.test.ts, apps/desktop/ui/src/pages/Dashboard.layout.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @1dd2e20f5 2026-11-23T11:14:14+01:00
+Review: approve (.ah-out/review/klein-nachlese-18/T3.verdict.json)
 Beweis: reviewer kern-dashboard-1 branch 2026-11-20, Dashboard.svelte:109, monitoring.ts:237. Dedup-Key: REF:nachlese:kern-dashboard-1
 Änderung: Rot zuerst: Test „loadServers scheitert, Checks laden" → Kachel `-`. Dann ein Signal im Store, das `loadServers` bei Erfolg setzt und bei Fehler löscht; die Kachel zeigt die Zahl nur, wenn es gesetzt ist. Alt-Verhalten sonst unverändert.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard.load.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Dashboard.load.test.ts src/pages/Dashboard.layout.test.ts
 Doku: keine (der Wortlaut von changelog.d/kern-dashboard-1.md deckt das ab)
 
 ### T4 — R-1676, R-1669: Changelog-Fragmente deutsch und umlautfrei  [ ]
