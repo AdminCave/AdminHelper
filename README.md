@@ -193,7 +193,7 @@ readable only by you), `--permissive` (opt out of enforced mTLS). Updates:
 rollback on a failed health check; `--ref vX.Y.Z` pins, `--check` is a dry run).
 To remove a
 server install completely (containers, **all** volumes incl. the root CA, the
-network, `./data`/`./certs` and the `.env` secrets), run
+network, `./data`/`./certs`/`./repo` (the agent package repo) and the `.env` secrets), run
 `./scripts/uninstall.sh` there — it asks per category by default (`--yes` for
 non-interactive) and keeps `./backups/` and the images unless you pass
 `--purge-backups` / `--rmi`.
