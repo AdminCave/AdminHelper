@@ -56,12 +56,41 @@ func runDocker(ctx context.Context, args ...string) ([]byte, error) {
 	return runTimed(ctx, dockerTimeout, "docker", args...)
 }
 
+// DockerBlock is the docker block. Containers is never nil: the wire carries [] for no container,
+// also when docker is unavailable. Error is null while available and the error code otherwise.
+type DockerBlock struct {
+	Available    bool              `json:"available"`
+	Error        *string           `json:"error"`
+	ErrorMessage string            `json:"error_message,omitempty"`
+	Containers   []DockerContainer `json:"containers"`
+}
+
+// DockerContainer is one container of the docker block. The compose fields, ports and started_at come
+// only when inspect has them (putDockerDetails).
+type DockerContainer struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Image          string   `json:"image"`
+	State          string   `json:"state"`
+	Status         string   `json:"status"`
+	RestartPolicy  string   `json:"restart_policy"`
+	ExitCode       int      `json:"exit_code"`
+	OOMKilled      bool     `json:"oom_killed"`
+	RestartCount   int      `json:"restart_count"`
+	Health         string   `json:"health"`
+	ComposeProject string   `json:"compose_project,omitempty"`
+	ComposeService string   `json:"compose_service,omitempty"`
+	ComposeNumber  int      `json:"compose_number,omitempty"`
+	Ports          []string `json:"ports,omitempty"`
+	StartedAt      *int64   `json:"started_at,omitempty"`
+}
+
 // collectDocker collects Docker container status (cross-platform). No docker binary means Docker is
 // not installed and stays silent (nil). With the CLI present the block is always sent: a daemon that
 // does not answer, a failing or hanging call or unreadable output is available=false with an error
 // code, so the monitoring service can raise it instead of seeing no data. Every abort is logged, so
 // `diagnose` shows the reason.
-func collectDocker(ctx context.Context) map[string]any {
+func collectDocker(ctx context.Context) *DockerBlock {
 	if _, err := dockerCLI.lookPath("docker"); err != nil {
 		return nil
 	}
@@ -80,9 +109,9 @@ func collectDocker(ctx context.Context) map[string]any {
 			return dockerUnavailable("ps", "parse_failed", nil)
 		}
 	}
-	containers := make([]map[string]any, 0, len(listed))
+	containers := make([]DockerContainer, 0, len(listed))
 	if len(listed) == 0 {
-		return map[string]any{"available": true, "error": nil, "containers": containers}
+		return &DockerBlock{Available: true, Containers: containers}
 	}
 
 	// ONE batch inspect for all containers, as plain JSON: a Go template on .State.Health.Status fails
@@ -107,12 +136,12 @@ func collectDocker(ctx context.Context) map[string]any {
 		}
 	}
 	for _, c := range listed {
-		in, ok := byShortID[c["id"]]
+		in, ok := byShortID[c.ID]
 		if !ok {
 			continue
 		}
 		// state from the same snapshot as exit_code and oom_killed, so they never contradict.
-		state := c["state"]
+		state := c.State
 		if in.State.Status != "" {
 			state = in.State.Status
 		}
@@ -120,22 +149,22 @@ func collectDocker(ctx context.Context) map[string]any {
 		if in.State.Health != nil {
 			health = in.State.Health.Status
 		}
-		entry := map[string]any{
-			"id":             c["id"],
-			"name":           c["name"],
-			"image":          c["image"],
-			"state":          state,
-			"status":         c["status"],
-			"restart_policy": in.HostConfig.RestartPolicy.Name,
-			"exit_code":      in.State.ExitCode,
-			"oom_killed":     in.State.OOMKilled,
-			"restart_count":  in.RestartCount,
-			"health":         health,
+		entry := DockerContainer{
+			ID:            c.ID,
+			Name:          c.Names,
+			Image:         c.Image,
+			State:         state,
+			Status:        c.Status,
+			RestartPolicy: in.HostConfig.RestartPolicy.Name,
+			ExitCode:      in.State.ExitCode,
+			OOMKilled:     in.State.OOMKilled,
+			RestartCount:  in.RestartCount,
+			Health:        health,
 		}
-		putDockerDetails(entry, in)
+		putDockerDetails(&entry, in)
 		containers = append(containers, entry)
 	}
-	return map[string]any{"available": true, "error": nil, "containers": containers}
+	return &DockerBlock{Available: true, Containers: containers}
 }
 
 // maxDockerPorts caps the published ports listed per container, as the discovery caps its port list.
@@ -146,23 +175,18 @@ const maxComposeLabel = 255
 
 // putDockerDetails sets the compose project, service and container number, the published ports and the start time of
 // the inspected container in entry, each only when inspect has it.
-func putDockerDetails(entry map[string]any, in dockerInspect) {
-	if project := composeLabel(in.Config.Labels, "com.docker.compose.project"); project != "" {
-		entry["compose_project"] = project
-	}
-	if service := composeLabel(in.Config.Labels, "com.docker.compose.service"); service != "" {
-		entry["compose_service"] = service
-	}
+func putDockerDetails(entry *DockerContainer, in dockerInspect) {
+	entry.ComposeProject = composeLabel(in.Config.Labels, "com.docker.compose.project")
+	entry.ComposeService = composeLabel(in.Config.Labels, "com.docker.compose.service")
 	// The replica number keys the container across recreation (ADR 0004 §12.6); compose numbers from 1.
 	if n, err := strconv.Atoi(in.Config.Labels["com.docker.compose.container-number"]); err == nil && n > 0 {
-		entry["compose_number"] = n
+		entry.ComposeNumber = n
 	}
-	if ports := publishedPorts(in.NetworkSettings.Ports); len(ports) > 0 {
-		entry["ports"] = ports
-	}
+	entry.Ports = publishedPorts(in.NetworkSettings.Ports)
 	// A container that never ran carries the zero time 0001-01-01T00:00:00Z.
 	if started, err := time.Parse(time.RFC3339Nano, in.State.StartedAt); err == nil && !started.IsZero() {
-		entry["started_at"] = started.Unix()
+		unix := started.Unix()
+		entry.StartedAt = &unix
 	}
 }
 
@@ -230,7 +254,7 @@ func portNumber(s string) (string, bool) {
 // monitoring service evaluates (daemon_unreachable | timeout | cli_failed | parse_failed; a call the
 // timeout killed is always timeout), error_message names the call and its exit status — never stderr
 // or a path.
-func dockerUnavailable(call, code string, err error) map[string]any {
+func dockerUnavailable(call, code string, err error) *DockerBlock {
 	text := "docker " + call + " output unreadable"
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -240,12 +264,7 @@ func dockerUnavailable(call, code string, err error) map[string]any {
 		text = "docker " + call + " failed: " + commandFailure("docker", dockerTimeout, err)
 	}
 	logger.Warnf("%s, docker reported as unavailable (%s)", text, code)
-	return map[string]any{
-		"available":     false,
-		"error":         code,
-		"error_message": text,
-		"containers":    []map[string]any{},
-	}
+	return &DockerBlock{Error: &code, ErrorMessage: text, Containers: []DockerContainer{}}
 }
 
 // dockerPSLine holds only the `docker ps` fields the report uses. A struct, not map[string]string:
@@ -259,10 +278,10 @@ type dockerPSLine struct {
 	Status string
 }
 
-// parseDockerPS parses `docker ps -a --format {{json .}}` (one JSON object per line) into container
-// maps and their IDs, skipping blank lines and counting unparseable ones in skipped — the parsing,
+// parseDockerPS parses `docker ps -a --format {{json .}}` (one JSON object per line) into its lines
+// and their IDs, skipping blank lines and counting unparseable ones in skipped — the parsing,
 // testable without docker (6.16).
-func parseDockerPS(out []byte) (containers []map[string]string, ids []string, skipped int) {
+func parseDockerPS(out []byte) (containers []dockerPSLine, ids []string, skipped int) {
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if line == "" {
 			continue
@@ -272,13 +291,7 @@ func parseDockerPS(out []byte) (containers []map[string]string, ids []string, sk
 			skipped++
 			continue
 		}
-		containers = append(containers, map[string]string{
-			"id":     c.ID,
-			"name":   c.Names,
-			"image":  c.Image,
-			"state":  c.State,
-			"status": c.Status,
-		})
+		containers = append(containers, c)
 		ids = append(ids, c.ID)
 	}
 	return containers, ids, skipped

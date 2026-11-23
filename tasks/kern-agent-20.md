@@ -41,8 +41,10 @@ Review: approve (.ah-out/review/kern-agent-20/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T5 — R-0688: Docker-Block typisiert  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go
+### T5 — R-0688: Docker-Block typisiert  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/report_golden_linux_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/selfmeasure_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a5ae93d62 2026-11-23T13:42:49+01:00
+Review: approve (.ah-out/review/kern-agent-20/T5.verdict.json)
 Änderung: `DockerBlock`, `DockerContainer` und die Unavailable-Form als Structs; `collectDocker`, `putDockerDetails`, `dockerUnavailable`, `parseDockerPS` liefern bzw. füllen sie.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9

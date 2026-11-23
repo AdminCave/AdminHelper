@@ -102,9 +102,9 @@ func selfStats(t *testing.T, report map[string]any) map[string]collectorStat {
 
 func TestBuildReportMeasuresEveryCollector(t *testing.T) {
 	stubReportHost(t)
-	pluginCollectors.docker = func(context.Context) map[string]any {
+	pluginCollectors.docker = func(context.Context) *DockerBlock {
 		time.Sleep(30 * time.Millisecond)
-		return map[string]any{"available": true}
+		return &DockerBlock{Available: true}
 	}
 	pluginCollectors.zfs = func(context.Context) map[string]any {
 		// Busy until the process has used 50 ms of CPU time: what the frame must count.
@@ -183,10 +183,11 @@ func TestBuildReportThrottlesAnOptionalCollectorThatHitsItsTimeLimit(t *testing.
 	stubReportHost(t)
 	t.Setenv(dockerHelperEnv, "hang")
 	calls := 0
-	pluginCollectors.docker = func(ctx context.Context) map[string]any {
+	pluginCollectors.docker = func(ctx context.Context) *DockerBlock {
 		calls++
 		_, err := execTimed(ctx, 50*time.Millisecond, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
-		return map[string]any{"available": false, "error": err.Error()}
+		code := err.Error()
+		return &DockerBlock{Error: &code}
 	}
 	var state reportState
 	run := func() map[string]any {

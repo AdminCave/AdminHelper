@@ -182,7 +182,7 @@ func TestBuildReportShedsWhatFollowsTheCoreUnderLoad(t *testing.T) {
 		return loadReading{LoadPerCPU: ptr(0.5), MemAvailable: ptr(50)}
 	}
 	plugins := 0
-	pluginCollectors.docker = func(context.Context) map[string]any { plugins++; return map[string]any{"available": true} }
+	pluginCollectors.docker = func(context.Context) *DockerBlock { plugins++; return &DockerBlock{Available: true} }
 	pluginCollectors.proxmox = func(_ context.Context, b *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
 		plugins++
 		return map[string]any{"node": "n"}, b

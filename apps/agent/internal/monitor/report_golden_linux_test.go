@@ -89,7 +89,7 @@ func TestReportGoldenShape(t *testing.T) {
 func TestReportGoldenKeys(t *testing.T) {
 	stubReportHost(t)
 	stubResources(t, "linux")
-	pluginCollectors.docker = func(context.Context) map[string]any { return map[string]any{"available": true} }
+	pluginCollectors.docker = func(context.Context) *DockerBlock { return &DockerBlock{Available: true} }
 	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck) {
 		return map[string]any{"available": true}, nil
 	}

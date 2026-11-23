@@ -59,10 +59,10 @@ not-json`)
 	if len(containers) != 2 {
 		t.Fatalf("want 2 containers (blank + non-json skipped), got %d: %v", len(containers), containers)
 	}
-	if containers[0]["name"] != "web" || containers[0]["state"] != "running" {
+	if containers[0].Names != "web" || containers[0].State != "running" {
 		t.Errorf("container 0: %v", containers[0])
 	}
-	if containers[1]["image"] != "postgres" || containers[1]["state"] != "exited" {
+	if containers[1].Image != "postgres" || containers[1].State != "exited" {
 		t.Errorf("container 1: %v", containers[1])
 	}
 	if !reflect.DeepEqual(ids, []string{"abc123", "def456"}) {
@@ -77,9 +77,8 @@ not-json`)
 		// CLI prints Platform as an object; decoding into map[string]string dropped every line.
 		out := []byte(`{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-09-25 09:28:43 +0000 UTC","HealthStatus":"none","ID":"0123456789ab","Image":"example/app:1.0","Labels":"com.docker.compose.project=demo,com.docker.compose.service=app","LocalVolumes":"0","Mounts":"demo_data","Names":"demo-app-1","Networks":"demo_default","Platform":{"architecture":"amd64","os":"linux"},"Ports":"80/tcp","RunningFor":"3 weeks ago","Size":"1.41MB (virtual 829MB)","State":"running","Status":"Up 3 weeks"}`)
 		containers, ids, skipped := parseDockerPS(out)
-		want := []map[string]string{{
-			"id": "0123456789ab", "name": "demo-app-1", "image": "example/app:1.0",
-			"state": "running", "status": "Up 3 weeks",
+		want := []dockerPSLine{{
+			ID: "0123456789ab", Names: "demo-app-1", Image: "example/app:1.0", State: "running", Status: "Up 3 weeks",
 		}}
 		if !reflect.DeepEqual(containers, want) {
 			t.Errorf("containers = %v, want %v", containers, want)
@@ -331,7 +330,10 @@ func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
 			return nil
 		}
 	}
-	pluginCollectors.docker = record("docker")
+	pluginCollectors.docker = func(ctx context.Context) *DockerBlock {
+		record("docker")(ctx)
+		return nil
+	}
 	proxmox := record("proxmox")
 	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
 		return proxmox(ctx), nil
@@ -1927,18 +1929,18 @@ func TestCollectDockerComposeNumber(t *testing.T) {
 		want  any
 	}{{"2", float64(2)}, {"1", float64(1)}, {"0", nil}, {"-1", nil}, {"x", nil}, {"", nil}, {" 3", nil}}
 	for _, c := range cases {
-		entry := map[string]any{}
+		var entry DockerContainer
 		var in dockerInspect
 		in.Config.Labels = map[string]string{"com.docker.compose.container-number": c.label}
-		putDockerDetails(entry, in)
+		putDockerDetails(&entry, in)
 		got := dockerWire(t, entry)["compose_number"]
 		if got != c.want {
 			t.Errorf("label %q: compose_number = %v, want %v", c.label, got, c.want)
 		}
 	}
-	entry := map[string]any{}
-	putDockerDetails(entry, dockerInspect{})
-	if v, ok := entry["compose_number"]; ok {
+	var entry DockerContainer
+	putDockerDetails(&entry, dockerInspect{})
+	if v, ok := dockerWire(t, entry)["compose_number"]; ok {
 		t.Errorf("without the label compose_number = %v, want it left out", v)
 	}
 }

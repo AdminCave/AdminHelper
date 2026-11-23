@@ -28,7 +28,7 @@ func stubReportHost(t *testing.T) {
 	oldInterval := cpuSampleInterval
 	cpuSampleInterval = 0
 	oldPlugins := pluginCollectors
-	pluginCollectors.docker = func(context.Context) map[string]any { return nil }
+	pluginCollectors.docker = func(context.Context) *DockerBlock { return nil }
 	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck) {
 		return nil, nil
 	}
@@ -355,7 +355,7 @@ func TestPushBudgetKeepsThePushReserve(t *testing.T) {
 	t.Cleanup(func() { pushReserve = oldReserve })
 	// A collector that hangs until its context ends: only the collection deadline
 	// pushReserve before the run's deadline leaves the push its time.
-	pluginCollectors.docker = func(ctx context.Context) map[string]any {
+	pluginCollectors.docker = func(ctx context.Context) *DockerBlock {
 		<-ctx.Done()
 		return nil
 	}
