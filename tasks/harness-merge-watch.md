@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Merge-Wächter ohne Modell — Task-Ledger
-Status: geplant · Branch: feature/harness-merge-watch · Review: am Ende
+Status: aktiv · Branch: feature/harness-merge-watch · Review: am Ende
 Spec: docs/features/harness-merge-watch.md (Roadmap R-1724)
 Heavy: none — nur Harness-Skripte, SessionStart-Hook, Skill-Text und Entwickler-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
