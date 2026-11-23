@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/ops-15/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: → T5
 
-### T3 — R-1684: update.sh liest die Pins vor jeder Änderung, IMAGES bleibt nicht im Installationsverzeichnis  [ ]
+### T3 — R-1684: update.sh liest die Pins vor jeder Änderung, IMAGES bleibt nicht im Installationsverzeichnis  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/install.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh, scripts/tests/upgrade_path_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bb710cd00 2026-11-23T10:06:01+01:00
+Review: approve (.ah-out/review/ops-15/T3.verdict.json)
 Änderung: `update.sh` liest `TARGET_IMAGES` einmal direkt nach `fetch_bundle`/der Übergabe, vor Backup und Tausch; der späte Aufruf bei `pin_images` fällt weg. `swap_runtime_files` tauscht `IMAGES` nicht ins Installationsverzeichnis, `install.sh` entfernt es wie `VERSION`; eine liegengebliebene Kopie aus ops-14 räumt `update.sh` weg. `upgrade_path_test` entscheidet die Digest-Pflicht am Inhalt des Bundles von `PREV`, nicht an der Kopie im Installationsverzeichnis. Tests: kaputte `IMAGES` bricht ab, bevor etwas geändert ist; nach Install und Update liegt kein `IMAGES` im Verzeichnis.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: → T5
@@ -40,3 +42,4 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test uninstall_
 Doku: diese Task
 
 ## Entscheidungen
+- T3: Kein Aufräumen einer liegengebliebenen `IMAGES`-Kopie in `update.sh`: `IMAGES` gibt es erst seit ops-14 (#632, heute gemergt), kein veröffentlichtes Bundle trägt sie (letzter Tag v0.47.0 davor), also hat kein Host eine Kopie (YAGNI, weicht von der Spec ab).

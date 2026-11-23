@@ -222,6 +222,8 @@ done <<< "$(images_for 0.36.0)"
 { [ $rc -eq 0 ] && [ "$n" = 5 ] && [ "$(grep -c '_IMAGE=' "$INST/.env")" = 5 ]; } \
   && ok "a bundle with IMAGES pins tag and digest of all five images" \
   || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
+[ ! -e "$INST/IMAGES" ] && ok "install leaves no IMAGES in the install directory" \
+  || bad "install left IMAGES in the install directory"
 # A present file applies: each defect aborts before .env, never falls back to the tag.
 good=$(images_for 0.36.0)
 bad_images() {

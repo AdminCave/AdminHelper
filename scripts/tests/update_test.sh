@@ -1945,6 +1945,9 @@ done <<< "$(images_for 0.35.0)"
     && grep -q 'Images gepinnt auf :0.35.0@sha256 (Digest aus dem signierten Bundle)' <<<"$out"; } \
   && ok "a bundle with IMAGES pins tag and digest of all five images" \
   || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
+# The pins live in .env; the swap leaves no copy of IMAGES in the install directory.
+[ ! -e "$INST/IMAGES" ] && ok "update leaves no IMAGES in the install directory" \
+  || bad "update left IMAGES in the install directory"
 # The version in front of the digest is still the installed version.
 out=$(run_update "$INST" --check --ref v0.35.0 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Installiert: 0.35.0 ' <<<"$out"; } \

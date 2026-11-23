@@ -194,7 +194,7 @@ fetch_bundle_into() {
         PINNED_IMAGES=$(image_pins "$TARGET_DIR/IMAGES" "${REF#v}") \
             || { echo "ERROR: the IMAGES file of the bundle is invalid; aborted before the first start." >&2; rm -rf "$tmp"; exit 1; }
     fi
-    rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256"
+    rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256" "$TARGET_DIR/IMAGES"
     rm -rf "$tmp"
 }
 

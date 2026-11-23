@@ -793,6 +793,23 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
     exec env AH_UPDATE_REEXECED=1 AH_UPDATE_PARENT_TMP="$TMP" bash "${TMP}/update-new.sh" "${pass[@]}"
 fi
 
+# --- Target images, read before anything changes ---------------------------
+# KEY=image, for the pull and the pins: the tag plus the digest the release
+# signed, from the bundle's IMAGES (R-0460, checked in fetch_bundle); a release
+# from before has none and pins the tag (vX.Y.Z -> :X.Y.Z). Read here, so an
+# invalid file stops the run while "nothing changed" is still true.
+TARGET_IMAGES=()
+PIN_LABEL=":${TARGET_VER}"
+if [ -e "${EXTRACT}/IMAGES" ]; then
+    _pins=$(image_pins "${EXTRACT}/IMAGES" "$TARGET_VER") \
+        || die "the IMAGES file of the bundle is invalid; aborted, nothing changed."
+    mapfile -t TARGET_IMAGES <<< "$_pins"
+    PIN_LABEL=":${TARGET_VER}@sha256 (Digest aus dem signierten Bundle)"
+else
+    for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+        TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
+    done
+fi
 # --- PostgreSQL 17 -> 18: is the move due, is it safe, is there room? -------
 # Before the backup, so a refusal changes nothing; the move itself runs after the
 # pull (pg18_migrate). Only for a release whose compose file is on 18.
@@ -911,6 +928,8 @@ swap_runtime_files() {
     while IFS= read -r rel; do
         [ -n "$rel" ] || continue
         rel="${rel#./}"
+        # The pins live in .env; a copy of IMAGES here would only invite an edit.
+        [ "$rel" != IMAGES ] || continue
         [ -e "$rel" ] || [ -L "$rel" ] || ADDED_PATHS+="${rel}"$'\n'
         mkdir -p "$(dirname "$rel")" || return 1
         { cp -T "${EXTRACT}/${rel}" "${rel}.ah-new" && mv -fT "${rel}.ah-new" "$rel"; } \
@@ -1082,21 +1101,6 @@ rollback_after_deploy() {
 }
 
 # --- Deploy + health check, with automatic rollback on failure --------------
-# The target images, KEY=image, for the pull and the pins: the tag plus the digest
-# the release signed, from the bundle's IMAGES (R-0460, checked in fetch_bundle);
-# a release from before has none and pins the tag (vX.Y.Z -> :X.Y.Z).
-TARGET_IMAGES=()
-PIN_LABEL=":${TARGET_VER}"
-if [ -e "${EXTRACT}/IMAGES" ]; then
-    _pins=$(image_pins "${EXTRACT}/IMAGES" "$TARGET_VER") \
-        || die "the IMAGES file of the bundle is invalid; aborted, nothing changed."
-    mapfile -t TARGET_IMAGES <<< "$_pins"
-    PIN_LABEL=":${TARGET_VER}@sha256 (Digest aus dem signierten Bundle)"
-else
-    for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
-        TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
-    done
-fi
 # The pull gets the target images from the environment, which Compose ranks above
 # .env (docs/features/update-rollback.md): .env keeps the old pins until every image
 # is here, so an abort during the pull leaves nothing to undo in it.
