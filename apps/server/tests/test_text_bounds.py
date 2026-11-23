@@ -111,7 +111,7 @@ def test_internal_event_fields_reject_a_nul_byte(test_client, db_session, admin_
     """Found by the fuzzer on `source_id` (2026-09-22): every text field of an
     incoming event is written verbatim into a Notification row, and source_id is
     compared against Server.id on the way."""
-    monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+    monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
     headers = {"X-Internal-Key": "secret"}
     payload = {
         "event_type": "monitoring.check.transition",

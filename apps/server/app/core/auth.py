@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
+    MONITOR_API_KEY,
     REFRESH_TOKEN_EXPIRE_DAYS,
     SECRET_KEY,
 )
@@ -352,3 +353,25 @@ class ApiKeyOrUser:
             detail="Nicht authentifiziert",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+# A security scheme rather than a plain header parameter, so the schema says what the
+# header is. Its own scheme_name: two APIKeyHeader schemes would both be "APIKeyHeader".
+_internal_key_scheme = APIKeyHeader(
+    name="X-Internal-Key", scheme_name="InternalKey", auto_error=False
+)
+
+
+def require_internal_key(x_internal_key: str | None = Depends(_internal_key_scheme)) -> None:
+    """Gate for service-to-service ingress. Fail-closed: a missing/blank shared
+    secret rejects everything (constant-time compare).
+
+    Compares BYTES: secrets.compare_digest raises TypeError on str arguments
+    holding non-ASCII, and header values are latin-1 decoded — so a single byte
+    above 0x7F turned this gate into an unhandled 500 instead of a 403. The
+    monitoring side (apps/monitoring/app/core/auth.py::_key_matches) was already hardened this
+    way; this pulls the server copy level with it."""
+    if not MONITOR_API_KEY or not secrets.compare_digest(
+        (x_internal_key or "").encode(), MONITOR_API_KEY.encode()
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")

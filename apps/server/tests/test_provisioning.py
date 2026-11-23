@@ -24,6 +24,7 @@ import uuid
 
 import pytest
 
+from app.core import config
 from app.core.auth import hash_api_key
 from app.core.config import MONITOR_SERVICE_URL
 from app.modules.api_keys.models import ApiKey
@@ -32,7 +33,6 @@ from app.modules.enrollment.models import EnrollmentToken
 from app.modules.frp import docker_manager
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.proxy_key import proxy_key, proxy_key_hash
-from app.modules.provisioning import helpers as prov_helpers
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
 
@@ -43,12 +43,12 @@ from app.modules.servers.models import Server
 
 @pytest.fixture()
 def monitor_key_set(monkeypatch):
-    """Sets MONITOR_API_KEY on the helper module so the HTTP call is actually
+    """Sets MONITOR_API_KEY in app.core.config so the HTTP call is actually
     attempted. Without this fixture the helper bails out early with None, and a
     registered pytest-httpx mock would stay unconsumed (which pytest-httpx
     flags as a teardown error).
     """
-    monkeypatch.setattr(prov_helpers, "MONITOR_API_KEY", "test-internal-key")
+    monkeypatch.setattr(config, "MONITOR_API_KEY", "test-internal-key")
 
 
 def _make_server(db, *, sid: str = "srv-prov", name: str = "test-srv"):
@@ -742,7 +742,7 @@ def test_a_server_delete_waits_for_an_activation_without_holding_the_identity(
     from app.modules.servers import router as servers_router
 
     # The delete handler best-effort calls the monitoring cleanup; stub it out.
-    monkeypatch.setattr(servers_router.httpx, "delete", lambda *a, **k: None)
+    monkeypatch.setattr(servers_router, "monitoring_request", lambda *a, **k: None)
     sid = f"srv-delete-{uuid.uuid4().hex[:6]}"
     new_session = sessionmaker(bind=pg_engine)
     with new_session() as setup:

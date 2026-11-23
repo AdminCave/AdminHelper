@@ -14,21 +14,18 @@ Three surfaces:
 
 import base64
 import json
-import secrets
 import threading
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.security import APIKeyHeader
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, require_internal_key
 from app.core.bounds import BigIntPk, Offset
-from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
@@ -621,28 +618,6 @@ def _send_test(channel: str, target: str) -> None:
 
 
 # --- Internal event ingress (monitoring → server) --------------------------
-
-
-# A security scheme rather than a plain header parameter, so the schema says what the
-# header is. Its own scheme_name: two APIKeyHeader schemes would both be "APIKeyHeader".
-_internal_key_scheme = APIKeyHeader(
-    name="X-Internal-Key", scheme_name="InternalKey", auto_error=False
-)
-
-
-def require_internal_key(x_internal_key: str | None = Depends(_internal_key_scheme)) -> None:
-    """Gate for service-to-service ingress. Fail-closed: a missing/blank shared
-    secret rejects everything (constant-time compare).
-
-    Compares BYTES: secrets.compare_digest raises TypeError on str arguments
-    holding non-ASCII, and header values are latin-1 decoded — so a single byte
-    above 0x7F turned this gate into an unhandled 500 instead of a 403. The
-    monitoring side (app/core/auth.py::_key_matches) was already hardened this
-    way; this pulls the server copy level with it."""
-    if not MONITOR_API_KEY or not secrets.compare_digest(
-        (x_internal_key or "").encode(), MONITOR_API_KEY.encode()
-    ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")
 
 
 @internal_router.get("/notify-config", response_model=NotifyConfigOut)

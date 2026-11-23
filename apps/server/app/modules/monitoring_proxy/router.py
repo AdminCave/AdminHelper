@@ -19,8 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.core import monitoring_client
 from app.core.auth import get_current_admin
-from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
+from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_cert_server, require_scope
 from app.core.middleware import resolve_client_ip
@@ -48,10 +49,7 @@ def _upstream_error(route: str, exc: httpx.HTTPError) -> HTTPException:
 _INGEST_MAX = 120
 _INGEST_WINDOW = 60
 
-# Normalize once: a trailing slash would make the forwards below emit a double
-# slash (http://monitoring:8080//agent/...), which the no-prefix monitoring
-# routes do NOT match -> 404. Mirrors the rstrip in provisioning/helpers.py.
-_MONITOR_BASE = MONITOR_SERVICE_URL.rstrip("/")
+_MONITOR_BASE = monitoring_client.base_url()
 
 # Reuse one async client across proxy forwards instead of a fresh AsyncClient (TCP handshake + pool
 # setup) per request — agent reports arrive every minute per server. httpx binds its pools lazily, so

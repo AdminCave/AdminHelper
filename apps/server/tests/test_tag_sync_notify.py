@@ -18,7 +18,8 @@ def _auth(token):
 
 
 def _spy_notify(monkeypatch):
-    """Patch httpx.post as seen by the servers router; records target URLs."""
+    """Patch the servers router's monitoring call; records the tag-sync POSTs (the delete
+    cleanup goes through the same call and is answered, not recorded)."""
     import app.modules.servers.router as servers_router
 
     calls: list[str] = []
@@ -27,7 +28,9 @@ def _spy_notify(monkeypatch):
         status_code = 200
 
     monkeypatch.setattr(
-        servers_router.httpx, "post", lambda url, **kw: calls.append(url) or _Resp()
+        servers_router,
+        "monitoring_request",
+        lambda method, path, **kw: (method == "POST" and calls.append(path)) or _Resp(),
     )
     return calls
 
@@ -98,10 +101,10 @@ def test_delete_notifies(test_client, db_session, admin_user, monkeypatch):
 def test_raising_notify_never_fails_the_operation(test_client, db_session, admin_user, monkeypatch):
     import app.modules.servers.router as servers_router
 
-    def boom(url, **kw):
+    def boom(method, path, **kw):
         raise ConnectionError("monitoring down")
 
-    monkeypatch.setattr(servers_router.httpx, "post", boom)
+    monkeypatch.setattr(servers_router, "monitoring_request", boom)
     headers = _auth(_login(test_client, "admin", "adminpass"))
     r = test_client.post(
         "/api/servers",
@@ -110,7 +113,7 @@ def test_raising_notify_never_fails_the_operation(test_client, db_session, admin
     )
     assert r.status_code in (200, 201), r.text
     # Barrier before the monkeypatch teardown: the queued notify must run
-    # against the raising spy, not the real httpx afterwards.
+    # against the raising spy, not the real client afterwards.
     _drain_notify()
 
 
@@ -128,11 +131,11 @@ def test_notify_does_not_block_the_request(test_client, db_session, admin_user, 
     class _Resp:
         status_code = 200
 
-    def slow_post(url, **kw):
+    def slow_post(method, path, **kw):
         release.wait(timeout=10)
         return _Resp()
 
-    monkeypatch.setattr(servers_router.httpx, "post", slow_post)
+    monkeypatch.setattr(servers_router, "monitoring_request", slow_post)
     headers = _auth(_login(test_client, "admin", "adminpass"))
     t0 = time.monotonic()
     r = test_client.post(

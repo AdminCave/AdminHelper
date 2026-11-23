@@ -8,24 +8,22 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_admin
+from app.core.auth import get_current_admin, require_internal_key
 from app.core.bounds import Offset
-from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
 from app.core.database import get_db
 from app.core.events import queue_event
 from app.core.identity import SCOPE_AGENT
+from app.core.monitoring_client import request as monitoring_request
 from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
 from app.modules.frp.policy import sync_policy
-from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import (
     FrpKeyRotateOut,
@@ -85,11 +83,7 @@ def _notify_monitoring_tag_sync(reason: str) -> None:
 
 def _do_notify_tag_sync(reason: str) -> None:
     try:
-        resp = httpx.post(
-            f"{MONITOR_SERVICE_URL}/templates/tag-sync",
-            headers={"X-Internal-Key": MONITOR_API_KEY},
-            timeout=30,
-        )
+        resp = monitoring_request("POST", "/templates/tag-sync", timeout=30)
         if resp.status_code >= 300:
             logger.warning("Tag-sync notify (%s): HTTP %d", reason, resp.status_code)
     except Exception as exc:
@@ -311,11 +305,7 @@ def delete_server(
 
     # Monitoring cleanup: delete all checks/alerts/assignments of this server
     try:
-        resp = httpx.delete(
-            f"{MONITOR_SERVICE_URL}/servers/{server_id}/cleanup",
-            headers={"X-Internal-Key": MONITOR_API_KEY},
-            timeout=5,
-        )
+        resp = monitoring_request("DELETE", f"/servers/{server_id}/cleanup", timeout=5)
         # Evaluate the status: a 403 (wrong internal key) or 5xx must not silently count as done —
         # the deleted server's checks/alerts/assignments would linger as orphans in monitoring with
         # no log trace (4.140).

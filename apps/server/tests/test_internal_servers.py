@@ -32,15 +32,15 @@ class TestInternalServers:
         assert test_client.get(_PATH).status_code == 403
 
     def test_wrong_key_rejected(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "right")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "right")
         assert test_client.get(_PATH, headers={"X-Internal-Key": "wrong"}).status_code == 403
 
     def test_blank_configured_key_is_fail_closed(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "")
         assert test_client.get(_PATH, headers={"X-Internal-Key": ""}).status_code == 403
 
     def test_lists_minimal_shape_with_tags(self, test_client, db_session, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         _server(db_session, "srv-a", tags=["web", "prod"])
         _server(db_session, "srv-b")
 

@@ -246,10 +246,10 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
 
     token = create_access_token(claims_for(admin_user.username))
 
-    # The internal key is read once at import into the router's own namespace, so
+    # The internal key is read once at import into app.core.auth's namespace, so
     # the value has to be patched there, not in the config module.
     internal = "schemathesis-internal-key"
-    monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", internal)
+    monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", internal)
 
     return {
         "admin_jwt": {"Authorization": f"Bearer {token}"},
