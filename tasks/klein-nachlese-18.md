@@ -55,3 +55,12 @@ Beweis: reviewer klein-nachlese-17 (monitoring.html:296, ci-19.md:33), reviewer 
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/monitoring.html DE+EN, docs/developer/agent.html DE+EN, zwei Specs
+
+### T6 — R-1675: Store-Test für serversLoaded (Fund der Abschlussprüfung)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/monitoring.test.ts, docs/features/klein-nachlese-18.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @1c4fed24e 2026-11-23T11:50:16+01:00
+Review: approve (.ah-out/review/klein-nachlese-18/T6.verdict.json)
+Beweis: reviewer branch klein-nachlese-18 2026-11-23 (monitoring.ts:242, Gegenprobe serversLoaded: false im Erfolgszweig blieb grün). Dedup-Key: REF:nachlese:kern-dashboard-1
+Änderung: Store-Test: `fetchServers` gemockt; nach Erfolg ist `monitoringServersLoaded` true, nach einer Ablehnung false und `servers` leer. Nit: die Spec nennt wdio 10, belegt ist die Aussage an 9.29.0.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/monitoring.test.ts
+Doku: keine (nur Test; die Spec-Formulierung)

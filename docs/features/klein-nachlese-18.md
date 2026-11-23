@@ -25,7 +25,7 @@ Sieben Nits aus Abschlusspruefungen (alle REF: Testluecken, ein Anzeigefehler, D
 - R-1677: `docs/developer/agent.html` DE+EN nennen `internal/selfupdate`, `self-update-apply` und die
   Gesund-Marke des Windows-Self-Updates nicht.
 - R-1685: `docs/features/kern-desktop-e2e-2.md:30` sagt, `waitUntil` breche beim ersten abgelehnten Aufruf ab;
-  wdio 10 wiederholt eine werfende Bedingung bis zum Timeout (`Timer._checkCondition`).
+  wdio wiederholt eine werfende Bedingung bis zum Timeout (`Timer._checkCondition`, belegt an 9.29.0).
 
 ## Ziel & Nicht-Ziele
 Ziel: Tests pinnen das gewollte Verhalten, die Kachel zeigt `-` statt einer falschen 0, Doku und Fragmente
@@ -38,8 +38,8 @@ monitoring (Tests), agent (Test), desktop-ui (Dashboard, Store, Test), docs, cha
 Keine. Kein Vertrag aendert sich.
 
 ## Externe Integrationen
-wdio 10 (`waitUntil`): die Aussage in R-1685 wird gegen den Quelltext des installierten Pakets belegt, nicht
-aus dem Gedaechtnis geschrieben.
+wdio (`waitUntil`; installiert 9.29.0, Lockfile 10.1.0): die Aussage in R-1685 wird gegen den Quelltext des
+installierten Pakets belegt, nicht aus dem Gedaechtnis geschrieben.
 
 ## Trade-offs & Alternativen
 R-1675: ein eigenes "Server-Liste geladen"-Signal im Store (`servers` bleibt `[]` bei Fehler, ein Zaehler traegt
