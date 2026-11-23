@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- queue_wait_test
 Doku: → T3
 
-### T2 — R-1345: /feature-build und CLAUDE.md reihen ein statt hineinzumergen  [ ]
+### T2 — R-1345: /feature-build und CLAUDE.md reihen ein statt hineinzumergen  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, CLAUDE.md, scripts/tests/harness_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @007875c1e 2026-11-23T10:03:38+01:00
+Review: am Ende (Branch-Review)
 Änderung: §4.6: `origin/main` nur noch bei `mergeable: CONFLICTING` hineinmergen (Union-Prüfung `CHANGELOG.md` bleibt für diesen Fall). §4.7: nach grüner PR-CI und allen Bedingungen Sammellauf-Sperre (§5) prüfen, dann `review.sh final … && gh pr merge <n>` (reiht ein; ohne Merge-Methode, nie `--admin`, ohne `--delete-branch`), dann `queue-wait.sh <n>` als Hintergrund-Wächter; „Branch muss origin/main enthalten“, „neue CI abwarten“ und „ein Merge je CI-Zyklus“ entfallen; Exit 1 → roten Queue-Lauf lesen, flaky: einmal neu einreihen plus Roadmap-Zeile, sonst Übergabe. §4.8 nimmt die Merge-SHA aus `queue-wait.sh`. CLAUDE.md §2 „Merge“ nennt das Einreihen, §5 „nicht fertig, solange der PR in der Queue steht“. `harness_consistency_test.sh` prüft: der Skill nennt `queue-wait.sh` und nicht mehr „Merge je CI-Zyklus“.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: → T3

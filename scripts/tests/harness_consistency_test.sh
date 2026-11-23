@@ -163,6 +163,12 @@ grep -qF '.ah-out/review/$SLUG/$ID.verdict.json' "$ROOT/scripts/dev/task-close.s
 FB="$ROOT/.claude/skills/feature-build/SKILL.md"
 grep -q 'Einsatzart `task`' "$FB" && grep -q 'Einsatzart `branch`' "$FB" && grep -q 'review.sh final' "$FB" \
   && ok "/feature-build runs the reviewer in both modes and review.sh final" || bad "/feature-build lacks a mode or the final check"
+# main requires a merge queue (R-1344): /feature-build enqueues and waits with
+# queue-wait.sh; the hand-built queue (merge main in, one merge per CI cycle) is gone.
+grep -q 'queue-wait.sh' "$FB" && grep -q 'gh pr merge <n>`' "$FB" && ! grep -q 'Merge je CI-Zyklus' "$FB" \
+  && ! grep -q 'gh pr merge <n> --merge' "$FB" && [ -f "$ROOT/scripts/dev/queue-wait.sh" ] \
+  && ok "/feature-build enqueues into the merge queue and waits with queue-wait.sh" \
+  || bad "/feature-build still merges by hand or does not wait with queue-wait.sh"
 # The path-bound rules do not load for worktree paths; whoever works there reads them.
 unread=""
 for f in "$FB" "$ROOT/.claude/skills/feature-plan/SKILL.md" "$R"; do
