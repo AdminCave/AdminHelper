@@ -1,5 +1,5 @@
 # kern-agent-20 — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-20 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-20 · Review: pro Task
 Spec: docs/features/kern-agent-20.md (Roadmap R-0688)
 Heavy: linux-full — apps/agent (Monitoring-Report); Windows-Dateien prüft der PR-Job agent-windows, FreeBSD nur quer gebaut
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
