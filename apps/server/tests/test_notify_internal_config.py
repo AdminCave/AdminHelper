@@ -25,7 +25,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
 
 @pytest.fixture(autouse=True)
 def env(monkeypatch):
-    monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", KEY)
+    monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", KEY)
     monkeypatch.setattr(app_config, "SMTP_HOST", "env-relay.example")
     monkeypatch.setattr(app_config, "SMTP_PORT", 587)
     monkeypatch.setattr(app_config, "SMTP_USER", "env-user")
@@ -50,7 +50,7 @@ class TestAccess:
         assert "env-password" not in res.text
 
     def test_without_a_configured_key_everything_is_refused(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "")
         assert _get(test_client, "").status_code == 403
 
     def test_an_admin_token_is_no_key(self, test_client, db_session):

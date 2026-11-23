@@ -160,7 +160,7 @@ def test_names_stored_twice_before_stay_editable(test_client, db_session, admin_
 
 
 def test_every_listing_hands_out_the_address(test_client, db_session, admin_user, monkeypatch):
-    import app.modules.notifications.router as notifications_router
+    import app.core.auth as core_auth
 
     db_session.add(Server(id="s-own", name="mail", hostname="192.0.2.10", tags=json.dumps([])))
     db_session.add(Server(id="s-name", name="web01.kunde.example", hostname=None))
@@ -176,7 +176,7 @@ def test_every_listing_hands_out_the_address(test_client, db_session, admin_user
     assert {s["id"]: s["hostname"] for s in summary} == expected
     mine = test_client.get("/api/users/me/servers", headers=headers).json()
     assert {s["id"]: s["hostname"] for s in mine} == expected
-    monkeypatch.setattr(notifications_router, "MONITOR_API_KEY", "internal-test-key")
+    monkeypatch.setattr(core_auth, "MONITOR_API_KEY", "internal-test-key")
     internal = test_client.get(
         "/api/internal/servers", headers={"X-Internal-Key": "internal-test-key"}
     ).json()

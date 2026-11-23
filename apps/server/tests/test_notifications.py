@@ -753,14 +753,14 @@ class TestIngress:
         assert test_client.post(self._PATH, json=self._payload()).status_code == 403
 
     def test_wrong_key_rejected(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "right-key")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "right-key")
         res = test_client.post(
             self._PATH, headers={"X-Internal-Key": "wrong"}, json=self._payload()
         )
         assert res.status_code == 403
 
     def test_blank_configured_key_is_fail_closed(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "")
         res = test_client.post(self._PATH, headers={"X-Internal-Key": ""}, json=self._payload())
         assert res.status_code == 403
 
@@ -770,7 +770,7 @@ class TestIngress:
         # — so one byte above 0x7F turned this gate into an unhandled 500 that an
         # unauthenticated caller could trigger at will. The monitoring side was
         # already hardened (app/core/auth.py::_key_matches); this pins the server.
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         # Bytes, because httpx refuses a non-ASCII str header outright (that
         # would test the client, not us). httpx transcodes them to UTF-8, so the
         # handler sees a different code point than a real 0xE9 on the wire would
@@ -784,7 +784,7 @@ class TestIngress:
         assert res.status_code == 403
 
     def test_valid_key_fans_out(self, test_client, db_session, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         admin = _user(db_session, "boss", is_admin=True)
         _sub(db_session, admin, scope_type="all")
         _server(db_session, "srv-1")
@@ -801,7 +801,7 @@ class TestIngress:
         return payload
 
     def test_bundle_fans_out_per_user(self, test_client, db_session, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         srv1 = _server(db_session, "srv-1", name="web01")
         _server(db_session, "srv-2", name="db01")
         member = _user(db_session, "member", servers=[srv1])
@@ -818,7 +818,7 @@ class TestIngress:
         assert row.body == "- web01"
 
     def test_bundle_takes_500_ids(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         ids = [f"srv-{i}" for i in range(500)]
         ids[0] = "x" * 256
         res = test_client.post(
@@ -827,7 +827,7 @@ class TestIngress:
         assert res.status_code == 202, res.text
 
     def test_bundle_shape_is_bounded(self, test_client, monkeypatch):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         both = {**self._payload(), "source_ids": ["srv-2"]}
         # The error type pins which bound refused it, not just that one did.
         for payload, error in (
@@ -851,7 +851,7 @@ class TestIngress:
     def test_a_source_type_of_the_server_is_refused(self, test_client, db_session, monkeypatch):
         # Under frp_config, frps and certificate_expiry the server keeps notices of its own and finds them
         # again by source_type: a row from the ingress would count as one of them.
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         admin = _user(db_session, "boss", is_admin=True)
         _sub(db_session, admin, scope_type="all")
         for source_type in ("frp_config", "frps", "certificate_expiry"):
@@ -883,7 +883,7 @@ class TestIngress:
         from app.modules.frp import supervisor_watch
         from app.modules.frp.models import FrpServerConfig
 
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         admin = _user(db_session, "boss", is_admin=True)
         _sub(db_session, admin, scope_type="all")
         config = FrpServerConfig(
@@ -917,7 +917,7 @@ class TestAlertTriggeredHook:
     _PATH = "/api/internal/events"
 
     def _post(self, test_client, monkeypatch, fired, **overrides):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         monkeypatch.setattr(
             "app.modules.notifications.router.fire_event",
             lambda event_type, event_data: fired.append((event_type, event_data)),

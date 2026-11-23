@@ -681,7 +681,7 @@ class TestIngress:
     _PATH = "/api/internal/events"
 
     def _post(self, test_client, monkeypatch, fired, **fields):
-        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         monkeypatch.setattr(
             "app.modules.notifications.router.fire_event",
             lambda event_type, event_data: fired.append(event_data["server_id"]),

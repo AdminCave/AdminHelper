@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_admin
+from app.core.auth import get_current_admin, require_internal_key
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.events import queue_event
@@ -24,7 +24,6 @@ from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
 from app.modules.frp.policy import sync_policy
-from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import (
     FrpKeyRotateOut,
