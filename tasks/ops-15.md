@@ -1,5 +1,5 @@
 # ops-15 — Task-Ledger
-Status: bereit · Branch: feature/ops-15 · Review: pro Task
+Status: erledigt · Branch: feature/ops-15 · Review: pro Task
 Spec: docs/features/ops-15.md (Roadmap R-1684, R-0592)
 Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_test: letztes Release → Checkout); der Pin-Job in release.yml ist erst mit dem nächsten Tag real beweisbar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
