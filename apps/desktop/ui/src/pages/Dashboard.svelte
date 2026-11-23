@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     monitoringChecks,
     monitoringServers,
     monitoringHasLoaded,
+    monitoringServersLoaded,
     monitoringError,
     setSelectedServer,
     setOverviewView,
@@ -59,6 +60,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let problems = $derived(summary.critical + summary.warning);
   // A failed load leaves no checks behind: zero problems would read as a healthy monitoring.
   let monitoringKnown = $derived($monitoringHasLoaded && !$monitoringError);
+  // The server count comes from its own fetch: when only /servers failed, an empty list is no zero.
+  let serversKnown = $derived(monitoringKnown && $monitoringServersLoaded);
   // The same for connections: a pending or failed fetch without a list has no count (R-0781);
   // a failed reload that kept the list of the same source still counts it.
   let connectionsKnown = $derived($kindCounts.total > 0 || (!$loading && !$connectionsStore.error));
@@ -107,9 +110,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#if monitoringShown}
       <div class="dash-card" data-card="servers">
         <div class="dash-card-label">{$t('dashboard.servers')}</div>
-        <div class="dash-card-value">{monitoringKnown ? $monitoringServers.length : '-'}</div>
+        <div class="dash-card-value">{serversKnown ? $monitoringServers.length : '-'}</div>
         <div class="dash-card-hint">
-          {#if monitoringKnown}{$t('dashboard.serversHint', { count: agentServers })}{/if}
+          {#if serversKnown}{$t('dashboard.serversHint', { count: agentServers })}{/if}
         </div>
       </div>
       <div class="dash-card" data-card="problems" class:has-problems={problems > 0}>
