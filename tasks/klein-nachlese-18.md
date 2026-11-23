@@ -19,8 +19,10 @@ Beweis: reviewer kern-agent-15 branch 2026-11-20, test_catalog_windows_server.py
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_windows_server.py tests/test_catalog_windows_roles.py
 Doku: keine (nur Tests)
 
-### T2 — R-1674: RPM-Scriptlets ohne systemd: Ausgabe prüfen  [ ]
+### T2 — R-1674: RPM-Scriptlets ohne systemd: Ausgabe prüfen  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/packaging_rpm_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @cbd22b20f 2026-11-23T10:51:25+01:00
+Review: approve (.ah-out/review/klein-nachlese-18/T2.verdict.json)
 Beweis: reviewer kern-agent-16 branch 2026-11-20, packaging_rpm_test.go:342. Dedup-Key: REF:nachlese:kern-agent-16
 Änderung: `TestRPMScriptletsPassWithoutSystemd` prüft zusätzlich, dass die Ausgabe der Scriptlets die Stub-Meldung ("System has not been booted") nicht enthält, also `daemon-reload` still scheitert; Gegenprobe mit dem Spec ohne `2>/dev/null`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/adminhelper-agent -run RPM
