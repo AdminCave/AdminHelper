@@ -92,7 +92,7 @@ def test_delete_server_revokes_its_tunnel_identity(
     test_client, admin_user, db_session, monkeypatch
 ):
     # The delete handler best-effort calls the monitoring cleanup; stub it out.
-    monkeypatch.setattr(servers_router.httpx, "delete", lambda *a, **k: None)
+    monkeypatch.setattr(servers_router, "monitoring_request", lambda *a, **k: None)
 
     db_session.add(Server(id="srv-xyz", name="web1", hostname="web1.example"))
     db_session.commit()
@@ -225,7 +225,7 @@ def test_revoking_an_identity_revokes_its_open_lines_and_no_others(db_session):
 def test_deleting_a_server_revokes_the_line_of_its_agent(
     test_client, admin_user, db_session, monkeypatch
 ):
-    monkeypatch.setattr(servers_router.httpx, "delete", lambda *a, **k: None)
+    monkeypatch.setattr(servers_router, "monitoring_request", lambda *a, **k: None)
     db_session.add(Server(id="srv-line", name="web2", hostname="web2.example"))
     db_session.commit()
     _, cert = _leaf("srv-line", SCOPE_AGENT)

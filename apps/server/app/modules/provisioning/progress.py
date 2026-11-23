@@ -19,7 +19,7 @@ from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session
 
-from app.core import config
+from app.core import config, monitoring_client
 from app.core.identity import SCOPE_AGENT
 from app.core.time import iso_utc
 from app.modules.enrollment.models import DeviceLine, IssuedCertificate
@@ -90,11 +90,10 @@ def _monitor_state(server_id: str) -> tuple[dict | None, bool]:
     """(report, reachable). The monitoring service answers nulls for an unknown server."""
     if not config.MONITOR_API_KEY:
         return None, False
-    url = f"{config.MONITOR_SERVICE_URL.rstrip('/')}/agent/{quote(server_id, safe='')}/state"
     try:
-        resp = httpx.get(
-            url,
-            headers={"X-Internal-Key": config.MONITOR_API_KEY},
+        resp = monitoring_client.request(
+            "GET",
+            f"/agent/{quote(server_id, safe='')}/state",
             timeout=httpx.Timeout(3.0, connect=1.0),
         )
         if resp.status_code != 200:

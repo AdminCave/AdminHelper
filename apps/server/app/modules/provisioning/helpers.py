@@ -23,7 +23,7 @@ from typing import Any, Optional
 import httpx
 from sqlalchemy.orm import Session
 
-from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
+from app.core import config, monitoring_client
 from app.modules.frp._helpers import frpc_sync_inputs
 from app.modules.frp.config_generator import generate_frpc_toml
 
@@ -41,7 +41,7 @@ def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[
     None and logs a WARNING — provisioning should not fail because of a
     downed monitor service.
     """
-    if not MONITOR_API_KEY:
+    if not config.MONITOR_API_KEY:
         logger.warning(
             "Provisioning: MONITOR_API_KEY ist leer, kann Monitor-Agent-Key "
             "nicht generieren. Setze MONITOR_API_KEY oder fuehre "
@@ -49,10 +49,10 @@ def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[
         )
         return None
 
-    url = f"{MONITOR_SERVICE_URL.rstrip('/')}/agent-keys/{server_id}"
+    path = f"/agent-keys/{server_id}"
+    url = monitoring_client.url(path)
     try:
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(url, headers={"X-Internal-Key": MONITOR_API_KEY})
+        resp = monitoring_client.request("POST", path, timeout=timeout)
         if resp.status_code >= 300:
             logger.warning(
                 "Provisioning: Monitor-Service antwortete mit %d auf %s — "

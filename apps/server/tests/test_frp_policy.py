@@ -467,7 +467,7 @@ def test_server_delete_writes_the_policy(
     _seed(db_session)
     policy.sync_policy(db_session)
     monkeypatch.setattr(
-        servers_router.httpx, "delete", lambda *a, **k: SimpleNamespace(status_code=204)
+        servers_router, "monitoring_request", lambda *a, **k: SimpleNamespace(status_code=204)
     )
 
     r = test_client.delete(f"/api/servers/{SERVER_B}", headers=_login(test_client))

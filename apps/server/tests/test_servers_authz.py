@@ -91,7 +91,7 @@ def test_server_delete_logs_monitoring_cleanup_http_error(
     server_id = test_client.post("/api/servers", json=SERVER, headers=headers).json()["id"]
 
     monkeypatch.setattr(
-        servers_router.httpx, "delete", lambda *a, **k: SimpleNamespace(status_code=403)
+        servers_router, "monitoring_request", lambda *a, **k: SimpleNamespace(status_code=403)
     )
     with caplog.at_level("WARNING"):
         r = test_client.delete(f"/api/servers/{server_id}", headers=headers)
