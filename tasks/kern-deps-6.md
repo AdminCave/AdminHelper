@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-6 — Task-Ledger
-Status: geplant · Branch: feature/kern-deps-6 · Review: am Ende
+Status: aktiv · Branch: feature/kern-deps-6 · Review: am Ende
 Spec: docs/features/kern-deps-6.md (Roadmap R-1738)
 Heavy: linux-full — Desktop-Binary (Cargo.lock); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
