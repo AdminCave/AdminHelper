@@ -1,0 +1,36 @@
+{
+  "cpu": [
+    {
+      "cpu_pct": 50,
+      "name": "java",
+      "pid": 12
+    },
+    {
+      "cpu_pct": 30,
+      "name": "postgres",
+      "pid": 11
+    },
+    {
+      "cpu_pct": 1,
+      "name": "systemd",
+      "pid": 1
+    }
+  ],
+  "memory": [
+    {
+      "name": "java",
+      "pid": 12,
+      "rss": 2202009600
+    },
+    {
+      "name": "postgres",
+      "pid": 11,
+      "rss": 996147200
+    },
+    {
+      "name": "systemd",
+      "pid": 1,
+      "rss": 12582912
+    }
+  ]
+}

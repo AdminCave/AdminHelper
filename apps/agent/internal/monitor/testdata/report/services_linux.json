@@ -1,0 +1,22 @@
+[
+  {
+    "name": "redis",
+    "pid": "5678",
+    "running": true
+  },
+  {
+    "name": "missing",
+    "pid": null,
+    "running": false
+  },
+  {
+    "name": "nginx",
+    "pid": "1234",
+    "running": true
+  },
+  {
+    "name": "sshd.service",
+    "pid": null,
+    "running": false
+  }
+]

@@ -59,10 +59,10 @@ not-json`)
 	if len(containers) != 2 {
 		t.Fatalf("want 2 containers (blank + non-json skipped), got %d: %v", len(containers), containers)
 	}
-	if containers[0]["name"] != "web" || containers[0]["state"] != "running" {
+	if containers[0].Names != "web" || containers[0].State != "running" {
 		t.Errorf("container 0: %v", containers[0])
 	}
-	if containers[1]["image"] != "postgres" || containers[1]["state"] != "exited" {
+	if containers[1].Image != "postgres" || containers[1].State != "exited" {
 		t.Errorf("container 1: %v", containers[1])
 	}
 	if !reflect.DeepEqual(ids, []string{"abc123", "def456"}) {
@@ -77,9 +77,8 @@ not-json`)
 		// CLI prints Platform as an object; decoding into map[string]string dropped every line.
 		out := []byte(`{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-09-25 09:28:43 +0000 UTC","HealthStatus":"none","ID":"0123456789ab","Image":"example/app:1.0","Labels":"com.docker.compose.project=demo,com.docker.compose.service=app","LocalVolumes":"0","Mounts":"demo_data","Names":"demo-app-1","Networks":"demo_default","Platform":{"architecture":"amd64","os":"linux"},"Ports":"80/tcp","RunningFor":"3 weeks ago","Size":"1.41MB (virtual 829MB)","State":"running","Status":"Up 3 weeks"}`)
 		containers, ids, skipped := parseDockerPS(out)
-		want := []map[string]string{{
-			"id": "0123456789ab", "name": "demo-app-1", "image": "example/app:1.0",
-			"state": "running", "status": "Up 3 weeks",
+		want := []dockerPSLine{{
+			ID: "0123456789ab", Names: "demo-app-1", Image: "example/app:1.0", State: "running", Status: "Up 3 weeks",
 		}}
 		if !reflect.DeepEqual(containers, want) {
 			t.Errorf("containers = %v, want %v", containers, want)
@@ -142,7 +141,7 @@ func stubDocker(t *testing.T, replies map[string]dockerReply) *[][]string {
 
 // dockerWire is the docker block as the monitoring service receives it: encoded and decoded again, so
 // the tests check the wire format (null vs. [], numbers, booleans), not Go types.
-func dockerWire(t *testing.T, block map[string]any) map[string]any {
+func dockerWire(t *testing.T, block any) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(block)
 	if err != nil {
@@ -331,12 +330,20 @@ func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
 			return nil
 		}
 	}
-	pluginCollectors.docker = record("docker")
-	proxmox := record("proxmox")
-	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
-		return proxmox(ctx), nil
+	pluginCollectors.docker = func(ctx context.Context) *DockerBlock {
+		record("docker")(ctx)
+		return nil
 	}
-	pluginCollectors.zfs = record("zfs")
+	proxmox := record("proxmox")
+	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (*ProxmoxBlock, *backupIndexCheck) {
+		proxmox(ctx)
+		return nil, nil
+	}
+	zfs := record("zfs")
+	pluginCollectors.zfs = func(ctx context.Context) *ZFSBlock {
+		zfs(ctx)
+		return nil
+	}
 
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
 	buildReportWithState(ctx, nil, nil, reportState{}, time.Now())
@@ -637,15 +644,15 @@ func TestParseZpoolList(t *testing.T) {
 	if len(pools) != 2 {
 		t.Fatalf("want 2 pools, got %d: %v", len(pools), pools)
 	}
-	if pools[0]["name"] != "tank" || pools[0]["capacity_percent"] != 33 || pools[0]["health"] != "ONLINE" ||
-		pools[0]["fragmentation_percent"] != 12 {
-		t.Errorf("tank: %v", pools[0])
+	if pools[0].Name != "tank" || pools[0].CapacityPercent != 33 || pools[0].Health != "ONLINE" ||
+		pools[0].FragmentationPercent == nil || *pools[0].FragmentationPercent != 12 {
+		t.Errorf("tank: %+v", pools[0])
 	}
-	if pools[1]["capacity_percent"] != 90 || pools[1]["health"] != "DEGRADED" {
-		t.Errorf("backup: %v", pools[1])
+	if pools[1].CapacityPercent != 90 || pools[1].Health != "DEGRADED" {
+		t.Errorf("backup: %+v", pools[1])
 	}
-	if frag, ok := pools[1]["fragmentation_percent"]; ok {
-		t.Errorf("backup: fragmentation_percent = %v, want none for \"-\" (unknown)", frag)
+	if frag := pools[1].FragmentationPercent; frag != nil {
+		t.Errorf("backup: fragmentation_percent = %v, want none for \"-\" (unknown)", *frag)
 	}
 	if short := parseZpoolList([]byte("tank\t3.62T")); len(short) != 0 {
 		t.Errorf("line with too few columns should be skipped: %v", short)
@@ -661,16 +668,19 @@ func TestParseZpoolList(t *testing.T) {
 		if len(pools) != 1 {
 			t.Fatalf("frag %q: want 1 pool, got %v", frag, pools)
 		}
-		got, ok := pools[0]["fragmentation_percent"]
-		if (want == nil && ok) || (want != nil && got != want) {
-			t.Errorf("frag %q: fragmentation_percent = %v (present %v), want %v", frag, got, ok, want)
+		var got any
+		if p := pools[0].FragmentationPercent; p != nil {
+			got = *p
 		}
-		if pools[0]["health"] != "ONLINE" || pools[0]["capacity_percent"] != 33 {
-			t.Errorf("frag %q: pool = %v, want the other columns unchanged", frag, pools[0])
+		if got != want {
+			t.Errorf("frag %q: fragmentation_percent = %v, want %v", frag, got, want)
+		}
+		if pools[0].Health != "ONLINE" || pools[0].CapacityPercent != 33 {
+			t.Errorf("frag %q: pool = %+v, want the other columns unchanged", frag, pools[0])
 		}
 	}
 	if pools := parseZpoolList([]byte("tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE")); len(pools) != 1 ||
-		pools[0]["fragmentation_percent"] != nil {
+		pools[0].FragmentationPercent != nil {
 		t.Errorf("six columns: %v, want one pool without fragmentation_percent", pools)
 	}
 }
@@ -969,13 +979,13 @@ func TestCollectZFSParseStatus(t *testing.T) {
 			vdevs = append(vdevs, fmt.Sprintf(`%q: {"name": %q, "read_errors": 0, "write_errors": 0, "checksum_errors": %d}`, name, name, i))
 		}
 		got := parseZpoolStatus([]byte(`{"pools": {"p": {"vdevs": {` + strings.Join(vdevs, ",") + `}}}}`))
-		errs, _ := got["p"]["vdev_errors"].([]map[string]any)
+		errs := got["p"].VdevErrors
 		if len(errs) != maxZpoolVdevErrors {
 			t.Fatalf("vdev_errors = %d entries, want %d", len(errs), maxZpoolVdevErrors)
 		}
 		for i, e := range errs {
-			if want := fmt.Sprintf("da%02d", i+1); e["name"] != want {
-				t.Errorf("vdev_errors[%d] = %v, want %s (sorted by name, the first %d kept)", i, e["name"], want, maxZpoolVdevErrors)
+			if want := fmt.Sprintf("da%02d", i+1); e.Name != want {
+				t.Errorf("vdev_errors[%d] = %v, want %s (sorted by name, the first %d kept)", i, e.Name, want, maxZpoolVdevErrors)
 			}
 		}
 	})
@@ -1088,7 +1098,7 @@ var errPveshExec = &exec.Error{Name: "/opt/some-path/pvesh", Err: exec.ErrNotFou
 
 // assertProxmoxUnavailable checks that block is the outage block with code and text as it goes on the
 // wire, and that the log (diagnose) names both.
-func assertProxmoxUnavailable(t *testing.T, block map[string]any, logs *bytes.Buffer, code, text string) {
+func assertProxmoxUnavailable(t *testing.T, block *ProxmoxBlock, logs *bytes.Buffer, code, text string) {
 	t.Helper()
 	got := dockerWire(t, block)
 	want := map[string]any{"available": false, "error": code, "error_message": text, "node": nil, "vms": []any{}}
@@ -1351,7 +1361,7 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 }
 
 // proxmoxBlock is collectProxmox's block for a report without a saved backup index.
-func proxmoxBlock(t *testing.T) map[string]any {
+func proxmoxBlock(t *testing.T) *ProxmoxBlock {
 	t.Helper()
 	block, _ := collectProxmox(context.Background(), nil, time.Now())
 	return block
@@ -1464,7 +1474,7 @@ func TestCollectProxmoxOutageKeepsSavedIndex(t *testing.T) {
 			})
 			captureWarnings(t)
 			block, check := collectProxmox(context.Background(), saved, now)
-			if block["available"] != false {
+			if block.Available {
 				t.Errorf("block = %v, want the outage", block)
 			}
 			if check != saved {
@@ -1927,18 +1937,18 @@ func TestCollectDockerComposeNumber(t *testing.T) {
 		want  any
 	}{{"2", float64(2)}, {"1", float64(1)}, {"0", nil}, {"-1", nil}, {"x", nil}, {"", nil}, {" 3", nil}}
 	for _, c := range cases {
-		entry := map[string]any{}
+		var entry DockerContainer
 		var in dockerInspect
 		in.Config.Labels = map[string]string{"com.docker.compose.container-number": c.label}
-		putDockerDetails(entry, in)
+		putDockerDetails(&entry, in)
 		got := dockerWire(t, entry)["compose_number"]
 		if got != c.want {
 			t.Errorf("label %q: compose_number = %v, want %v", c.label, got, c.want)
 		}
 	}
-	entry := map[string]any{}
-	putDockerDetails(entry, dockerInspect{})
-	if v, ok := entry["compose_number"]; ok {
+	var entry DockerContainer
+	putDockerDetails(&entry, dockerInspect{})
+	if v, ok := dockerWire(t, entry)["compose_number"]; ok {
 		t.Errorf("without the label compose_number = %v, want it left out", v)
 	}
 }

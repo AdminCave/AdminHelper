@@ -23,9 +23,33 @@ import (
 	"adminhelper-agent/internal/probe"
 )
 
+// Report is the monitoring report (report_version 4) as the monitoring service receives it; the
+// contract of each block is held in testdata/report/. A block whose collector did not run (held back by
+// the load gate or its throttle, or not installed) is left out; resources, uptime_seconds, host,
+// timestamp, systemd, probes and self are always sent.
+type Report struct {
+	ReportVersion int                  `json:"report_version"`
+	Timestamp     string               `json:"timestamp"`
+	Resources     *Resources           `json:"resources"`
+	UptimeSeconds int                  `json:"uptime_seconds"`
+	Host          HostFacts            `json:"host"`
+	SystemState   *SystemState         `json:"system_state,omitempty"`
+	Services      []WatchedService     `json:"services,omitzero"`
+	Systemd       *ServiceHealth       `json:"systemd"`
+	Docker        *DockerBlock         `json:"docker,omitempty"`
+	Proxmox       *ProxmoxBlock        `json:"proxmox,omitempty"`
+	ZFS           *ZFSBlock            `json:"zfs,omitempty"`
+	Smart         []SmartDisk          `json:"smart,omitzero"`
+	SmartAbsent   *SmartAbsent         `json:"smart_absent,omitempty"`
+	Credentials   map[string]bool      `json:"credentials,omitzero"`
+	Probes        probe.Results        `json:"probes"`
+	Discovery     *discovery.Inventory `json:"discovery,omitempty"`
+	Self          SelfBlock            `json:"self"`
+}
+
 // BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
 // with the 1s sample; monitor init's test push neither reads nor writes the state, and runs no probe.
-func BuildReport(serviceNames []string) map[string]any {
+func BuildReport(serviceNames []string) *Report {
 	report, _ := buildReportWithState(context.Background(), serviceNames, nil, reportState{}, time.Now())
 	return report
 }
@@ -56,33 +80,34 @@ var runDiscovery = discovery.Run
 // measuring frame (self.collectors); the optional ones and the probes are throttled by their
 // time-limit hits, and under load the load gate holds them and a discovery back (self.load_shed).
 // Without work no probe runs and the report names no credential.
-func buildReportWithState(ctx context.Context, serviceNames []string, work *probeWork, prev reportState, now time.Time) (map[string]any, reportState) {
+func buildReportWithState(ctx context.Context, serviceNames []string, work *probeWork, prev reportState, now time.Time) (*Report, reportState) {
 	m := newSelfMeasure(prev.Throttle)
-	report := map[string]any{"report_version": 4}
+	report := &Report{ReportVersion: 4}
 
 	var cpuNow *cpuSample
-	var resources map[string]any
+	var resources *Resources
 	m.core(ctx, "resources", func(ctx context.Context) {
 		resources, cpuNow = collectResources(ctx, prev.CPU, now)
-		report["resources"] = resources
-		report["uptime_seconds"] = collectUptime()
-		report["host"] = collectHostFacts()
+		report.Resources = resources
+		report.UptimeSeconds = collectUptime()
+		report.Host = collectHostFacts()
 	})
-	report["timestamp"] = time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	report.Timestamp = time.Now().UTC().Format("2006-01-02T15:04:05Z")
 
 	// The collector hands prev on with what it measured replaced, so a value it could not read this
 	// time stays the base for the next report.
 	var next reportState
 	m.core(ctx, "system_state", func(ctx context.Context) {
-		var systemState map[string]any
+		var systemState *SystemState
 		systemState, next = systemStateCollector(ctx, prev)
-		if len(systemState) > 0 {
-			report["system_state"] = systemState
+		if !systemState.empty() {
+			report.SystemState = systemState
 		}
 	})
 	next.CPU = cpuNow
 
 	// Service health (platform-specific)
+	var svc *ServiceHealth
 	m.core(ctx, "services", func(ctx context.Context) {
 		svcHealth := serviceHealthCollector(ctx)
 		if len(serviceNames) > 0 {
@@ -90,10 +115,11 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			// top-level "services" key: avoids double systemctl/sc subprocess spawns
 			// per cycle and two snapshots that could disagree if a service flips.
 			watched := collectWatchedServices(ctx, serviceNames)
-			svcHealth["watched"] = watched
-			report["services"] = watched
+			svcHealth.Watched = watched
+			report.Services = watched
 		}
-		report["systemd"] = svcHealth
+		report.Systemd = svcHealth
+		svc = svcHealth
 	})
 
 	// The core always runs; what comes after it waits while the host is under load.
@@ -104,27 +130,23 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
 	m.optional(ctx, "docker", func(ctx context.Context) {
 		if docker := pluginCollectors.docker(ctx); docker != nil {
-			report["docker"] = docker
+			report.Docker = docker
 		}
 	})
 	// A throttled run leaves next.ProxmoxBackups as prev had it, so the saved index stays.
 	m.optional(ctx, "proxmox", func(ctx context.Context) {
 		proxmox, backups := pluginCollectors.proxmox(ctx, prev.ProxmoxBackups, now)
 		next.ProxmoxBackups = backups
-		if proxmox != nil {
-			report["proxmox"] = proxmox
-		}
+		report.Proxmox = proxmox
 	})
 	m.optional(ctx, "zfs", func(ctx context.Context) {
-		if zfs := pluginCollectors.zfs(ctx); zfs != nil {
-			report["zfs"] = zfs
-		}
+		report.ZFS = pluginCollectors.zfs(ctx)
 	})
 	m.optional(ctx, "smart", func(ctx context.Context) {
 		if smart, absent := pluginCollectors.smart(ctx); smart != nil {
-			report["smart"] = smart
+			report.Smart = smart
 		} else {
-			report["smart_absent"] = map[string]string{"reason": absent}
+			report.SmartAbsent = &SmartAbsent{Reason: absent}
 		}
 	})
 	// The error lines of a failed unit go out once per failure while the plan asks for them
@@ -132,15 +154,15 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// names in log_units. The failures that ended are forgotten even in a run that reads no lines; with
 	// the switch off the state is empty, so lines go out anew once it is on again. Between two runs
 	// its throttle stays as it was.
-	if svc, _ := report["systemd"].(map[string]any); work != nil && work.serviceLogs && serviceLogsSupported && svc != nil {
+	if work != nil && work.serviceLogs && serviceLogsSupported && svc != nil {
 		failed, since := serviceLogUnits(svc)
 		if serviceLogUnitsListed {
-			svc["log_units"] = failed
+			svc.LogUnits = failed
 		}
 		next.ServiceLogs = stillFailed(prev.ServiceLogs, failed, since)
 		m.optional(ctx, serviceLogsCollector, func(ctx context.Context) {
 			if logs := collectServiceLogs(ctx, failed, since, next.ServiceLogs); len(logs) > 0 {
-				svc["failed_logs"] = logs
+				svc.FailedLogs = logs
 			}
 		})
 	} else {
@@ -165,7 +187,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			for _, ref := range credentials.Refs(work.creds) {
 				stored[ref] = true
 			}
-			report["credentials"] = stored
+			report.Credentials = stored
 		}
 	}
 	if m.shedding {
@@ -184,7 +206,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 		})
 		m.record(probesCollector, st, postponed)
 	}
-	report["probes"] = next.Probes
+	report.Probes = next.Probes
 	next.Brake = acc.KeptBrake()
 	next.Bindings = acc.KeptBindings()
 	next.Cursors = acc.KeptCursors(probes)
@@ -194,55 +216,53 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// holds back stays asked for until one is sent.
 	if work != nil && work.scan {
 		m.optional(ctx, discoveryCollector, func(ctx context.Context) {
-			report["discovery"] = runDiscovery(ctx, work.markers)
+			inventory := runDiscovery(ctx, work.markers)
+			report.Discovery = &inventory
 		})
 	} else if t, ok := prev.Throttle[discoveryCollector]; ok {
 		m.next[discoveryCollector] = t
 	}
 
 	next.Throttle = m.next
-	report["self"] = map[string]any{"collectors": m.stats, "load_shed": next.LoadShed.block(reading)}
+	report.Self = SelfBlock{Collectors: m.stats, LoadShed: next.LoadShed.block(reading)}
 	return report, next
+}
+
+// SelfBlock is the report's self block: what each collector cost this run and the load gate's state.
+type SelfBlock struct {
+	Collectors map[string]collectorStat `json:"collectors"`
+	LoadShed   LoadShedBlock            `json:"load_shed"`
+}
+
+// Resources is the report's resources block. A part that could not be read (or does not exist on this
+// platform) is nil and leaves its fields out.
+type Resources struct {
+	CPUPercent float64 `json:"cpu_percent"`
+	*MemoryUsage
+	*LoadAverage
+	*SwapAndCPUs
+	*NetTotals
+	Disks        []DiskInfo    `json:"disks,omitempty"`
+	Temperatures []TempInfo    `json:"temperatures,omitempty"`
+	TopProcesses *TopProcesses `json:"top_processes,omitempty"`
 }
 
 // collectResources is the report's resources block, the CPU share measured since prevCPU, and the CPU
 // counters now. From topProcessesFrom CPU or memory it names the busiest processes; that runs outside
 // the load gate, since it is under load that they are asked for.
-func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
+func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (*Resources, *cpuSample) {
 	cpuPercent, cpuNow := collectCPUSince(prevCPU, now)
-	resources := map[string]any{
-		"cpu_percent": cpuPercent,
-	}
-	if m := collectMemory(); m != nil {
-		for k, v := range m {
-			resources[k] = v
-		}
-	}
-	if l := collectLoad(); l != nil {
-		for k, v := range l {
-			resources[k] = v
-		}
-	}
-	if s := collectSwapAndCPUCount(); s != nil {
-		for k, v := range s {
-			resources[k] = v
-		}
-	}
-	if n := collectNetwork(); n != nil {
-		for k, v := range n {
-			resources[k] = v
-		}
-	}
-	if disks := collectDisks(); len(disks) > 0 {
-		resources["disks"] = disks
-	}
-	if temps := collectTemperatures(); len(temps) > 0 {
-		resources["temperatures"] = temps
+	resources := &Resources{
+		CPUPercent:   cpuPercent,
+		MemoryUsage:  collectMemory(),
+		LoadAverage:  collectLoad(),
+		SwapAndCPUs:  collectSwapAndCPUCount(),
+		NetTotals:    collectNetwork(),
+		Disks:        collectDisks(),
+		Temperatures: collectTemperatures(),
 	}
 	if underLoad(resources) {
-		if top := collectTopProcesses(ctx); top != nil {
-			resources["top_processes"] = top
-		}
+		resources.TopProcesses = collectTopProcesses(ctx)
 	}
 	return resources, cpuNow
 }
@@ -253,9 +273,9 @@ var pushRetryDelay = 10 * time.Second
 // pluginCollectors indirects the auto-detected plugin collectors so tests can stub the real
 // docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
 var pluginCollectors = struct {
-	docker  func(context.Context) map[string]any
-	proxmox func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck)
-	zfs     func(context.Context) map[string]any
+	docker  func(context.Context) *DockerBlock
+	proxmox func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck)
+	zfs     func(context.Context) *ZFSBlock
 	smart   func(context.Context) ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 
@@ -270,7 +290,7 @@ type PushReportParams struct {
 	URL      string
 	APIKey   string
 	ServerID string
-	Report   map[string]any
+	Report   *Report
 	TLS      config.TLSOpts
 }
 
@@ -352,14 +372,12 @@ var serviceLogReader = newServiceLogReader
 
 // failedUnits are the failed units of the systemd block in its order, and the since of each from
 // failed_details ("" for a unit without one).
-func failedUnits(systemd map[string]any) ([]string, map[string]string) {
-	failed, _ := systemd["failed"].([]string)
+func failedUnits(systemd *ServiceHealth) ([]string, map[string]string) {
 	since := map[string]string{}
-	details, _ := systemd["failed_details"].([]map[string]string)
-	for _, d := range details {
-		since[d["unit"]] = d["since"]
+	for _, d := range systemd.FailedDetails {
+		since[d.Unit] = d.Since
 	}
-	return failed, since
+	return systemd.Failed, since
 }
 
 // stillFailed is sent without the failures that ended: a unit no longer failed, or failed anew
@@ -381,12 +399,18 @@ func stillFailed(sent map[string]string, failed []string, since map[string]strin
 	return kept
 }
 
+// ServiceLog is one unit's entry of systemd.failed_logs: since is left out for a unit without one.
+type ServiceLog struct {
+	Since string   `json:"since,omitempty"`
+	Lines []string `json:"lines"`
+}
+
 // collectServiceLogs reads the error lines of every failed unit whose failure has not been sent,
 // at most maxLogUnits, and marks each read one in sent (unit → since). A unit whose lines could
 // not be read stays unmarked and is asked again in the next report. The result is the
 // systemd.failed_logs block: {unit: {since, lines}}, lines oldest first.
-func collectServiceLogs(ctx context.Context, failed []string, since, sent map[string]string) map[string]any {
-	logs := map[string]any{}
+func collectServiceLogs(ctx context.Context, failed []string, since, sent map[string]string) map[string]ServiceLog {
+	logs := map[string]ServiceLog{}
 	read := serviceLogReader()
 	for _, unit := range failed {
 		if len(logs) == maxLogUnits {
@@ -399,11 +423,7 @@ func collectServiceLogs(ctx context.Context, failed []string, since, sent map[st
 		if !ok {
 			continue
 		}
-		entry := map[string]any{"lines": lines}
-		if since[unit] != "" {
-			entry["since"] = since[unit]
-		}
-		logs[unit] = entry
+		logs[unit] = ServiceLog{Since: since[unit], Lines: lines}
 		sent[unit] = since[unit]
 	}
 	return logs

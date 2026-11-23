@@ -52,12 +52,6 @@ const (
 	maxOOMWindow    = int64(time.Hour / time.Second)
 )
 
-// oomProcess is a process the kernel's OOM killer killed, as oom_processes carries it.
-type oomProcess struct {
-	PID  int    `json:"pid"`
-	Name string `json:"name"`
-}
-
 // reOOMKilled finds the line the kernel logs for each OOM kill (mm/oom_kill.c, __oom_kill_process:
 // "<cause>: Killed process <pid> (<comm>) total-vm:…", cause "Out of memory" or "Memory cgroup out of
 // memory", without a colon); older kernels logged it without the cause (not verified here). It is no
@@ -70,20 +64,20 @@ var reOOMKilled = regexp.MustCompile(`^(?:[^:]*: )?Killed process ([0-9]+) \((.*
 // push saved, with what it measured replaced. A field is set only when measured; why one is missing
 // goes to the log. A counter it cannot read keeps the saved one, so the next report still counts the
 // OOM kills since the last counter it could read. ctx ends its tool calls.
-func collectSystemState(ctx context.Context, st reportState) (map[string]any, reportState) {
-	block := map[string]any{}
+func collectSystemState(ctx context.Context, st reportState) (*SystemState, reportState) {
+	block := &SystemState{}
 	if count, source, ok := readOOMKill(); ok {
 		// The first run has no counter to count from, nor has a run that reads another source than the
 		// saved counter came from (an agent update, a container detected anew): no field, only the
 		// counter for the next one.
 		if st.OOMKill != nil && st.oomKillSource() == source {
 			kills := oomKillsSince(*st.OOMKill, count)
-			block["oom_kills"] = kills
+			block.OOMKills = &kills
 			// Only after a kill, and not in a container: the kernel log there is the host's, whose
 			// kills its own counter leaves out.
 			if kills > 0 && source == oomSourceVMStat {
 				if processes := oomProcesses(ctx, oomWindow(st.CPU, systemCLI.now())); len(processes) > 0 {
-					block["oom_processes"] = processes
+					block.OOMProcesses = processes
 				}
 			}
 		}
@@ -91,13 +85,13 @@ func collectSystemState(ctx context.Context, st reportState) (map[string]any, re
 		st.OOMKillSource = source
 	}
 	if required, packages, ok := rebootRequired(ctx); ok {
-		block["reboot_required"] = required
+		block.RebootRequired = &required
 		if len(packages) > 0 {
-			block["reboot_packages"] = packages
+			block.RebootPackages = packages
 		}
 	}
 	if synced, ok := timeSynchronized(ctx); ok {
-		block["time_synchronized"] = synced
+		block.TimeSynchronized = &synced
 	}
 	st.Updates = securityUpdates(ctx, st.Updates)
 	putSecurityUpdates(block, st.Updates)

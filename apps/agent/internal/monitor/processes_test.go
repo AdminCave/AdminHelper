@@ -63,24 +63,24 @@ func TestTopProcessesNameTheBusiestFiveOfEachList(t *testing.T) {
 	stubProcesses(t, 2*time.Second, first, second)
 
 	got := collectTopProcesses(context.Background())
-	want := map[string]any{
-		"cpu": []map[string]any{
-			{"pid": int32(12), "name": "java", "cpu_pct": 100.0},
-			{"pid": int32(11), "name": "postgres", "cpu_pct": 75.0},
-			{"pid": int32(14), "name": "php-fpm", "cpu_pct": 25.0},
-			{"pid": int32(15), "name": "php-fpm", "cpu_pct": 25.0},
-			{"pid": int32(13), "name": "nginx", "cpu_pct": 10.0},
+	want := &TopProcesses{
+		CPU: []ProcessCPU{
+			{PID: 12, Name: "java", CPUPct: 100},
+			{PID: 11, Name: "postgres", CPUPct: 75},
+			{PID: 14, Name: "php-fpm", CPUPct: 25},
+			{PID: 15, Name: "php-fpm", CPUPct: 25},
+			{PID: 13, Name: "nginx", CPUPct: 10},
 		},
-		"memory": []map[string]any{
-			{"pid": int32(12), "name": "java", "rss": uint64(2100 * mib)},
-			{"pid": int32(11), "name": "postgres", "rss": uint64(950 * mib)},
-			{"pid": int32(15), "name": "php-fpm", "rss": uint64(81 * mib)},
-			{"pid": int32(14), "name": "php-fpm", "rss": uint64(80 * mib)},
-			{"pid": int32(13), "name": "nginx", "rss": uint64(30 * mib)},
+		Memory: []ProcessMemory{
+			{PID: 12, Name: "java", RSS: 2100 * mib},
+			{PID: 11, Name: "postgres", RSS: 950 * mib},
+			{PID: 15, Name: "php-fpm", RSS: 81 * mib},
+			{PID: 14, Name: "php-fpm", RSS: 80 * mib},
+			{PID: 13, Name: "nginx", RSS: 30 * mib},
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("top processes =\n%v\nwant\n%v", got, want)
+		t.Errorf("top processes =\n%v\nwant\n%v", wireValue(t, got), wireValue(t, want))
 	}
 }
 
@@ -110,17 +110,17 @@ func TestTopProcessesAreNoneWithoutTwoReadings(t *testing.T) {
 
 func TestUnderLoadFromEightyPercentCPUOrMemory(t *testing.T) {
 	for _, c := range []struct {
-		resources map[string]any
+		resources *Resources
 		want      bool
 	}{
-		{map[string]any{"cpu_percent": 79.9, "memory_percent": 79.9}, false},
-		{map[string]any{"cpu_percent": 80.0, "memory_percent": 10.0}, true},
-		{map[string]any{"cpu_percent": 10.0, "memory_percent": 92.5}, true},
-		{map[string]any{"cpu_percent": 10.0}, false},
-		{map[string]any{}, false},
+		{&Resources{CPUPercent: 79.9, MemoryUsage: &MemoryUsage{MemoryPercent: 79.9}}, false},
+		{&Resources{CPUPercent: 80.0, MemoryUsage: &MemoryUsage{MemoryPercent: 10.0}}, true},
+		{&Resources{CPUPercent: 10.0, MemoryUsage: &MemoryUsage{MemoryPercent: 92.5}}, true},
+		{&Resources{CPUPercent: 10.0}, false},
+		{&Resources{}, false},
 	} {
 		if got := underLoad(c.resources); got != c.want {
-			t.Errorf("underLoad(%v) = %v, want %v", c.resources, got, c.want)
+			t.Errorf("underLoad(%v) = %v, want %v", wireValue(t, c.resources), got, c.want)
 		}
 	}
 }
@@ -143,13 +143,13 @@ func TestResourcesNameTheTopProcessesUnderLoad(t *testing.T) {
 			s.times = cpuTimes(c.busy, 1400-c.busy)
 			calls := stubProcesses(t, time.Second, reading)
 			resources, _ := collectResources(context.Background(), prev, now)
-			_, has := resources["top_processes"]
+			has := resources.TopProcesses != nil
 			if load := underLoad(resources); has != load || (*calls > 0) != load {
-				t.Errorf("cpu %v, memory %v: top_processes %v after %d readings, want it %v",
-					resources["cpu_percent"], resources["memory_percent"], has, *calls, load)
+				t.Errorf("resources %v: top_processes %v after %d readings, want it %v",
+					wireValue(t, resources), has, *calls, load)
 			}
 			if c.busy == 560 && !has {
-				t.Errorf("at %v %% CPU no top_processes", resources["cpu_percent"])
+				t.Errorf("at %v %% CPU no top_processes", resources.CPUPercent)
 			}
 		})
 	}

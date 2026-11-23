@@ -57,21 +57,30 @@ func (s loadShed) after(over bool, now time.Time) loadShed {
 	return s
 }
 
-// block is the report's self.load_shed block: the state after this run and what this run read.
-func (s loadShed) block(r loadReading) map[string]any {
-	b := map[string]any{"active": s.Active, "over": r.over(), "values": r.values()}
+// LoadShedBlock is the report's self.load_shed block: the state after this run and what this run
+// read; Since only while shedding.
+type LoadShedBlock struct {
+	Active bool        `json:"active"`
+	Over   []string    `json:"over"`
+	Values loadReading `json:"values"`
+	Since  string      `json:"since,omitempty"`
+}
+
+// block is s's self.load_shed block for the reading r.
+func (s loadShed) block(r loadReading) LoadShedBlock {
+	b := LoadShedBlock{Active: s.Active, Over: r.over(), Values: r}
 	if s.Active && s.Since > 0 {
-		b["since"] = time.Unix(s.Since, 0).UTC().Format("2006-01-02T15:04:05Z")
+		b.Since = time.Unix(s.Since, 0).UTC().Format("2006-01-02T15:04:05Z")
 	}
 	return b
 }
 
-// loadReading is what the load gate reads in one run; a value it could not read is nil and counts as
-// under its limit.
+// loadReading is what the load gate reads in one run; a value it could not read is nil, counts as
+// under its limit and is left out of self.load_shed.values.
 type loadReading struct {
-	LoadPerCPU   *float64
-	Iowait       *float64
-	MemAvailable *float64
+	LoadPerCPU   *float64 `json:"load_per_cpu,omitempty"`
+	Iowait       *float64 `json:"iowait_percent,omitempty"`
+	MemAvailable *float64 `json:"mem_available_percent,omitempty"`
 }
 
 // over names the readings over their limit, in a fixed order; empty, never nil, for none.
@@ -89,21 +98,6 @@ func (r loadReading) over() []string {
 	return over
 }
 
-// values are the readings that could be read.
-func (r loadReading) values() map[string]float64 {
-	v := map[string]float64{}
-	if r.LoadPerCPU != nil {
-		v["load_per_cpu"] = *r.LoadPerCPU
-	}
-	if r.Iowait != nil {
-		v["iowait_percent"] = *r.Iowait
-	}
-	if r.MemAvailable != nil {
-		v["mem_available_percent"] = *r.MemAvailable
-	}
-	return v
-}
-
 // readLoad reads the load gate's values; a seam for the tests, whose host load must not decide them.
 var readLoad = loadReadingOf
 
@@ -112,16 +106,18 @@ var readLoad = loadReadingOf
 // cpu_count may be the container's (as the monitoring service rates agent_resources), and where there
 // is no load or CPU count (Windows). The available memory is 100 - memory_percent: gopsutil counts
 // the available memory as unused on Linux, FreeBSD and Windows.
-func loadReadingOf(resources map[string]any, prevCPU, curCPU *cpuSample) loadReading {
+func loadReadingOf(resources *Resources, prevCPU, curCPU *cpuSample) loadReading {
 	var r loadReading
-	if l, ok := resources["load_1m"].(float64); ok {
-		if n, ok := resources["cpu_count"].(int); ok && n > 0 && !inContainer() {
-			v := round2(l / float64(n))
-			r.LoadPerCPU = &v
-		}
+	if resources == nil {
+		return r
 	}
-	if used, ok := resources["memory_percent"].(float64); ok {
-		v := round1(100 - used)
+	if resources.LoadAverage != nil && resources.SwapAndCPUs != nil && resources.CPUCount != nil &&
+		*resources.CPUCount > 0 && !inContainer() {
+		v := round2(resources.Load1m / float64(*resources.CPUCount))
+		r.LoadPerCPU = &v
+	}
+	if resources.MemoryUsage != nil {
+		v := round1(100 - resources.MemoryPercent)
 		r.MemAvailable = &v
 	}
 	r.Iowait = iowaitPercentSince(prevCPU, curCPU)

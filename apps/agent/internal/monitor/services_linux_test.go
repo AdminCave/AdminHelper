@@ -35,23 +35,23 @@ func TestParseWatchedServices(t *testing.T) {
 		t.Fatalf("want 5 entries, got %d", len(got))
 	}
 	// redis (bare name matched to redis.service): active, pid 5678
-	if got[0]["running"] != true || got[0]["pid"] != "5678" {
+	if !got[0].Running || watchedPID(got[0]) != "5678" {
 		t.Errorf("redis: want running=true pid=5678, got %v", got[0])
 	}
 	// missing: no block -> not running, no pid
-	if got[1]["running"] != false || got[1]["pid"] != nil {
+	if got[1].Running || watchedPID(got[1]) != nil {
 		t.Errorf("missing: want running=false pid=nil, got %v", got[1])
 	}
 	// nginx (bare name matched to nginx.service): active, pid 1234
-	if got[2]["running"] != true || got[2]["pid"] != "1234" {
+	if !got[2].Running || watchedPID(got[2]) != "1234" {
 		t.Errorf("nginx: want running=true pid=1234, got %v", got[2])
 	}
 	// sshd.service: inactive -> not running (MainPID 0 ignored)
-	if got[3]["running"] != false || got[3]["pid"] != nil {
+	if got[3].Running || watchedPID(got[3]) != nil {
 		t.Errorf("sshd: want running=false pid=nil, got %v", got[3])
 	}
 	// postgres.service: direct .service Id match, active -> running, pid 9999
-	if got[4]["running"] != true || got[4]["pid"] != "9999" {
+	if !got[4].Running || watchedPID(got[4]) != "9999" {
 		t.Errorf("postgres: want running=true pid=9999, got %v", got[4])
 	}
 }
@@ -81,13 +81,13 @@ func TestAssembleServiceHealthEnabledInactive(t *testing.T) {
 		[]string{"c.service"},
 	)
 	// enabled_inactive: only a (inactive AND enabled); b is active, so excluded.
-	if !reflect.DeepEqual(got["enabled_inactive"], []string{"a.service"}) {
-		t.Errorf("enabled_inactive = %v, want [a.service]", got["enabled_inactive"])
+	if !reflect.DeepEqual(got.EnabledInactive, []string{"a.service"}) {
+		t.Errorf("enabled_inactive = %v, want [a.service]", got.EnabledInactive)
 	}
-	if !reflect.DeepEqual(got["failed"], []string{"c.service"}) {
-		t.Errorf("failed = %v, want [c.service]", got["failed"])
+	if !reflect.DeepEqual(got.Failed, []string{"c.service"}) {
+		t.Errorf("failed = %v, want [c.service]", got.Failed)
 	}
-	if all := got["all_services"].([]ServiceEntry); len(all) != 2 {
+	if all := got.AllServices; len(all) != 2 {
 		t.Errorf("all_services should be the union (2 entries): %v", all)
 	}
 }
@@ -100,7 +100,7 @@ func TestAssembleServiceHealthUnknownFallback(t *testing.T) {
 		nil,
 	)
 	byUnit := map[string]ServiceEntry{}
-	for _, e := range got["all_services"].([]ServiceEntry) {
+	for _, e := range got.AllServices {
 		byUnit[e["unit"]] = e
 	}
 	if byUnit["only-active.service"]["enabled_state"] != "unknown" {
@@ -110,8 +110,8 @@ func TestAssembleServiceHealthUnknownFallback(t *testing.T) {
 		t.Errorf("only-enabled active_state = %q, want unknown", byUnit["only-enabled.service"]["active_state"])
 	}
 	// nil failed normalizes to an empty slice, not null.
-	if !reflect.DeepEqual(got["failed"], []string{}) {
-		t.Errorf("failed = %v, want []", got["failed"])
+	if !reflect.DeepEqual(got.Failed, []string{}) {
+		t.Errorf("failed = %v, want []", got.Failed)
 	}
 }
 
@@ -438,8 +438,8 @@ func TestFilterEnabledInactiveCandidatesSorted(t *testing.T) {
 		want = append(want, unit)
 	}
 	got := assembleServiceHealth(unitStates, enabledStates, nil)
-	if !reflect.DeepEqual(got["enabled_inactive"], want) {
-		t.Errorf("enabled_inactive = %q, want sorted %q", got["enabled_inactive"], want)
+	if !reflect.DeepEqual(got.EnabledInactive, want) {
+		t.Errorf("enabled_inactive = %q, want sorted %q", got.EnabledInactive, want)
 	}
 }
 
@@ -543,19 +543,19 @@ func TestServiceHealthCollector(t *testing.T) {
 	wantUnits := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
 		"getty@tty1.service", "smartd.service", "smartmontools.service", "ssh.service", "sshd.service",
 		"systemd-pstore.service"}
-	if all := units(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(all, wantUnits) {
+	if all := units(got.AllServices); !reflect.DeepEqual(all, wantUnits) {
 		t.Errorf("all_services = %q, want sorted %q", all, wantUnits)
 	}
-	if !reflect.DeepEqual(got["enabled_inactive"], []string{"cron.service"}) {
-		t.Errorf("enabled_inactive = %q, want [cron.service] after the re-check", got["enabled_inactive"])
+	if !reflect.DeepEqual(got.EnabledInactive, []string{"cron.service"}) {
+		t.Errorf("enabled_inactive = %q, want [cron.service] after the re-check", got.EnabledInactive)
 	}
-	if !reflect.DeepEqual(got["failed"], []string{"smartmontools.service"}) {
-		t.Errorf("failed = %q, want [smartmontools.service]", got["failed"])
+	if !reflect.DeepEqual(got.Failed, []string{"smartmontools.service"}) {
+		t.Errorf("failed = %q, want [smartmontools.service]", got.Failed)
 	}
-	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-		t.Errorf("counts = %v, want active 2 of 7 loaded units", got["counts"])
+	if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+		t.Errorf("counts = %v, want active 2 of 7 loaded units", got.Counts)
 	}
-	if e, ok := got["error"]; ok {
+	if e := got.Error; e != "" {
 		t.Errorf("error = %q, want none when systemctl answered", e)
 	}
 	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
@@ -585,7 +585,7 @@ func TestServiceHealthSorted(t *testing.T) {
 		want = append(want, unit)
 	}
 	got := assembleServiceHealth(unitStates, enabledStates, nil)
-	if all := units(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(all, want) {
+	if all := units(got.AllServices); !reflect.DeepEqual(all, want) {
 		t.Errorf("all_services = %q, want sorted %q", all, want)
 	}
 }
@@ -615,14 +615,14 @@ func TestServiceHealthSystemctlError(t *testing.T) {
 				aliasShow:         {out: aliasBlocks},
 			})
 			got := collectServiceHealth(context.Background())
-			if got["error"] != tc.want {
-				t.Errorf("error = %q, want %q", got["error"], tc.want)
+			if got.Error != tc.want {
+				t.Errorf("error = %q, want %q", got.Error, tc.want)
 			}
-			if c, ok := got["counts"]; ok {
+			if c := got.Counts; c != nil {
 				t.Errorf("counts = %v, want none without list-units", c)
 			}
-			if !reflect.DeepEqual(got["enabled_inactive"], []string{}) {
-				t.Errorf("enabled_inactive = %q, want []", got["enabled_inactive"])
+			if !reflect.DeepEqual(got.EnabledInactive, []string{}) {
+				t.Errorf("enabled_inactive = %q, want []", got.EnabledInactive)
 			}
 		})
 	}
@@ -651,14 +651,14 @@ func TestServiceHealthFailedListError(t *testing.T) {
 				factShow:          {},
 			})
 			got := collectServiceHealth(context.Background())
-			if got["error"] != tc.want {
-				t.Errorf("error = %q, want %q", got["error"], tc.want)
+			if got.Error != tc.want {
+				t.Errorf("error = %q, want %q", got.Error, tc.want)
 			}
-			if !reflect.DeepEqual(got["failed"], []string{}) {
-				t.Errorf("failed = %q, want []", got["failed"])
+			if !reflect.DeepEqual(got.Failed, []string{}) {
+				t.Errorf("failed = %q, want []", got.Failed)
 			}
-			if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-				t.Errorf("counts = %v, want the counts of list-units", got["counts"])
+			if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+				t.Errorf("counts = %v, want the counts of list-units", got.Counts)
 			}
 		})
 	}
@@ -673,8 +673,8 @@ func TestServiceHealthBothListsFailKeepListUnitsError(t *testing.T) {
 		aliasShow:         {out: aliasBlocks},
 	})
 	got := collectServiceHealth(context.Background())
-	if want := "systemctl list-units failed: exit status 1"; got["error"] != want {
-		t.Errorf("error = %q, want %q", got["error"], want)
+	if want := "systemctl list-units failed: exit status 1"; got.Error != want {
+		t.Errorf("error = %q, want %q", got.Error, want)
 	}
 }
 
@@ -707,7 +707,7 @@ func TestAliasAndWatchAliasOf(t *testing.T) {
 	got := collectServiceHealth(context.Background())
 
 	want := map[string]string{"smartd.service": "smartmontools.service", "sshd.service": "ssh.service"}
-	if a := aliasOf(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(a, want) {
+	if a := aliasOf(got.AllServices); !reflect.DeepEqual(a, want) {
 		t.Errorf("alias_of = %v, want %v", a, want)
 	}
 	aliasCalls := []string{}
@@ -740,14 +740,14 @@ func TestAliasAndWatchAliasShowFails(t *testing.T) {
 				factShow:          {},
 			})
 			got := collectServiceHealth(context.Background())
-			if a := aliasOf(got["all_services"].([]ServiceEntry)); len(a) != 0 {
+			if a := aliasOf(got.AllServices); len(a) != 0 {
 				t.Errorf("alias_of = %v, want none after a failed show", a)
 			}
-			if _, ok := got["error"]; ok {
-				t.Errorf("error = %q, want none: list-units answered", got["error"])
+			if got.Error != "" {
+				t.Errorf("error = %q, want none: list-units answered", got.Error)
 			}
-			if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-				t.Errorf("counts = %v, want active 2 of 7", got["counts"])
+			if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+				t.Errorf("counts = %v, want active 2 of 7", got.Counts)
 			}
 		})
 	}
@@ -771,10 +771,10 @@ func TestAliasAndWatchCountsSkipUnloaded(t *testing.T) {
 		factShow:          {},
 	})
 	got := collectServiceHealth(context.Background())
-	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got["counts"])
+	if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got.Counts)
 	}
-	all := strings.Join(units(got["all_services"].([]ServiceEntry)), " ")
+	all := strings.Join(units(got.AllServices), " ")
 	for _, u := range []string{"gone.service", "hwclock.service"} {
 		if !strings.Contains(all, u) {
 			t.Errorf("all_services lacks %s: %s", u, all)
@@ -807,7 +807,7 @@ func TestServiceHealthNotFoundInactiveDropped(t *testing.T) {
 	})
 	got := collectServiceHealth(context.Background())
 
-	all := got["all_services"].([]ServiceEntry)
+	all := got.AllServices
 	wantUnits := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
 		"getty@tty1.service", "modprobe@fuse.service", "smartd.service", "smartmontools.service",
 		"ssh.service", "sshd.service", "systemd-pstore.service"}
@@ -830,11 +830,11 @@ func TestServiceHealthNotFoundInactiveDropped(t *testing.T) {
 	if a := aliasOf(all); !reflect.DeepEqual(a, wantAlias) {
 		t.Errorf("alias_of = %v, want %v", a, wantAlias)
 	}
-	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 8}) {
-		t.Errorf("counts = %v, want active 2 of the 8 loaded units", got["counts"])
+	if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 8}) {
+		t.Errorf("counts = %v, want active 2 of the 8 loaded units", got.Counts)
 	}
-	if !reflect.DeepEqual(got["enabled_inactive"], []string{"cron.service"}) {
-		t.Errorf("enabled_inactive = %q, want [cron.service]", got["enabled_inactive"])
+	if !reflect.DeepEqual(got.EnabledInactive, []string{"cron.service"}) {
+		t.Errorf("enabled_inactive = %q, want [cron.service]", got.EnabledInactive)
 	}
 	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
 		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service",
@@ -862,7 +862,7 @@ func TestServiceHealthNotFoundActiveOrFailedKept(t *testing.T) {
 	got := collectServiceHealth(context.Background())
 
 	byUnit := map[string]ServiceEntry{}
-	for _, e := range got["all_services"].([]ServiceEntry) {
+	for _, e := range got.AllServices {
 		byUnit[e["unit"]] = e
 	}
 	for _, want := range []ServiceEntry{
@@ -873,11 +873,11 @@ func TestServiceHealthNotFoundActiveOrFailedKept(t *testing.T) {
 			t.Errorf("%s = %v, want %v", want["unit"], e, want)
 		}
 	}
-	if !reflect.DeepEqual(got["failed"], []string{"old.service"}) {
-		t.Errorf("failed = %q, want [old.service]", got["failed"])
+	if !reflect.DeepEqual(got.Failed, []string{"old.service"}) {
+		t.Errorf("failed = %q, want [old.service]", got.Failed)
 	}
-	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got["counts"])
+	if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got.Counts)
 	}
 }
 
@@ -891,7 +891,7 @@ func TestServiceHealthNotFoundListUnitsFails(t *testing.T) {
 		aliasShow:         {out: aliasBlocks},
 	})
 	got := collectServiceHealth(context.Background())
-	all := got["all_services"].([]ServiceEntry)
+	all := got.AllServices
 	want := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
 		"smartd.service", "smartmontools.service", "ssh.service", "sshd.service", "systemd-pstore.service"}
 	if !reflect.DeepEqual(units(all), want) {
@@ -1021,7 +1021,7 @@ func TestServiceHealthFacts(t *testing.T) {
 	got := collectServiceHealth(context.Background())
 
 	byUnit := map[string]ServiceEntry{}
-	for _, e := range got["all_services"].([]ServiceEntry) {
+	for _, e := range got.AllServices {
 		byUnit[e["unit"]] = e
 	}
 	for _, want := range []ServiceEntry{
@@ -1045,10 +1045,10 @@ func TestServiceHealthFacts(t *testing.T) {
 			}
 		}
 	}
-	wantDetails := []map[string]string{{"unit": "smartmontools.service", "result": "exit-code", "exit": "status=17",
-		"since": "2026-11-12T09:08:51Z", "restarts": "0"}}
-	if !reflect.DeepEqual(got["failed_details"], wantDetails) {
-		t.Errorf("failed_details = %v, want %v", got["failed_details"], wantDetails)
+	wantDetails := []FailedDetail{{Unit: "smartmontools.service", Result: "exit-code", Exit: "status=17",
+		Since: "2026-11-12T09:08:51Z", Restarts: "0"}}
+	if !reflect.DeepEqual(got.FailedDetails, wantDetails) {
+		t.Errorf("failed_details = %v, want %v", got.FailedDetails, wantDetails)
 	}
 }
 
@@ -1072,21 +1072,21 @@ func TestServiceHealthFactsBatchFails(t *testing.T) {
 				factShow:          {out: factBlocks257, err: err},
 			})
 			got := collectServiceHealth(context.Background())
-			for _, e := range got["all_services"].([]ServiceEntry) {
+			for _, e := range got.AllServices {
 				for _, key := range factKeys {
 					if v, ok := e[key]; ok {
 						t.Errorf("%s: %s = %q, want no facts after a failed batch", e["unit"], key, v)
 					}
 				}
 			}
-			if d, ok := got["failed_details"]; ok {
+			if d := got.FailedDetails; d != nil {
 				t.Errorf("failed_details = %v, want none after a failed batch", d)
 			}
-			if !reflect.DeepEqual(got["failed"], []string{"smartmontools.service"}) {
-				t.Errorf("failed = %q, want [smartmontools.service]", got["failed"])
+			if !reflect.DeepEqual(got.Failed, []string{"smartmontools.service"}) {
+				t.Errorf("failed = %q, want [smartmontools.service]", got.Failed)
 			}
-			if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
-				t.Errorf("counts = %v, want active 2 of 7", got["counts"])
+			if !reflect.DeepEqual(got.Counts, &ServiceCounts{Active: 2, Total: 7}) {
+				t.Errorf("counts = %v, want active 2 of 7", got.Counts)
 			}
 			if f := factCalls(*calls); len(f) != 1 {
 				t.Errorf("facts calls = %q, want only the batch", f)
@@ -1113,14 +1113,14 @@ func TestServiceHealthFactsFailedOtherUnits(t *testing.T) {
 		factShow:    {out: factBlocks257 + "\n" + mountBlock},
 	})
 	got := collectServiceHealth(context.Background())
-	wantDetails := []map[string]string{
-		{"unit": "smartmontools.service", "result": "exit-code", "exit": "status=17", "since": "2026-11-12T09:08:51Z",
-			"restarts": "0"},
-		{"unit": "srv-data.mount", "result": "exit-code", "since": "2026-11-12T09:00:08Z"},
-		{"unit": "-.mount"},
+	wantDetails := []FailedDetail{
+		{Unit: "smartmontools.service", Result: "exit-code", Exit: "status=17", Since: "2026-11-12T09:08:51Z",
+			Restarts: "0"},
+		{Unit: "srv-data.mount", Result: "exit-code", Since: "2026-11-12T09:00:08Z"},
+		{Unit: "-.mount"},
 	}
-	if !reflect.DeepEqual(got["failed_details"], wantDetails) {
-		t.Errorf("failed_details = %v, want %v", got["failed_details"], wantDetails)
+	if !reflect.DeepEqual(got.FailedDetails, wantDetails) {
+		t.Errorf("failed_details = %v, want %v", got.FailedDetails, wantDetails)
 	}
 	wantCall := factShow + " -- anacron.service cron.service e2scrub_reap.service getty@tty1.service" +
 		" smartmontools.service srv-data.mount ssh.service systemd-pstore.service"
@@ -1189,8 +1189,8 @@ func TestAliasAndWatchNames(t *testing.T) {
 	// Debian and Ubuntu, whose Id alone left them not running.
 	got := parseWatchedServices([]byte(watchedBlocks["sshd"]), []string{"sshd", "sshd.service", "ssh"})
 	for _, svc := range got {
-		if svc["running"] != true || svc["pid"] != "1022" {
-			t.Errorf("%s: want running pid 1022, got %v", svc["name"], svc)
+		if !svc.Running || watchedPID(svc) != "1022" {
+			t.Errorf("%s: want running pid 1022, got %v", svc.Name, svc)
 		}
 	}
 }
@@ -1211,11 +1211,11 @@ func TestAliasAndWatchTemplateSingly(t *testing.T) {
 		return []byte(watchedBlocks[units[0]]), nil
 	})
 	got := collectWatchedServices(context.Background(), names)
-	want := []map[string]any{
-		{"name": "sshd", "running": true, "pid": "1022"},
-		{"name": "getty@.service", "running": false, "pid": nil},
-		{"name": "nginx", "running": false, "pid": nil},
-		{"name": "cron.service", "running": true, "pid": "912"},
+	want := []WatchedService{
+		runningService("sshd", "1022"),
+		stoppedService("getty@.service"),
+		stoppedService("nginx"),
+		runningService("cron.service", "912"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("watched = %v, want %v", got, want)
@@ -1230,7 +1230,7 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 	// The per-name fallback keeps the limits of the enabled-inactive re-check: none after a batch
 	// that did not answer, none after a single query killed by the timeout, at most 50 queries. A
 	// name not asked is reported not running, as every name was before the fallback existed.
-	down := func(name string) map[string]any { return map[string]any{"name": name, "running": false, "pid": nil} }
+	down := stoppedService
 	for name, batchErr := range map[string]error{
 		"batch killed":      exitError(t, "kill -9 $$"),
 		"batch not started": errors.New("exec: \"systemctl\": executable file not found in $PATH"),
@@ -1240,7 +1240,7 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 				return nil, batchErr
 			})
 			got := collectWatchedServices(context.Background(), []string{"sshd", "cron.service"})
-			if want := []map[string]any{down("sshd"), down("cron.service")}; !reflect.DeepEqual(got, want) {
+			if want := []WatchedService{down("sshd"), down("cron.service")}; !reflect.DeepEqual(got, want) {
 				t.Errorf("watched = %v, want %v", got, want)
 			}
 			if len(*calls) != 1 {
@@ -1261,7 +1261,7 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 			return []byte(watchedBlocks[units[0]]), nil
 		})
 		got := collectWatchedServices(context.Background(), []string{"cron.service", "sshd", "nginx"})
-		want := []map[string]any{{"name": "cron.service", "running": true, "pid": "912"}, down("sshd"), down("nginx")}
+		want := []WatchedService{runningService("cron.service", "912"), down("sshd"), down("nginx")}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("watched = %v, want %v", got, want)
 		}
@@ -1289,8 +1289,8 @@ func TestAliasAndWatchFallbackLimits(t *testing.T) {
 			t.Errorf("single queries = %d, want 50", singles)
 		}
 		for i, svc := range got {
-			if want := i < 50; svc["running"] != want {
-				t.Errorf("%s: running = %v, want %v", names[i], svc["running"], want)
+			if want := i < 50; svc.Running != want {
+				t.Errorf("%s: running = %v, want %v", names[i], svc.Running, want)
 			}
 		}
 	})
@@ -1329,10 +1329,10 @@ func TestServiceHealthEndsAtTheEndOfTheContext(t *testing.T) {
 	fakeSystemctl(t, "exec /bin/sleep 30")
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	var got map[string]any
+	var got *ServiceHealth
 	endsWithin(t, 3*time.Second, func() { got = collectServiceHealth(ctx) })
-	if want := "systemctl list-units failed: timed out after 15s"; got["error"] != want {
-		t.Errorf("error = %q, want %q", got["error"], want)
+	if want := "systemctl list-units failed: timed out after 15s"; got.Error != want {
+		t.Errorf("error = %q, want %q", got.Error, want)
 	}
 }
 
@@ -1340,7 +1340,7 @@ func TestServiceHealthEndsAtTheEndOfTheContext(t *testing.T) {
 // and hangs on the single query, which the context ends: it does not count as answered, and no
 // further query starts.
 func TestServiceFallbackEndsAtTheEndOfTheContext(t *testing.T) {
-	down := func(name string) map[string]any { return map[string]any{"name": name, "running": false, "pid": nil} }
+	down := stoppedService
 	for name, tc := range map[string]struct {
 		collect func(context.Context) any
 		want    any
@@ -1353,7 +1353,7 @@ func TestServiceFallbackEndsAtTheEndOfTheContext(t *testing.T) {
 		},
 		"watched": {
 			func(ctx context.Context) any { return collectWatchedServices(ctx, []string{"sshd", "cron.service"}) },
-			[]map[string]any{down("sshd"), down("cron.service")},
+			[]WatchedService{down("sshd"), down("cron.service")},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1430,9 +1430,9 @@ func TestBuildReportPassesItsContextToTheServiceCollectors(t *testing.T) {
 	type ctxKey struct{}
 	stubReportHost(t)
 	var health, watched context.Context
-	serviceHealthCollector = func(ctx context.Context) map[string]any {
+	serviceHealthCollector = func(ctx context.Context) *ServiceHealth {
 		health = ctx
-		return map[string]any{}
+		return &ServiceHealth{}
 	}
 	old := runSystemctl
 	t.Cleanup(func() { runSystemctl = old })

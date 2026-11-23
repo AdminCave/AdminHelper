@@ -150,14 +150,8 @@ func TestInventoryStateRoundtrip(t *testing.T) {
 	}
 }
 
-func testReport(services []map[string]string) map[string]any {
-	return map[string]any{
-		"systemd": map[string]any{
-			"failed":           []string{},
-			"enabled_inactive": []string{},
-			"all_services":     services,
-		},
-	}
+func testReport(services []map[string]string) *Report {
+	return &Report{Systemd: &ServiceHealth{Failed: []string{}, EnabledInactive: []string{}, AllServices: services}}
 }
 
 func TestThrottleInventory(t *testing.T) {
@@ -171,7 +165,7 @@ func TestThrottleInventory(t *testing.T) {
 	if !sentFull {
 		t.Fatal("ohne State-Datei: erwartet Full-Send")
 	}
-	if _, ok := report["systemd"].(map[string]any)["all_services"]; !ok {
+	if _, ok := wireValue(t, report.Systemd).(map[string]any)["all_services"]; !ok {
 		t.Fatal("Full-Send: all_services darf nicht entfernt werden")
 	}
 	if err := saveInventoryState(statePath, newState); err != nil {
@@ -185,7 +179,7 @@ func TestThrottleInventory(t *testing.T) {
 	if sentFull {
 		t.Error("unveraendertes Inventar: erwartet Drosselung")
 	}
-	systemd := report["systemd"].(map[string]any)
+	systemd := wireValue(t, report.Systemd).(map[string]any)
 	if _, ok := systemd["all_services"]; ok {
 		t.Error("gedrosselt: all_services muss entfernt sein")
 	}

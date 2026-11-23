@@ -27,11 +27,11 @@ func requireRoot(t *testing.T) {
 func TestCollectServiceHealthOnFreeBSD(t *testing.T) {
 	requireRoot(t)
 	health := collectServiceHealth(context.Background())
-	if e, ok := health["error"]; ok {
+	if e := health.Error; e != "" {
 		t.Fatalf("error = %v", e)
 	}
 	byUnit := map[string]ServiceEntry{}
-	for _, e := range health["all_services"].([]ServiceEntry) {
+	for _, e := range health.AllServices {
 		byUnit[e["unit"]] = e
 	}
 	for unit, state := range map[string]string{"cron": "active", "newsyslog": "inactive"} {
@@ -41,8 +41,8 @@ func TestCollectServiceHealthOnFreeBSD(t *testing.T) {
 		}
 	}
 	// newsyslog's start runs once: stop_cmd=":" in its script.
-	if slices.Contains(health["enabled_inactive"].([]string), "newsyslog") {
-		t.Errorf("enabled_inactive = %v, newsyslog has nothing to stop", health["enabled_inactive"])
+	if slices.Contains(health.EnabledInactive, "newsyslog") {
+		t.Errorf("enabled_inactive = %v, newsyslog has nothing to stop", health.EnabledInactive)
 	}
 }
 
@@ -53,9 +53,9 @@ func TestCollectWatchedServicesOnFreeBSD(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := collectWatchedServices(context.Background(), []string{"cron", "../cron"})
-	want := []map[string]any{
-		{"name": "cron", "running": true, "pid": strings.TrimSpace(string(pid))},
-		{"name": "../cron", "running": false, "pid": nil},
+	want := []WatchedService{
+		runningService("cron", strings.TrimSpace(string(pid))),
+		stoppedService("../cron"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("watched = %v, want %v", got, want)

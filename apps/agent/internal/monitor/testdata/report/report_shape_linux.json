@@ -1,0 +1,100 @@
+{
+  "host": {
+    "os": "string",
+    "platform": "string",
+    "platform_version": "string",
+    "subsystems": [],
+    "virtualization": {
+      "role": "string",
+      "system": "string"
+    }
+  },
+  "probes": {},
+  "report_version": "number",
+  "resources": {
+    "cpu_count": "number",
+    "cpu_percent": "number",
+    "load_15m": "number",
+    "load_1m": "number",
+    "load_5m": "number",
+    "memory_percent": "number",
+    "memory_total_mb": "number",
+    "memory_used_mb": "number",
+    "net_rx_bytes_total": "number",
+    "net_tx_bytes_total": "number",
+    "swap_percent": "number",
+    "swap_total_mb": "number",
+    "swap_used_mb": "number"
+  },
+  "self": {
+    "collectors": {
+      "docker": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "probes": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "proxmox": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "resources": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "services": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "smart": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "system_state": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      },
+      "zfs": {
+        "cpu_ms": "number",
+        "duration_ms": "number",
+        "factor": "number",
+        "throttled": "bool",
+        "timeouts": "number"
+      }
+    },
+    "load_shed": {
+      "active": "bool",
+      "over": [],
+      "values": {}
+    }
+  },
+  "smart_absent": {
+    "reason": "string"
+  },
+  "systemd": {},
+  "timestamp": "string",
+  "uptime_seconds": "number"
+}

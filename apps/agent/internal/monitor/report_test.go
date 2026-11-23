@@ -28,16 +28,16 @@ func stubReportHost(t *testing.T) {
 	oldInterval := cpuSampleInterval
 	cpuSampleInterval = 0
 	oldPlugins := pluginCollectors
-	pluginCollectors.docker = func(context.Context) map[string]any { return nil }
-	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck) {
+	pluginCollectors.docker = func(context.Context) *DockerBlock { return nil }
+	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		return nil, nil
 	}
-	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
+	pluginCollectors.zfs = func(context.Context) *ZFSBlock { return nil }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
-	serviceHealthCollector = func(context.Context) map[string]any { return map[string]any{} }
+	serviceHealthCollector = func(context.Context) *ServiceHealth { return &ServiceHealth{} }
 	oldSystemState := systemStateCollector
-	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) { return nil, st }
+	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) { return nil, st }
 	oldHostFacts := hostFactsCalls
 	hostFactsCalls.platform = func() (string, string, string, error) { return "", "", "", nil }
 	hostFactsCalls.virtualization = func() (string, string, error) { return "", "", nil }
@@ -49,7 +49,7 @@ func stubReportHost(t *testing.T) {
 	}
 	// The host's own load must not shed the collectors a test looks at.
 	oldReadLoad := readLoad
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading { return loadReading{} }
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading { return loadReading{} }
 	t.Cleanup(func() {
 		readLoad = oldReadLoad
 		runDiscovery = oldDiscovery
@@ -66,49 +66,48 @@ func TestBuildReportBasics(t *testing.T) {
 
 	report := BuildReport(nil)
 
-	if got := report["report_version"]; got != 4 {
+	if got := report.ReportVersion; got != 4 {
 		t.Errorf("report_version = %v, erwartet 4", got)
 	}
 
-	ts, ok := report["timestamp"].(string)
-	if !ok {
-		t.Fatalf("timestamp fehlt oder ist kein String: %v", report["timestamp"])
-	}
-	if _, err := time.Parse("2006-01-02T15:04:05Z", ts); err != nil {
-		t.Errorf("timestamp %q nicht im erwarteten Format: %v", ts, err)
+	if _, err := time.Parse("2006-01-02T15:04:05Z", report.Timestamp); err != nil {
+		t.Errorf("timestamp %q nicht im erwarteten Format: %v", report.Timestamp, err)
 	}
 
-	resources, ok := report["resources"].(map[string]any)
-	if !ok {
-		t.Fatalf("resources fehlt oder hat falschen Typ: %v", report["resources"])
-	}
-	if _, ok := resources["cpu_percent"]; !ok {
-		t.Error("resources.cpu_percent fehlt")
+	if report.Resources == nil {
+		t.Fatal("resources fehlt")
 	}
 
-	if _, ok := report["uptime_seconds"]; !ok {
+	wire := reportWire(t, report)
+	if _, ok := wire["uptime_seconds"]; !ok {
 		t.Error("uptime_seconds fehlt")
 	}
-	if _, ok := report["systemd"]; !ok {
+	if report.Systemd == nil {
 		t.Error("systemd fehlt")
 	}
 	// Without watched services there must be no legacy "services" key.
-	if _, ok := report["services"]; ok {
+	if _, ok := wire["services"]; ok {
 		t.Error("services gesetzt, obwohl keine Service-Namen uebergeben wurden")
 	}
 }
 
 // smartWire is the report's smart and smart_absent keys as the monitoring service receives them (see
 // dockerWire); only those, so the host's own resource values cannot break the encoding.
-func smartWire(t *testing.T, report map[string]any) map[string]any {
+func smartWire(t *testing.T, report *Report) map[string]any {
 	t.Helper()
 	keys := map[string]any{}
-	for _, k := range []string{"smart", "smart_absent"} {
-		if v, ok := report[k]; ok {
+	for k, v := range reportWire(t, report) {
+		if k == "smart" || k == "smart_absent" {
 			keys[k] = v
 		}
 	}
-	return dockerWire(t, keys)
+	return keys
+}
+
+// reportWire is the report as the monitoring service decodes it.
+func reportWire(t *testing.T, report *Report) map[string]any {
+	t.Helper()
+	return dockerWire(t, report)
 }
 
 func TestBuildReportSmartAbsent(t *testing.T) {
@@ -174,7 +173,7 @@ func TestBuildReportPassesItsContextToTheSystemState(t *testing.T) {
 	type ctxKey struct{}
 	stubReportHost(t)
 	var got context.Context
-	systemStateCollector = func(ctx context.Context, st reportState) (map[string]any, reportState) {
+	systemStateCollector = func(ctx context.Context, st reportState) (*SystemState, reportState) {
 		got = ctx
 		return nil, st
 	}
@@ -188,18 +187,18 @@ func TestBuildReportPassesItsContextToTheSystemState(t *testing.T) {
 func TestBuildReportSystemState(t *testing.T) {
 	// The key comes only with a field: a block without one (nothing measured) is no block.
 	for name, tc := range map[string]struct {
-		block map[string]any
+		block *SystemState
 		want  bool
 	}{
-		"with a field": {map[string]any{"oom_kills": uint64(2)}, true},
-		"empty block":  {map[string]any{}, false},
+		"with a field": {&SystemState{OOMKills: new(uint64(2))}, true},
+		"empty block":  {&SystemState{}, false},
 		"no block":     {nil, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			stubReportHost(t)
-			systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) { return tc.block, st }
-			got, ok := BuildReport(nil)["system_state"]
-			if ok != tc.want || (ok && !reflect.DeepEqual(got, tc.block)) {
+			systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) { return tc.block, st }
+			got := BuildReport(nil).SystemState
+			if ok := got != nil; ok != tc.want || (ok && !reflect.DeepEqual(got, tc.block)) {
 				t.Errorf("system_state = %v (present %v), want %v (present %v)", got, ok, tc.block, tc.want)
 			}
 		})
@@ -215,10 +214,11 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	saved, measured := uint64(5), uint64(7)
 	var handed []reportState
-	systemStateCollector = func(_ context.Context, st reportState) (map[string]any, reportState) {
+	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) {
 		handed = append(handed, st)
 		st.OOMKill = &measured
-		return map[string]any{"oom_kills": measured - saved}, st
+		kills := measured - saved
+		return &SystemState{OOMKills: &kills}, st
 	}
 
 	prevCPU := &cpuSample{Unix: now.Add(-5 * time.Minute).Unix(), Total: 1000, Busy: 200}
@@ -232,7 +232,7 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	if want := (cpuSample{Unix: now.Unix(), Total: 1400, Busy: 300}); next.CPU == nil || *next.CPU != want {
 		t.Errorf("next cpu = %+v, want the new sample %+v", next.CPU, want)
 	}
-	wire := dockerWire(t, map[string]any{"system_state": report["system_state"]})
+	wire := dockerWire(t, map[string]any{"system_state": report.SystemState})
 	if want := map[string]any{"system_state": map[string]any{"oom_kills": 2.0}}; !reflect.DeepEqual(wire, want) {
 		t.Errorf("report = %v, want %v", wire, want)
 	}
@@ -264,7 +264,7 @@ func TestPushReportSuccessNoRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}}); err != nil {
 		t.Fatalf("PushReport: %v", err)
 	}
 	if got := attempts.Load(); got != 1 {
@@ -284,7 +284,7 @@ func TestPushReportRetriesOnceOnTransientError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}}); err != nil {
 		t.Fatalf("PushReport nach Retry: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
@@ -301,7 +301,7 @@ func TestPushReportFailsAfterSingleRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}})
+	err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}})
 	if err == nil {
 		t.Fatal("PushReport erwartete Fehler, bekam keinen")
 	}
@@ -339,7 +339,7 @@ func TestPushReportAbortsInFlightRequestOnContextCancel(t *testing.T) {
 	}()
 
 	start := time.Now()
-	if err := PushReport(ctx, PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err == nil {
+	if err := PushReport(ctx, PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}}); err == nil {
 		t.Fatal("PushReport erwartete ctx-Fehler nach Cancel")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
@@ -358,7 +358,7 @@ func TestPushBudgetKeepsThePushReserve(t *testing.T) {
 	t.Cleanup(func() { pushReserve = oldReserve })
 	// A collector that hangs until its context ends: only the collection deadline
 	// pushReserve before the run's deadline leaves the push its time.
-	pluginCollectors.docker = func(ctx context.Context) map[string]any {
+	pluginCollectors.docker = func(ctx context.Context) *DockerBlock {
 		<-ctx.Done()
 		return nil
 	}
@@ -419,7 +419,7 @@ func TestBuildReportRunsADiscoveryOnlyWhenThePlanAsksForOne(t *testing.T) {
 	// No discovery asked for: none runs, and its throttle stays as it was.
 	for _, work := range []*probeWork{nil, {markers: markers}} {
 		report, next := buildReportWithState(context.Background(), nil, work, reportState{Throttle: map[string]throttle{discoveryCollector: due}}, time.Now())
-		if _, ok := report["discovery"]; ok || len(*calls) != 0 {
+		if report.Discovery != nil || len(*calls) != 0 {
 			t.Fatalf("work %+v: a discovery block, %d discoveries; want none", work, len(*calls))
 		}
 		if _, ok := selfStats(t, report)[discoveryCollector]; ok {
@@ -436,8 +436,8 @@ func TestBuildReportRunsADiscoveryOnlyWhenThePlanAsksForOne(t *testing.T) {
 	if !reflect.DeepEqual(*calls, [][]probe.Marker{markers}) {
 		t.Fatalf("discoveries %v, want one with the plan's markers", *calls)
 	}
-	if got, ok := report["discovery"].(discovery.Inventory); !ok || !reflect.DeepEqual(got, inv) {
-		t.Errorf("discovery block = %#v, want the inventory", report["discovery"])
+	if got := report.Discovery; got == nil || !reflect.DeepEqual(*got, inv) {
+		t.Errorf("discovery block = %#v, want the inventory", got)
 	}
 	if st, ok := selfStats(t, report)[discoveryCollector]; !ok || st.Throttled {
 		t.Errorf("discovery stat = %+v (%v), want a run", st, ok)
@@ -449,7 +449,7 @@ func TestBuildReportRunsADiscoveryOnlyWhenThePlanAsksForOne(t *testing.T) {
 	// Held back by its throttle: it waits for a later run.
 	report, next = buildReportWithState(context.Background(), nil, &probeWork{scan: true, markers: markers},
 		reportState{Throttle: map[string]throttle{discoveryCollector: {Factor: 2}}}, time.Now())
-	if _, ok := report["discovery"]; ok || len(*calls) != 1 {
+	if report.Discovery != nil || len(*calls) != 1 {
 		t.Errorf("a throttled discovery ran (%d discoveries), want it held back", len(*calls))
 	}
 	if st := selfStats(t, report)[discoveryCollector]; !st.Throttled || next.Throttle[discoveryCollector].Skipped != 1 {

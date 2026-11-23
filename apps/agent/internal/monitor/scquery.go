@@ -23,14 +23,10 @@ import (
 // out keeps "unknown". enabled_inactive holds every stopped "enabled" service, an admin's stop as
 // much as a crash: trigger-started services are "manual" already, and an automatic service that
 // ends on its own by design is excluded by the ignore list of the monitoring rule.
-func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error), startStates func(names []string) map[string]string) map[string]any {
-	result := map[string]any{
-		"failed":           []string{},
-		"enabled_inactive": []string{},
-		"all_services":     []ServiceEntry{},
-	}
+func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error), startStates func(names []string) map[string]string) *ServiceHealth {
+	result := &ServiceHealth{Failed: []string{}, EnabledInactive: []string{}, AllServices: []ServiceEntry{}}
 	if err != nil {
-		result["error"] = "sc query failed: " + commandFailure("sc", pluginTimeout, err)
+		result.Error = "sc query failed: " + commandFailure("sc", pluginTimeout, err)
 		return result
 	}
 	services, byName := parseScQuery(string(out))
@@ -50,10 +46,10 @@ func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error), 
 			}
 		}
 		sort.Strings(enabledInactive)
-		result["enabled_inactive"] = enabledInactive
+		result.EnabledInactive = enabledInactive
 	}
-	result["all_services"] = services
-	result["counts"] = serviceCounts(services)
+	result.AllServices = services
+	result.Counts = serviceCounts(services)
 	for _, svc := range services {
 		if svc["exit"] != "" {
 			if events, err := crashEvents(); err == nil {

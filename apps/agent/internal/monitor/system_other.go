@@ -10,6 +10,6 @@ import "context"
 
 // collectSystemState has no system_state block outside Linux, FreeBSD and Windows; the state passes through
 // unchanged.
-func collectSystemState(_ context.Context, st reportState) (map[string]any, reportState) {
+func collectSystemState(_ context.Context, st reportState) (*SystemState, reportState) {
 	return nil, st
 }

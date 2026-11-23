@@ -92,16 +92,13 @@ func shouldSendFullInventory(st *inventoryState, hash string, now time.Time) boo
 // after a SUCCESSFUL full send (persisting before/without success would let
 // the server miss a full inventory for up to an hour) and whether the report
 // still contains the full inventory.
-func throttleInventory(report map[string]any, statePath string, now time.Time) (inventoryState, bool) {
-	systemd, ok := report["systemd"].(map[string]any)
-	if !ok {
+func throttleInventory(report *Report, statePath string, now time.Time) (inventoryState, bool) {
+	systemd := report.Systemd
+	if systemd == nil || systemd.AllServices == nil {
+		// No inventory collected: leave the report untouched (full send), no state.
 		return inventoryState{}, false
 	}
-	allServices, ok := systemd["all_services"].([]ServiceEntry)
-	if !ok {
-		// Unexpected shape: leave the report untouched (full send), no state.
-		return inventoryState{}, false
-	}
+	allServices := systemd.AllServices
 
 	hash := inventoryHash(allServices)
 	if shouldSendFullInventory(loadInventoryState(statePath), hash, now) {
@@ -110,6 +107,6 @@ func throttleInventory(report map[string]any, statePath string, now time.Time) (
 	// Key removed entirely: the monitoring service distinguishes "key missing
 	// -> fall back to the always-sent legacy keys" from "empty list ->
 	// genuinely no services" (ServiceProcessChecker._evaluate_auto).
-	delete(systemd, "all_services")
+	systemd.AllServices = nil
 	return inventoryState{}, false
 }

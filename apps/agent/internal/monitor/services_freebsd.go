@@ -19,12 +19,12 @@ func runService(ctx context.Context, args ...string) ([]byte, error) {
 
 // collectServiceHealth collects the rc.d service status (rcServiceHealth); ctx ends every service
 // call.
-func collectServiceHealth(ctx context.Context) map[string]any {
+func collectServiceHealth(ctx context.Context) *ServiceHealth {
 	return rcServiceHealth(ctx, runService, os.ReadFile)
 }
 
 // collectWatchedServices checks the status of the watched rc.d services (rcWatchedServices); ctx ends
 // every service call.
-func collectWatchedServices(ctx context.Context, names []string) []map[string]any {
+func collectWatchedServices(ctx context.Context, names []string) []WatchedService {
 	return rcWatchedServices(ctx, runService, names)
 }

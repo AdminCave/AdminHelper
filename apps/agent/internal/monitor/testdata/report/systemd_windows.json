@@ -1,0 +1,56 @@
+{
+  "all_services": [
+    {
+      "active_state": "active",
+      "enabled_state": "enabled",
+      "unit": "Dnscache"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "exit": "win32=1067",
+      "result": "crashed",
+      "since": "2026-11-12T10:00:00Z",
+      "unit": "Spooler"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "unit": "AppMgmt"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "manual",
+      "exit": "service=3",
+      "result": "crashed",
+      "since": "2026-11-12T08:30:15Z",
+      "unit": "MyAgent"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "enabled",
+      "unit": "W32Time"
+    },
+    {
+      "active_state": "inactive",
+      "enabled_state": "disabled",
+      "exit": "win32=1053",
+      "unit": "BadSvc"
+    },
+    {
+      "active_state": "active",
+      "enabled_state": "unknown",
+      "unit": "wuauserv"
+    }
+  ],
+  "counts": {
+    "active": 2,
+    "total": 7
+  },
+  "enabled_inactive": [
+    "AppMgmt",
+    "Spooler",
+    "W32Time"
+  ],
+  "failed": []
+}

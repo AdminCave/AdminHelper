@@ -1,0 +1,14 @@
+{
+  "active": true,
+  "over": [
+    "load",
+    "iowait",
+    "memory"
+  ],
+  "since": "2023-11-14T22:13:20Z",
+  "values": {
+    "iowait_percent": 25,
+    "load_per_cpu": 2.5,
+    "mem_available_percent": 7.5
+  }
+}
