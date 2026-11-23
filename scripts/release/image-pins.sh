@@ -48,7 +48,8 @@ for pair in SERVER_IMAGE:server GATEWAY_IMAGE:gateway FRPS_IMAGE:frps \
       | jq -r '.digest // empty' 2>/dev/null || true)"
     if [[ -n "$digest" ]]; then
       if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-        echo "::error::${img}:${VER} resolved to a malformed digest '${digest}'" >&2
+        # Length only: the value came from the registry, not from us, and goes to a public log.
+        echo "::error::${img}:${VER} resolved to a malformed digest (${#digest} chars, want sha256:<64 hex>)" >&2
         exit 1
       fi
       if err="$(cosign verify --certificate-identity "$SIGNER" \

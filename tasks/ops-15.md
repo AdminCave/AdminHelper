@@ -5,8 +5,10 @@ Heavy: linux-full — scripts/install.sh und scripts/update.sh (upgrade_path_tes
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1684: image-pins.sh nennt einen kaputten Digest nur nach Form  [ ]
+### T1 — R-1684: image-pins.sh nennt einen kaputten Digest nur nach Form  [x]
 Komponente: scripts · Dateien: scripts/release/image-pins.sh, scripts/tests/image_pins_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ced9afcd9 2026-11-23T09:46:48+01:00
+Review: approve (.ah-out/review/ops-15/T1.verdict.json)
 Änderung: Die Meldung in `image-pins.sh:51` nennt Image, Version und die Länge des Wertes statt des Wertes selbst. Test 4 in `image_pins_test.sh` prüft zusätzlich, dass der Wert nicht in der Ausgabe steht.
 Verify: bash scripts/dev/verify.sh scripts --strict -- image_pins_test
 Doku: keine (Fehlermeldung des Release-Laufs)
