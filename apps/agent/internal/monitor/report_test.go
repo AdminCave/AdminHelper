@@ -49,7 +49,7 @@ func stubReportHost(t *testing.T) {
 	}
 	// The host's own load must not shed the collectors a test looks at.
 	oldReadLoad := readLoad
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading { return loadReading{} }
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading { return loadReading{} }
 	t.Cleanup(func() {
 		readLoad = oldReadLoad
 		runDiscovery = oldDiscovery
@@ -78,12 +78,8 @@ func TestBuildReportBasics(t *testing.T) {
 		t.Errorf("timestamp %q nicht im erwarteten Format: %v", ts, err)
 	}
 
-	resources, ok := report["resources"].(map[string]any)
-	if !ok {
+	if resources, ok := report["resources"].(*Resources); !ok || resources == nil {
 		t.Fatalf("resources fehlt oder hat falschen Typ: %v", report["resources"])
-	}
-	if _, ok := resources["cpu_percent"]; !ok {
-		t.Error("resources.cpu_percent fehlt")
 	}
 
 	if _, ok := report["uptime_seconds"]; !ok {

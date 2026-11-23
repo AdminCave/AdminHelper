@@ -17,8 +17,10 @@ Review: approve (.ah-out/review/kern-agent-20/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9
 
-### T2 — R-0688: Ressourcen, Host, Prozesse und Self typisiert  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/hostfacts.go, apps/agent/internal/monitor/processes.go, apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/selfmeasure.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/loadgate_test.go
+### T2 — R-0688: Ressourcen, Host, Prozesse und Self typisiert  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/hostfacts.go, apps/agent/internal/monitor/processes.go, apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/selfmeasure.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/processes_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/selfmeasure_test.go, apps/agent/internal/monitor/servicelogs_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3686dc3e3 2026-11-23T13:06:44+01:00
+Review: approve (.ah-out/review/kern-agent-20/T2.verdict.json)
 Änderung: `Resources`, `HostFacts`, `TopProcesses`, `LoadShedBlock`, `SelfBlock` als Structs mit `json`-Tags; `collectResources`, `collectHostFacts`, `collectTopProcesses`, `loadShed.block` liefern sie, `loadReadingOf` und `underLoad` lesen Felder statt Schlüssel. Der Report hängt die Structs vorerst noch in seine Map (T8 stellt sie um). Tests lesen Felder.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T9

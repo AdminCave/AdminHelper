@@ -61,7 +61,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	report := map[string]any{"report_version": 4}
 
 	var cpuNow *cpuSample
-	var resources map[string]any
+	var resources *Resources
 	m.core(ctx, "resources", func(ctx context.Context) {
 		resources, cpuNow = collectResources(ctx, prev.CPU, now)
 		report["resources"] = resources
@@ -201,48 +201,45 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	}
 
 	next.Throttle = m.next
-	report["self"] = map[string]any{"collectors": m.stats, "load_shed": next.LoadShed.block(reading)}
+	report["self"] = SelfBlock{Collectors: m.stats, LoadShed: next.LoadShed.block(reading)}
 	return report, next
+}
+
+// SelfBlock is the report's self block: what each collector cost this run and the load gate's state.
+type SelfBlock struct {
+	Collectors map[string]collectorStat `json:"collectors"`
+	LoadShed   LoadShedBlock            `json:"load_shed"`
+}
+
+// Resources is the report's resources block. A part that could not be read (or does not exist on this
+// platform) is nil and leaves its fields out.
+type Resources struct {
+	CPUPercent float64 `json:"cpu_percent"`
+	*MemoryUsage
+	*LoadAverage
+	*SwapAndCPUs
+	*NetTotals
+	Disks        []DiskInfo    `json:"disks,omitempty"`
+	Temperatures []TempInfo    `json:"temperatures,omitempty"`
+	TopProcesses *TopProcesses `json:"top_processes,omitempty"`
 }
 
 // collectResources is the report's resources block, the CPU share measured since prevCPU, and the CPU
 // counters now. From topProcessesFrom CPU or memory it names the busiest processes; that runs outside
 // the load gate, since it is under load that they are asked for.
-func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
+func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (*Resources, *cpuSample) {
 	cpuPercent, cpuNow := collectCPUSince(prevCPU, now)
-	resources := map[string]any{
-		"cpu_percent": cpuPercent,
-	}
-	if m := collectMemory(); m != nil {
-		for k, v := range m {
-			resources[k] = v
-		}
-	}
-	if l := collectLoad(); l != nil {
-		for k, v := range l {
-			resources[k] = v
-		}
-	}
-	if s := collectSwapAndCPUCount(); s != nil {
-		for k, v := range s {
-			resources[k] = v
-		}
-	}
-	if n := collectNetwork(); n != nil {
-		for k, v := range n {
-			resources[k] = v
-		}
-	}
-	if disks := collectDisks(); len(disks) > 0 {
-		resources["disks"] = disks
-	}
-	if temps := collectTemperatures(); len(temps) > 0 {
-		resources["temperatures"] = temps
+	resources := &Resources{
+		CPUPercent:   cpuPercent,
+		MemoryUsage:  collectMemory(),
+		LoadAverage:  collectLoad(),
+		SwapAndCPUs:  collectSwapAndCPUCount(),
+		NetTotals:    collectNetwork(),
+		Disks:        collectDisks(),
+		Temperatures: collectTemperatures(),
 	}
 	if underLoad(resources) {
-		if top := collectTopProcesses(ctx); top != nil {
-			resources["top_processes"] = top
-		}
+		resources.TopProcesses = collectTopProcesses(ctx)
 	}
 	return resources, cpuNow
 }

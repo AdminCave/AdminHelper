@@ -78,7 +78,7 @@ var processClock = time.Now
 // the highest CPU share over topProcessesGap and those with the most resident memory, each busiest
 // first. Only a process with a pid from 1 that both readings found under the same name counts. Nil
 // when neither list has an entry or ctx ends before the second reading.
-func collectTopProcesses(ctx context.Context) map[string]any {
+func collectTopProcesses(ctx context.Context) *TopProcesses {
 	// A reading takes time of its own, longest under load; a process is read about this far apart in
 	// both, so the shares divide by it and not by the gap alone.
 	start := processClock()
@@ -121,9 +121,9 @@ func collectTopProcesses(ctx context.Context) map[string]any {
 		}
 		return entries[i].pid < entries[j].pid
 	})
-	var cpu []map[string]any
+	top := &TopProcesses{}
 	for _, e := range entries[:min(topProcessesCount, len(entries))] {
-		cpu = append(cpu, map[string]any{"pid": e.pid, "name": e.name, "cpu_pct": round1(e.cpu)})
+		top.CPU = append(top.CPU, ProcessCPU{PID: e.pid, Name: e.name, CPUPct: round1(e.cpu)})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].rss != entries[j].rss {
@@ -131,19 +131,33 @@ func collectTopProcesses(ctx context.Context) map[string]any {
 		}
 		return entries[i].pid < entries[j].pid
 	})
-	var memory []map[string]any
 	for _, e := range entries[:min(topProcessesCount, len(entries))] {
-		memory = append(memory, map[string]any{"pid": e.pid, "name": e.name, "rss": e.rss})
+		top.Memory = append(top.Memory, ProcessMemory{PID: e.pid, Name: e.name, RSS: e.rss})
 	}
-	return map[string]any{"cpu": cpu, "memory": memory}
+	return top
+}
+
+// TopProcesses is the resources block's top_processes, each list busiest first.
+type TopProcesses struct {
+	CPU    []ProcessCPU    `json:"cpu"`
+	Memory []ProcessMemory `json:"memory"`
+}
+
+// ProcessCPU is a process with its CPU share over topProcessesGap.
+type ProcessCPU struct {
+	PID    int32   `json:"pid"`
+	Name   string  `json:"name"`
+	CPUPct float64 `json:"cpu_pct"`
+}
+
+// ProcessMemory is a process with its resident memory in bytes.
+type ProcessMemory struct {
+	PID  int32  `json:"pid"`
+	Name string `json:"name"`
+	RSS  uint64 `json:"rss"`
 }
 
 // underLoad says whether the resources block's CPU or memory share reaches topProcessesFrom.
-func underLoad(resources map[string]any) bool {
-	for _, key := range []string{"cpu_percent", "memory_percent"} {
-		if v, ok := resources[key].(float64); ok && v >= topProcessesFrom {
-			return true
-		}
-	}
-	return false
+func underLoad(r *Resources) bool {
+	return r.CPUPercent >= topProcessesFrom || (r.MemoryUsage != nil && r.MemoryPercent >= topProcessesFrom)
 }

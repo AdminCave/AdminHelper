@@ -93,15 +93,11 @@ func TestThrottleHoldsBackAllButEveryNthRun(t *testing.T) {
 // selfStats is the self.collectors block of report.
 func selfStats(t *testing.T, report map[string]any) map[string]collectorStat {
 	t.Helper()
-	self, ok := report["self"].(map[string]any)
+	self, ok := report["self"].(SelfBlock)
 	if !ok {
 		t.Fatalf("report self = %#v, want a block", report["self"])
 	}
-	stats, ok := self["collectors"].(map[string]collectorStat)
-	if !ok {
-		t.Fatalf("self.collectors = %#v, want the collectors' stats", self["collectors"])
-	}
-	return stats
+	return self.Collectors
 }
 
 func TestBuildReportMeasuresEveryCollector(t *testing.T) {

@@ -107,19 +107,33 @@ func cpuWindowOpen(prev *cpuSample, cur cpuSample) bool {
 	return age >= 0 && age <= int64(cpuStateMaxAge/time.Second) && cur.Total > prev.Total
 }
 
-func collectMemory() map[string]any {
+// MemoryUsage is the resources block's memory share and sizes.
+type MemoryUsage struct {
+	MemoryPercent float64 `json:"memory_percent"`
+	MemoryTotalMB int     `json:"memory_total_mb"`
+	MemoryUsedMB  int     `json:"memory_used_mb"`
+}
+
+func collectMemory() *MemoryUsage {
 	v, err := mem.VirtualMemory()
 	if err != nil {
 		return nil
 	}
-	return map[string]any{
-		"memory_percent":  round1(v.UsedPercent),
-		"memory_total_mb": int(v.Total / 1024 / 1024),
-		"memory_used_mb":  int(v.Used / 1024 / 1024),
+	return &MemoryUsage{
+		MemoryPercent: round1(v.UsedPercent),
+		MemoryTotalMB: int(v.Total / 1024 / 1024),
+		MemoryUsedMB:  int(v.Used / 1024 / 1024),
 	}
 }
 
-func collectLoad() map[string]any {
+// LoadAverage is the resources block's load averages.
+type LoadAverage struct {
+	Load1m  float64 `json:"load_1m"`
+	Load5m  float64 `json:"load_5m"`
+	Load15m float64 `json:"load_15m"`
+}
+
+func collectLoad() *LoadAverage {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
@@ -127,11 +141,7 @@ func collectLoad() map[string]any {
 	if err != nil {
 		return nil
 	}
-	return map[string]any{
-		"load_1m":  round2(avg.Load1),
-		"load_5m":  round2(avg.Load5),
-		"load_15m": round2(avg.Load15),
-	}
+	return &LoadAverage{Load1m: round2(avg.Load1), Load5m: round2(avg.Load5), Load15m: round2(avg.Load15)}
 }
 
 // resourceCalls indirects the swap and CPU count reads and the OS so tests can drive every path, the
@@ -172,7 +182,7 @@ func hasNetDevice(name string) bool {
 // with a device, or every non-loopback one if there is none (a container sees only its veth); on
 // Windows every non-loopback one. A Proxmox host so counts eno1 but not again vmbr0 and the guests'
 // tap devices. Any failed read drops both fields: a partial sum would read as a traffic drop.
-func collectNetwork() map[string]any {
+func collectNetwork() *NetTotals {
 	counters, err := resourceCalls.netIO(true)
 	if err != nil {
 		return nil
@@ -202,7 +212,13 @@ func collectNetwork() map[string]any {
 		rx += c.BytesRecv
 		tx += c.BytesSent
 	}
-	return map[string]any{"net_rx_bytes_total": rx, "net_tx_bytes_total": tx}
+	return &NetTotals{NetRxBytesTotal: rx, NetTxBytesTotal: tx}
+}
+
+// NetTotals are the resources block's byte counters since boot.
+type NetTotals struct {
+	NetRxBytesTotal uint64 `json:"net_rx_bytes_total"`
+	NetTxBytesTotal uint64 `json:"net_tx_bytes_total"`
 }
 
 // freebsdNoSwap is the error text of gopsutil's FreeBSD SwapMemory (mem/mem_freebsd.go) on a
@@ -210,17 +226,25 @@ func collectNetwork() map[string]any {
 // text would turn "no swap" into "swap unreadable"; TestFreeBSDNoSwapMatchesGopsutil pins it.
 const freebsdNoSwap = "no swap devices found"
 
+// SwapAndCPUs are the resources block's logical CPUs and swap; a part that could not be read is nil.
+type SwapAndCPUs struct {
+	CPUCount    *int     `json:"cpu_count,omitempty"`
+	SwapTotalMB *int     `json:"swap_total_mb,omitempty"`
+	SwapUsedMB  *int     `json:"swap_used_mb,omitempty"`
+	SwapPercent *float64 `json:"swap_percent,omitempty"`
+}
+
 // collectSwapAndCPUCount reports the logical CPUs and the swap on Linux and FreeBSD, like the load
 // they put into proportion (nil elsewhere). A failed part drops only its own fields. Without a swap
 // device there is no swap_percent: gopsutil's 0 there is no measurement.
-func collectSwapAndCPUCount() map[string]any {
+func collectSwapAndCPUCount() *SwapAndCPUs {
 	if resourceCalls.goos != "linux" && resourceCalls.goos != "freebsd" {
 		return nil
 	}
-	res := map[string]any{}
+	res := &SwapAndCPUs{}
 	// A count of 0 is a failed read; the service divides the load by it.
 	if n, err := resourceCalls.counts(true); err == nil && n > 0 {
-		res["cpu_count"] = n
+		res.CPUCount = &n
 	}
 	s, err := resourceCalls.swap()
 	// gopsutil's FreeBSD SwapMemory fails with freebsdNoSwap when vm.nswapdev is 0; that is
@@ -229,10 +253,11 @@ func collectSwapAndCPUCount() map[string]any {
 		s, err = &mem.SwapMemoryStat{}, nil
 	}
 	if err == nil {
-		res["swap_total_mb"] = int(s.Total / 1024 / 1024)
-		res["swap_used_mb"] = int(s.Used / 1024 / 1024)
+		total, used := int(s.Total/1024/1024), int(s.Used/1024/1024)
+		res.SwapTotalMB, res.SwapUsedMB = &total, &used
 		if s.Total > 0 {
-			res["swap_percent"] = round1(s.UsedPercent)
+			percent := round1(s.UsedPercent)
+			res.SwapPercent = &percent
 		}
 	}
 	return res

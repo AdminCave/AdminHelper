@@ -142,7 +142,7 @@ func stubDocker(t *testing.T, replies map[string]dockerReply) *[][]string {
 
 // dockerWire is the docker block as the monitoring service receives it: encoded and decoded again, so
 // the tests check the wire format (null vs. [], numbers, booleans), not Go types.
-func dockerWire(t *testing.T, block map[string]any) map[string]any {
+func dockerWire(t *testing.T, block any) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(block)
 	if err != nil {

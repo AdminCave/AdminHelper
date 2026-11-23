@@ -254,7 +254,7 @@ func TestBuildReportReadsNoErrorLinesUnderLoadOrThrottle(t *testing.T) {
 	sent := map[string]string{"a.service": "s1", "c.service": "s3"}
 
 	// Shed under load: nothing read, the failure that ended is forgotten all the same.
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading {
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading {
 		return loadReading{LoadPerCPU: ptr(3), MemAvailable: ptr(50)}
 	}
 	prev := reportState{ServiceLogs: sent, LoadShed: loadShed{Active: true, Since: time.Now().Add(-time.Hour).Unix()}}
@@ -267,7 +267,7 @@ func TestBuildReportReadsNoErrorLinesUnderLoadOrThrottle(t *testing.T) {
 	}
 
 	// Held back by its throttle: nothing read, b waits for a later run.
-	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading { return loadReading{} }
+	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading { return loadReading{} }
 	prev = reportState{ServiceLogs: sent, Throttle: map[string]throttle{serviceLogsCollector: {Factor: 2}}}
 	report, next = buildReportWithState(context.Background(), nil, work, prev, time.Now())
 	if logs := failedLogs(t, report); logs != nil || len(*read) != 0 {
