@@ -1,5 +1,5 @@
 # kern-server-13 — Authentifizierung ohne Server-Kette — Task-Ledger
-Status: geplant · Branch: feature/kern-server-13 · Review: am Ende
+Status: aktiv · Branch: feature/kern-server-13 · Review: am Ende
 Spec: docs/features/kern-server-13.md (Roadmap R-0692)
 Heavy: linux-full — Server-API (Authentifizierung jedes Requests, Benutzer-Liste, FRP-Erzeugung)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
