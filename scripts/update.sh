@@ -396,11 +396,11 @@ upsert_env() {
         || { rm -f "$tmp"; return 1; }
 }
 
-# Currently installed version = the tag pinned on SERVER_IMAGE in .env (X.Y.Z),
-# or "unknown" for a floating tag (:latest/:main) where a semver compare is moot.
+# Currently installed version = the tag pinned on SERVER_IMAGE in .env (X.Y.Z, also
+# in front of a digest: :X.Y.Z@sha256:…), or "unknown" for a floating tag (:latest/:main) where a semver compare is moot.
 installed_version() {
     local tag=""
-    [ -f .env ] && tag=$(LC_ALL=C grep -a -E '^SERVER_IMAGE=' .env | head -1 | sed 's/.*://')
+    [ -f .env ] && tag=$(LC_ALL=C grep -a -E '^SERVER_IMAGE=' .env | head -1 | sed -e 's/@.*//' -e 's/.*://')
     case "$tag" in
         [0-9]*.[0-9]*.[0-9]*) printf '%s' "$tag" ;;
         *) printf 'unknown' ;;
@@ -469,6 +469,34 @@ verify_sums_signature() {
     log "Release-Signatur verifiziert (minisign)."
 }
 
+# >>> image pins: update.sh and install.sh hold the same text, a test keeps it so
+# Prints the pins of a runtime bundle's IMAGES file $1 for version $2 (R-0460): one
+# KEY=ghcr.io/admincave/adminhelper/<image>:<version>@sha256:<64 hex> line per
+# image, in a fixed order. Returns 1 with the reason on stderr for anything else:
+# the file is under the bundle's signature, so a present but odd file stops the run
+# instead of falling back to the movable tag. The hex class is spelled out, under
+# de_DE.UTF-8 a range matches more than ASCII.
+image_pins() {
+    local file="$1" ver="$2" pair key img line digest n out=""
+    n=$(LC_ALL=C grep -a -c '' "$file") || n=0
+    [ "$n" = 5 ] || { echo "IMAGES: ${n} lines, want 5" >&2; return 1; }
+    for pair in SERVER_IMAGE:server GATEWAY_IMAGE:gateway FRPS_IMAGE:frps \
+                CA_ISSUER_IMAGE:ca-issuer MONITORING_IMAGE:monitoring; do
+        key="${pair%%:*}"; img="${pair#*:}"
+        line=$(LC_ALL=C grep -a -m1 "^${key}=" "$file") \
+            || { echo "IMAGES: no ${key} line" >&2; return 1; }
+        digest="${line#"${key}=ghcr.io/admincave/adminhelper/${img}:${ver}@sha256:"}"
+        case $digest in
+            "$line"|*[!0123456789abcdef]*) digest="" ;;
+        esac
+        [ "${#digest}" = 64 ] \
+            || { echo "IMAGES: ${key} is no digest pin of ghcr.io/admincave/adminhelper/${img}:${ver}" >&2; return 1; }
+        out+="${line}"$'\n'
+    done
+    printf '%s' "$out"
+}
+# <<< image pins
+
 # Download the runtime bundle for TAG into $1, verify against SHA256SUMS + the
 # in-bundle MANIFEST.sha256, and assert the bundle's VERSION matches TAG. Echoes
 # the extract dir on success.
@@ -493,6 +521,8 @@ fetch_bundle() {
         || die "Manifest-Verifikation des Bundles fehlgeschlagen."
     ver=$(cat "${tmp}/extract/VERSION" 2>/dev/null || true)
     [ "$ver" = "$tag" ] || die "Bundle-Version (${ver:-?}) passt nicht zum Ziel (${tag})."
+    [ ! -e "${tmp}/extract/IMAGES" ] || image_pins "${tmp}/extract/IMAGES" "${tag#v}" >/dev/null \
+        || die "the IMAGES file of the bundle is invalid; aborted, nothing changed."
     printf '%s' "${tmp}/extract"
 }
 
@@ -1052,11 +1082,21 @@ rollback_after_deploy() {
 }
 
 # --- Deploy + health check, with automatic rollback on failure --------------
-# The target images, KEY=image, for the pull and the pins (vX.Y.Z -> :X.Y.Z).
+# The target images, KEY=image, for the pull and the pins: the tag plus the digest
+# the release signed, from the bundle's IMAGES (R-0460, checked in fetch_bundle);
+# a release from before has none and pins the tag (vX.Y.Z -> :X.Y.Z).
 TARGET_IMAGES=()
-for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
-    TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
-done
+PIN_LABEL=":${TARGET_VER}"
+if [ -e "${EXTRACT}/IMAGES" ]; then
+    _pins=$(image_pins "${EXTRACT}/IMAGES" "$TARGET_VER") \
+        || die "the IMAGES file of the bundle is invalid; aborted, nothing changed."
+    mapfile -t TARGET_IMAGES <<< "$_pins"
+    PIN_LABEL=":${TARGET_VER}@sha256 (Digest aus dem signierten Bundle)"
+else
+    for _img in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+        TARGET_IMAGES+=("${_img%%:*}_IMAGE=ghcr.io/admincave/adminhelper/${_img#*:}:${TARGET_VER}")
+    done
+fi
 # The pull gets the target images from the environment, which Compose ranks above
 # .env (docs/features/update-rollback.md): .env keeps the old pins until every image
 # is here, so an abort during the pull leaves nothing to undo in it.
@@ -1071,7 +1111,7 @@ pin_images() {
         upsert_env "${kv%%=*}" "${kv#*=}" || return 1
     done
     chmod 600 .env 2>/dev/null || true
-    log "Images gepinnt auf :${TARGET_VER}"
+    log "Images gepinnt auf ${PIN_LABEL}"
 }
 NO_ROLLBACK_STAYS="neue Laufzeit-Dateien + Image-Pins (teils) bleiben stehen"
 pin_images || rollback_before_deploy ".env-Migration fehlgeschlagen" \

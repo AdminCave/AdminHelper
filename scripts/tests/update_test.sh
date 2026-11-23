@@ -322,7 +322,7 @@ make_src() {
 
 # --- publish a release fixture: bundle + SHA256SUMS + latest API JSON ---------
 make_release() {
-  local ver="$1" src="$2" dlroot="$3" apiroot="$4" latest="${5:-}"
+  local ver="$1" src="$2" dlroot="$3" apiroot="$4" latest="${5:-}" images="${6:-}"
   local tag="v$ver" assetdir="$dlroot/$REPO/releases/download/v$ver"
   mkdir -p "$assetdir" "$apiroot/repos/$REPO/releases"
   local stage; stage=$(mktemp -d)
@@ -330,7 +330,11 @@ make_release() {
   cp "$src/docker-compose.yml" "$src/.env.example" "$stage/"
   cp "$src"/scripts/*.sh "$stage/scripts/"
   printf '%s\n' "$tag" > "$stage/VERSION"
-  ( cd "$stage" && find docker-compose.yml .env.example scripts -type f | sort | xargs sha256sum > MANIFEST.sha256 )
+  # images: the content of the bundle's IMAGES file (R-0460); empty = none, as before.
+  local listed="docker-compose.yml .env.example scripts"
+  [ -z "$images" ] || { printf '%s' "$images" > "$stage/IMAGES"; listed="docker-compose.yml .env.example IMAGES scripts"; }
+  # shellcheck disable=SC2086 # word-splitting the list is the point
+  ( cd "$stage" && find $listed -type f | sort | xargs sha256sum > MANIFEST.sha256 )
   tar czf "$assetdir/adminhelper-runtime-$tag.tar.gz" -C "$stage" .
   ( cd "$assetdir" && sha256sum "adminhelper-runtime-$tag.tar.gz" > SHA256SUMS )
   minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
@@ -1919,6 +1923,42 @@ out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
     && [ -z "$(find "$INST/backups" -mindepth 1 2>/dev/null)" ] && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
   && ok "a failing backup-first: exit $rc, told in English, nothing changed, no pull or up" \
   || { echo "$out" | sed 's/^/    │ /'; bad "failing backup-first: rc=$rc changed: $(diff <(echo "$before") <(snapshot_install "$INST") | grep '^>' | tr '\n' ';') docker $(tr '\n' ';' < "$DLOG" 2>/dev/null) backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"; }
+
+# ── 49. IMAGES in the bundle: tag plus digest, read back, a bad file stops (R-0460)
+# images_for <ver> — a valid IMAGES file for <ver>, image n gets digest 000…0n.
+images_for() {
+  local i=1 k
+  for k in SERVER:server GATEWAY:gateway FRPS:frps CA_ISSUER:ca-issuer MONITORING:monitoring; do
+    printf '%s_IMAGE=ghcr.io/admincave/adminhelper/%s:%s@sha256:%064d\n' "${k%%:*}" "${k#*:}" "$1" "$i"
+    i=$((i + 1))
+  done
+}
+SRC_D="$WORK/src-0.35.0"; make_src 0.35.0 "$SRC_D"
+make_release 0.35.0 "$SRC_D" "$DL" "$API" "" "$(images_for 0.35.0)"
+INST="$WORK/inst49"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(run_update "$INST" --ref v0.35.0 2>&1); rc=$?
+n=0
+while IFS= read -r want; do
+  [ "$(LC_ALL=C grep -a -c -x -F "$want" "$INST/.env")" = 1 ] && n=$((n + 1))
+done <<< "$(images_for 0.35.0)"
+{ [ $rc -eq 0 ] && [ "$n" = 5 ] && [ "$(grep -c '_IMAGE=' "$INST/.env")" = 5 ] \
+    && grep -q 'Images gepinnt auf :0.35.0@sha256 (Digest aus dem signierten Bundle)' <<<"$out"; } \
+  && ok "a bundle with IMAGES pins tag and digest of all five images" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
+# The version in front of the digest is still the installed version.
+out=$(run_update "$INST" --check --ref v0.35.0 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: 0.35.0 ' <<<"$out"; } \
+  && ok "--check reads the version of a :X.Y.Z@sha256 pin" || bad "--check on a digest pin: rc=$rc $out"
+# A present IMAGES that does not fit the target stops before anything changes.
+SRC_E="$WORK/src-0.36.0"; make_src 0.36.0 "$SRC_E"
+make_release 0.36.0 "$SRC_E" "$DL" "$API" "" "$(images_for 0.35.0)"
+DLOG="$WORK/docker49.log"; rm -f "$DLOG"
+before=$(snapshot_install "$INST")
+out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'the IMAGES file of the bundle is invalid; aborted, nothing changed\.' <<<"$out" \
+    && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
+  && ok "IMAGES of another version: exit $rc, nothing changed, no pull or up" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "bad IMAGES: rc=$rc docker $(tr '\n' ';' < "$DLOG" 2>/dev/null)"; }
 
 echo
 echo "──────────────────────────────────────────"

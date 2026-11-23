@@ -49,6 +49,7 @@ trap 'rm -rf "$_TMPROOT"' EXIT
 
 REPO="AdminCave/AdminHelper"
 REF=""                       # empty -> resolve the latest published release
+PINNED_IMAGES=""             # the bundle's IMAGES pins (image_pins), if it has them
 # minisign public key (the "RW..." line of minisign.pub) used to verify the
 # release SHA256SUMS signature — authenticity, not just transport integrity.
 # ARM by pasting the public key from `minisign -G -W` here (and in update.sh).
@@ -146,6 +147,34 @@ verify_sums_signature() {
     echo "[install] Release-Signatur verifiziert (minisign)." >&2
 }
 
+# >>> image pins: update.sh and install.sh hold the same text, a test keeps it so
+# Prints the pins of a runtime bundle's IMAGES file $1 for version $2 (R-0460): one
+# KEY=ghcr.io/admincave/adminhelper/<image>:<version>@sha256:<64 hex> line per
+# image, in a fixed order. Returns 1 with the reason on stderr for anything else:
+# the file is under the bundle's signature, so a present but odd file stops the run
+# instead of falling back to the movable tag. The hex class is spelled out, under
+# de_DE.UTF-8 a range matches more than ASCII.
+image_pins() {
+    local file="$1" ver="$2" pair key img line digest n out=""
+    n=$(LC_ALL=C grep -a -c '' "$file") || n=0
+    [ "$n" = 5 ] || { echo "IMAGES: ${n} lines, want 5" >&2; return 1; }
+    for pair in SERVER_IMAGE:server GATEWAY_IMAGE:gateway FRPS_IMAGE:frps \
+                CA_ISSUER_IMAGE:ca-issuer MONITORING_IMAGE:monitoring; do
+        key="${pair%%:*}"; img="${pair#*:}"
+        line=$(LC_ALL=C grep -a -m1 "^${key}=" "$file") \
+            || { echo "IMAGES: no ${key} line" >&2; return 1; }
+        digest="${line#"${key}=ghcr.io/admincave/adminhelper/${img}:${ver}@sha256:"}"
+        case $digest in
+            "$line"|*[!0123456789abcdef]*) digest="" ;;
+        esac
+        [ "${#digest}" = 64 ] \
+            || { echo "IMAGES: ${key} is no digest pin of ghcr.io/admincave/adminhelper/${img}:${ver}" >&2; return 1; }
+        out+="${line}"$'\n'
+    done
+    printf '%s' "$out"
+}
+# <<< image pins
+
 # Fetch + verify the runtime bundle into TARGET_DIR. Returns 1 if the release has
 # no bundle asset (caller falls back to raw); hard-exits on a checksum/manifest fail.
 fetch_bundle_into() {
@@ -161,6 +190,10 @@ fetch_bundle_into() {
     tar xzf "${tmp}/${asset}" -C "$TARGET_DIR"
     ( cd "$TARGET_DIR" && sha256sum -c MANIFEST.sha256 >/dev/null 2>&1 ) \
         || { echo "FEHLER: Manifest-Verifikation fehlgeschlagen." >&2; rm -rf "$tmp"; exit 1; }
+    if [ -e "$TARGET_DIR/IMAGES" ]; then
+        PINNED_IMAGES=$(image_pins "$TARGET_DIR/IMAGES" "${REF#v}") \
+            || { echo "ERROR: the IMAGES file of the bundle is invalid; aborted before the first start." >&2; rm -rf "$tmp"; exit 1; }
+    fi
     rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256"
     rm -rf "$tmp"
 }
@@ -644,7 +677,14 @@ upsert_env DOMAIN "$DOMAIN"
 # via `./scripts/update.sh --ref vX.Y.Z`.
 # In checkout/bundle mode without --ref, REF is empty; leave compose's :latest
 # fallback rather than writing an empty tag that breaks `docker compose pull` (2.3).
-if [ -n "$REF" ]; then
+# A bundle with IMAGES pins the tag plus the digest the release signed (R-0460):
+# the tag on ghcr can move, the digest cannot.
+if [ -n "$PINNED_IMAGES" ]; then
+    IMAGE_TAG="${REF#v}"
+    while IFS= read -r kv; do
+        upsert_env "${kv%%=*}" "${kv#*=}"
+    done <<< "$PINNED_IMAGES"
+elif [ -n "$REF" ]; then
     IMAGE_TAG="${REF#v}"
     upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
     upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
