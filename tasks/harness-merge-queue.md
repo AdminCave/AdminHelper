@@ -1,5 +1,5 @@
 # Merge über die Merge Queue — Task-Ledger
-Status: bereit · Branch: feature/harness-merge-queue · Review: am Ende
+Status: erledigt · Branch: feature/harness-merge-queue · Review: am Ende
 Spec: docs/features/harness-merge-queue.md (Roadmap R-1345)
 Heavy: none — nur Harness-Skripte, Skill-Text und Entwickler-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
