@@ -1,5 +1,5 @@
 # kern-agent-21 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-21 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-21 · Review: am Ende
 Spec: docs/features/kern-agent-21.md (Roadmap R-0703)
 Heavy: linux-full — apps/agent (Monitor-Collectoren); Windows-Dateien prüft der PR-Job agent-windows, FreeBSD nur quer gebaut
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
