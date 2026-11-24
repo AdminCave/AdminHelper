@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-config-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-config-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-config-1 · Review: pro Task
 Spec: docs/features/kern-config-1.md (Roadmap R-0699)
 Heavy: linux-full — `docker-compose.yml`, Server-API (`/api/docs`), `apps/ca-issuer`; kein Install- oder PKI-Datenpfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
