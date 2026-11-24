@@ -166,32 +166,45 @@ def _manifest(shard: str, count: int = 10, sha256: str = "a" * 64) -> dict:
     return {"shard": shard, "count": count, "sha256": sha256}
 
 
+def _manifests(case: str, n: int) -> list[dict]:
+    """The manifests of one case for n shards: all equal, or one way off."""
+    every = [_manifest(f"{i}/{n}") for i in range(1, n + 1)]
+    last = f"{n}/{n}"
+    return {
+        "same": every,
+        "other-hash": every[:-1] + [_manifest(last, sha256="b" * 64)],
+        "other-count": every[:-1] + [_manifest(last, count=9)],
+        "one-missing": every[:-1],
+        "none": [],
+        "twice-1": every[:-1] + [_manifest(f"1/{n}")],
+        "extra": every + [_manifest(last)],
+    }[case]
+
+
 @pytest.mark.parametrize("want", _CHECKING)
 @pytest.mark.parametrize(
-    ("manifests", "passes"),
+    ("case", "passes"),
     [
-        ([_manifest("1/2"), _manifest("2/2")], True),
-        ([_manifest("1/2"), _manifest("2/2", sha256="b" * 64)], False),
-        ([_manifest("1/2"), _manifest("2/2", count=9)], False),
-        ([_manifest("1/2")], False),
-        ([], False),
-        ([_manifest("1/2"), _manifest("1/2")], False),
-        ([_manifest("1/2"), _manifest("2/2"), _manifest("2/2")], False),
+        ("same", True),
+        ("other-hash", False),
+        ("other-count", False),
+        ("one-missing", False),
+        ("none", False),
+        ("twice-1", False),
+        ("extra", False),
     ],
-    ids=["same", "other-hash", "other-count", "one-missing", "none", "twice-1", "extra"],
 )
-def test_the_comparison_is_green_only_for_one_equal_manifest_a_shard(
-    tmp_path, manifests, passes, want
-):
-    root = tmp_path / "manifests"
-    for i, manifest in enumerate(manifests):
-        # download-artifact puts each artifact in a directory of its name.
-        (root / f"shard-manifest-{i}").mkdir(parents=True)
-        (root / f"shard-manifest-{i}" / "shard-manifest.json").write_text(json.dumps(manifest))
-    root.mkdir(exist_ok=True)
+def test_the_comparison_is_green_only_for_one_equal_manifest_a_shard(tmp_path, case, passes, want):
     for gate in _SHARDED.values():
         step = _step(_jobs()[gate], "The shards collected the same tests")
-        script = tmp_path / "step.sh"
+        # The manifests for the shard count the workflow sets, so the step reads them as in CI.
+        root = tmp_path / gate / "manifests"
+        for i, manifest in enumerate(_manifests(case, int(step["env"]["SHARDS"]))):
+            # download-artifact puts each artifact in a directory of its name.
+            (root / f"shard-manifest-{i}").mkdir(parents=True)
+            (root / f"shard-manifest-{i}" / "shard-manifest.json").write_text(json.dumps(manifest))
+        root.mkdir(parents=True, exist_ok=True)
+        script = tmp_path / gate / "step.sh"
         script.write_text(step["run"], encoding="utf-8")
         run = subprocess.run(
             ["bash", "-e", str(script)],

@@ -72,7 +72,7 @@ jobs:
   # PYTEST_SHARD names the count, which matches the shard list (test_ci_shards.py). On a pull
   # request only the 3.14 leg runs (server-legs); server-result still reports both.
   server:
-    name: Server (pytest, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/2)
+    name: Server (pytest, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/4)
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.server != 'false' }}
     runs-on: ubuntu-26.04
@@ -82,7 +82,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ${{ fromJSON(needs.changes.outputs.server-legs || '["3.14","3.15"]') }}
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:18-alpine
@@ -117,7 +117,7 @@ jobs:
       DATA_DIR: /tmp/adminhelper-test-data
       SECRET_KEY: ci-test-secret-key
       ADMIN_PASSWORD: ciadmin
-      PYTEST_SHARD: ${{ matrix.shard }}/2
+      PYTEST_SHARD: ${{ matrix.shard }}/4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -234,7 +234,7 @@ jobs:
       # while every shard stays green: the shards must report the same collection.
       - name: The shards collected the same tests
         env:
-          SHARDS: "2"
+          SHARDS: "4"
           MANIFESTS: ${{ runner.temp }}/shard-manifests
         run: |
           if [ "$WANT" = false ]; then
@@ -379,7 +379,7 @@ jobs:
   # no Python version so a base-image bump keeps the required-check names;
   # test_lock_pins.py holds python-version in lockstep with each Dockerfile's FROM.
   python-lock-server:
-    name: Server (pytest, image lock, shard ${{ matrix.shard }}/2)
+    name: Server (pytest, image lock, shard ${{ matrix.shard }}/4)
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.lock-server != 'false' }}
     runs-on: ubuntu-26.04
@@ -387,7 +387,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:18-alpine
@@ -416,7 +416,7 @@ jobs:
       DATA_DIR: /tmp/adminhelper-test-data
       SECRET_KEY: ci-test-secret-key
       ADMIN_PASSWORD: ciadmin
-      PYTEST_SHARD: ${{ matrix.shard }}/2
+      PYTEST_SHARD: ${{ matrix.shard }}/4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -445,7 +445,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The name python-lock-server had before its shards, one job green only when both are; green
+  # The name python-lock-server had before its shards, one job green only when every shard is; green
   # at once when the changes did not ask for the image lock (WANT false).
   python-lock-server-result:
     name: Server (pytest, image lock)
@@ -477,7 +477,7 @@ jobs:
       # while every shard stays green: the shards must report the same collection.
       - name: The shards collected the same tests
         env:
-          SHARDS: "2"
+          SHARDS: "4"
           MANIFESTS: ${{ runner.temp }}/shard-manifests
         run: |
           if [ "$WANT" = false ]; then
