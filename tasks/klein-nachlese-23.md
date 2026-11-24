@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-23 — Nachlese kern-pycommon-2 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-23 · Review: am Ende
+Status: erledigt · Branch: feature/klein-nachlese-23 · Review: am Ende
 Spec: docs/features/klein-nachlese-23.md (Roadmap R-1776)
 Heavy: none — ein Fixture-Kommentar und ein Test
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
