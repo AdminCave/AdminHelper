@@ -45,8 +45,10 @@ Review: approve (.ah-out/review/kern-server-14/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py tests/test_frp_query_count.py
 Doku: keine (internes Verhalten)
 
-### T6 — R-1734: Nachlese kern-server-11  [ ]
+### T6 — R-1734: Nachlese kern-server-11  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/tests/test_bootstrap.py, apps/server/tests/test_users_last_admin.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @efbb49e98 2026-11-24T16:06:59+01:00
+Review: approve (.ah-out/review/kern-server-14/T6.verdict.json)
 Änderung: Routen-Tests für die 409 bei einem vergebenen Benutzernamen (Bootstrap und API), den veralteten Kommentar berichtigen, den Prüfpunkt aus der privaten Nachlese klären (Ergebnis unter `## Entscheidungen`; ein Fix nur, wenn er sich bestätigt).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_users_last_admin.py
 Doku: keine (Tests und Kommentar)
@@ -60,3 +62,4 @@ Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite 
 ## Entscheidungen
 - 2026-11-24: R-1694 als Glocken-Notiz, keine Migration (Kevin). R-1744/R-1715 als Route `/api/health` ohne DB (Kevin).
 - 2026-11-24 T3: Die bekannten Server-IDs werden vor dem Holen des Inventars gelesen. Der Hub legt einen Server an, bevor das Monitoring Daten zu ihm bekommt, so kann ein gerade angelegter Server nicht als Waise gelten. `test_assignment_of_a_server_missing_from_the_inventory_stays` sicherte das alte Verhalten ab, das R-1697 absichtlich ändert. Er ist ersetzt durch `test_server_missing_from_the_inventory_is_cleaned_up`, dazu kommen Tests für leeres und gescheitertes Inventar.
+- 2026-11-24 T6: Prüfpunkt aus der Nachlese bestätigt sich nicht, kein Fix. Ein `create-admin` per `docker compose exec` läuft als root und hinterlässt die Policy-Datei root-eigen (0644, für frps lesbar). Der Server-Prozess ersetzt sie trotzdem: `_replace_atomically` schreibt eine Temp-Datei und benennt sie per `os.replace` um, dafür reicht Schreibrecht auf das Verzeichnis, und das gehört nach `chown -R` im Entrypoint `app`. Aus Code und rename-Semantik gelesen, nicht im Container gefahren.
