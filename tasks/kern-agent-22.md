@@ -1,5 +1,5 @@
 # kern-agent-22 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-22 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-22 · Review: pro Task
 Spec: docs/features/kern-agent-22.md (Roadmap R-1688, R-1700, R-1701, R-1693, R-1702, R-1704, R-1705)
 Heavy: linux-full — apps/agent (Sammler, Self-Update, Probe-Listener); Windows-Teil über die CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -64,8 +64,10 @@ Review: approve (.ah-out/review/kern-agent-22/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/provision/ ./cmd/adminhelper-agent/
 Doku: changelog.d/kern-agent-22.md
 
-### T8 — R-1702, R-1688: Doku-Nachzug aus der Abschlussprüfung  [ ]
+### T8 — R-1702, R-1688: Doku-Nachzug aus der Abschlussprüfung  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, tasks/kern-agent-22.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e87d01b67 2026-11-24T18:17:19+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Der Wächter-Absatz der Entwickler-Doku nennt für die Linux-Listener `sock_diag` (nur `TCP_LISTEN`) statt `/proc/net/tcp` (T5). Die Admin-Doku „Schonung unter Last“ nennt, dass der ARC in Containern nicht als verfügbar zählt (T1). DE+EN.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Seiten
