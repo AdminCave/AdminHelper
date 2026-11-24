@@ -72,7 +72,7 @@ def _changes(factory) -> list[tuple]:
 
 @pytest.fixture()
 def scheduler_path(monkeypatch, db_engine):
-    """execute_check against sqlite: the checker answers from `results` (an exception
+    """execute_check against the test database: the checker answers from `results` (an exception
     in it is raised), the alert dispatches are collected in `submitted`."""
     factory = _factory(db_engine)
     results: list = []
@@ -204,7 +204,7 @@ def test_change_in_maintenance_is_logged_though_the_alert_is_muted(scheduler_pat
 
 @pytest.fixture()
 def push_path(monkeypatch, db_engine):
-    """The report endpoint against sqlite, auth bypassed, VictoriaMetrics and the bell
+    """The report endpoint against the test database, auth bypassed, VictoriaMetrics and the bell
     stubbed out."""
     from app.core import victoria as victoria_mod
     from app.core.auth import require_agent

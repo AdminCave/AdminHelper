@@ -36,8 +36,9 @@ def _last_line(stderr):
 @pytest.mark.parametrize(
     ("name", "value", "expected"),
     [
-        ("SMTP_PORT", "smtp", "a whole number >= 1"),
-        ("SMTP_PORT", "0", "a whole number >= 1"),
+        ("SMTP_PORT", "smtp", "a whole number between 1 and 65535"),
+        ("SMTP_PORT", "0", "a whole number between 1 and 65535"),
+        ("SMTP_PORT", "70000", "a whole number between 1 and 65535"),
         ("ALERT_LOG_RETENTION_DAYS", "-1", "a whole number >= 1"),
         ("DB_POOL_SIZE", "ten", "a whole number >= 1"),
         ("DB_MAX_OVERFLOW", "-3", "a whole number >= 0"),

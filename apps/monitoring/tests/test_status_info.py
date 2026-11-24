@@ -102,7 +102,7 @@ def test_a_notification_sees_info_as_ok(notified, expected):
 
 @pytest.fixture()
 def pipeline(monkeypatch, db_engine):
-    """apply_result + process_alert on sqlite with a spied channel, consecutive_* 1."""
+    """apply_result + process_alert on the test database with a spied channel, consecutive_* 1."""
     db = sessionmaker(bind=db_engine)()
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(

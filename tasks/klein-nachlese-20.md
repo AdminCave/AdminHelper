@@ -36,8 +36,10 @@ Review: approve (.ah-out/review/klein-nachlese-20/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_env.py tests/test_env_parity.py
 Doku: → T5
 
-### T4 — Monitoring-Tests: SQLite-Docstrings (R-1749)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/core/config.py, apps/monitoring/tests/test_config_env.py, apps/monitoring/tests/test_status_log.py, test_status_info.py, test_object_state.py, test_alerter.py, test_nul.py, test_alert_bundle.py, test_agent_report.py
+### T4 — Monitoring-Tests: SQLite-Docstrings (R-1749)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/config.py, apps/monitoring/tests/test_config_env.py, apps/monitoring/tests/test_status_log.py, test_status_info.py, test_object_state.py, test_alerter.py, test_nul.py, test_alert_bundle.py, test_agent_report.py, apps/monitoring/tests/test_alert_bundle.py, apps/monitoring/tests/test_alerter.py, apps/monitoring/tests/test_nul.py, apps/monitoring/tests/test_object_state.py, apps/monitoring/tests/test_status_info.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5ed6f2954 2026-11-24T15:14:52+01:00
+Review: approve (.ah-out/review/klein-nachlese-20/T4.verdict.json)
 Änderung: `SMTP_PORT` im Monitoring mit `maximum=65535` (Test erst rot: 70000, `test_config_env.py` mit neuer Meldung). Docstrings und Kommentare nennen Postgres statt SQLite (Zeilen aus der Roadmap-Zeile, frisch greppen); `test_agent_report.py` Trigger-Funktion: räumt der Test sie auf, sonst Aufräumen ergänzen oder Kommentar korrigieren. Keine Logikänderung der Tests.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_config_env.py tests/test_status_log.py tests/test_status_info.py tests/test_object_state.py tests/test_alerter.py tests/test_nul.py tests/test_alert_bundle.py tests/test_agent_report.py
 Doku: keine (Kommentare)
@@ -48,3 +50,8 @@ Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hoo
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d
 Task-Review: am Ende
+
+## Entscheidungen
+- R-1735 „doppelte Notify-Barriere“: nicht geändert. Die Barriere in `test_cleanup_url_without_double_slash` wartet mittendrin auf das Cleanup, bevor `get_requests()` gelesen wird; die autouse-Barriere in `conftest.py` greift nur an den Testgrenzen. Beide Prüfer-Läufe fanden keine andere doppelte Stelle.
+- R-1749 `test_agent_report.py:1375`: nicht geändert. Die Trigger-Funktion wird im `finally` gelöscht; beide Dialektzweige bleiben nötig, solange `conftest.py` auf SQLite zurückfällt. Die Docstrings sagen jetzt „Testdatenbank“ statt SQLite.
+- R-1746: `maximum` greift in Server (T3) und Monitoring (T4); `ca-issuer` liest keine Ports über `env_int`.
