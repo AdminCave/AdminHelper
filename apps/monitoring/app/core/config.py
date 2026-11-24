@@ -65,7 +65,7 @@ DB_MAX_OVERFLOW = env_int("DB_MAX_OVERFLOW", 20, minimum=0)
 
 # SMTP (email alert channel). Empty SMTP_HOST disables email alerts.
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
-SMTP_PORT = env_int("SMTP_PORT", 587, minimum=1)
+SMTP_PORT = env_int("SMTP_PORT", 587, minimum=1, maximum=65535)
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")

@@ -707,7 +707,7 @@ def test_check_rows_neither_count_nor_are_held(factory, monkeypatch):
 
 @pytest.fixture()
 def scheduler_path(factory, monkeypatch):
-    """execute_check against sqlite: the checker answers from `results` ((status,
+    """execute_check against the test database: the checker answers from `results` ((status,
     metrics), or an exception it raises); the metrics VictoriaMetrics would get are
     collected in `written`."""
     results: list = []
@@ -761,7 +761,7 @@ def test_skipped_run_leaves_the_objects(factory, scheduler_path):
 
 @pytest.fixture()
 def push_path(factory, monkeypatch):
-    """The report endpoint against sqlite, auth bypassed; the push checker answers
+    """The report endpoint against the test database, auth bypassed; the push checker answers
     `answer["result"]`, the metrics of the check result lines land in `lines`."""
     from app.core import victoria as victoria_mod
     from app.core.auth import require_agent

@@ -38,6 +38,21 @@ def test_below_minimum_is_refused():
         parse_int("X_PORT", "0", 587, minimum=1)
 
 
+@pytest.mark.parametrize(
+    ("raw", "message"), [("0", "between 1 and 65535"), ("70000", "between 1 and 65535")]
+)
+def test_port_outside_its_range_is_refused(raw, message):
+    with pytest.raises(ConfigError) as exc:
+        parse_int("X_PORT", raw, 587, minimum=1, maximum=65535)
+    assert str(exc.value) == f"X_PORT={raw!r} is not a whole number {message}"
+    assert parse_int("X_PORT", "65535", 587, minimum=1, maximum=65535) == 65535
+
+
+def test_above_maximum_alone_is_refused():
+    with pytest.raises(ConfigError, match=r"^X='9' is not a whole number <= 8$"):
+        parse_int("X", "9", 1, maximum=8)
+
+
 def test_config_error_is_a_value_error():
     # Callers that guard settings with `except ValueError` keep working.
     assert issubclass(ConfigError, ValueError)
@@ -55,6 +70,7 @@ def test_env_int_reads_the_environment(monkeypatch):
     [
         ("SMTP_PORT", "smtp"),
         ("SMTP_PORT", "0"),
+        ("SMTP_PORT", "70000"),
         ("AUDIT_RETENTION_DAYS", "-1"),
         ("DB_POOL_SIZE", "ten"),
         ("WEB_IDLE_TIMEOUT_MINUTES", "-5"),

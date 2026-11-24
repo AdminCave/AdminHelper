@@ -25,6 +25,7 @@ def test_tag_sync_url_without_double_slash(slash_url, httpx_mock):
     httpx_mock.add_response(method="POST", url=BASE + "/templates/tag-sync", status_code=204)
     servers_router._do_notify_tag_sync("test")
     (req,) = httpx_mock.get_requests()
+    assert str(req.url) == BASE + "/templates/tag-sync"
     assert req.headers["X-Internal-Key"] == "internal-k"
 
 

@@ -181,11 +181,11 @@ FRP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 FRPS_STATE_DIR = Path(os.environ.get("FRPS_STATE_DIR", str(DATA_DIR / "frps-state")))
 
 # Host port compose publishes for frps (its ${FRP_BIND_PORT} mapping).
-FRP_BIND_PORT = env_int("FRP_BIND_PORT", 7000, minimum=1)
+FRP_BIND_PORT = env_int("FRP_BIND_PORT", 7000, minimum=1, maximum=65535)
 
 # Visitor port range for automatic assignment (STCP tunnels)
-VISITOR_PORT_START = env_int("VISITOR_PORT_START", 6000, minimum=1)
-VISITOR_PORT_END = env_int("VISITOR_PORT_END", 6999, minimum=1)
+VISITOR_PORT_START = env_int("VISITOR_PORT_START", 6000, minimum=1, maximum=65535)
+VISITOR_PORT_END = env_int("VISITOR_PORT_END", 6999, minimum=1, maximum=65535)
 
 # frps dashboard base URL for the status endpoint. Empty = the compose default: the
 # endpoint reads the proxy lists the frps supervisor puts into FRPS_STATE_DIR, since the
@@ -284,13 +284,13 @@ CA_TRUST_DIR = os.environ.get("CA_TRUST_DIR", "/app/ca-trust").strip()
 # no reliable view of its own public address, so it only returns this port hint
 # in the provision response — the agent derives the host from the URL it already
 # provisioned against and builds <host>:ENROLL_PORT/enroll itself.
-ENROLL_PORT = env_int("ENROLL_PORT", 8444, minimum=1)
+ENROLL_PORT = env_int("ENROLL_PORT", 8444, minimum=1, maximum=65535)
 
 # The agent package repo the updater rolls out (./repo, mounted read-only) and the gateway's
 # public repo-plane port. The provisioning catalog reads which platforms carry packages there
 # and passes a non-default port to the installers (--repo-port).
 REPO_DIR = Path(os.environ.get("REPO_DIR", "/app/repo"))
-REPO_PORT = env_int("REPO_PORT", 8445, minimum=1)
+REPO_PORT = env_int("REPO_PORT", 8445, minimum=1, maximum=65535)
 
 # Audit-log retention. A daily system job prunes audit_log rows older than this
 # many days — the ONLY delete path for the otherwise append-only trail. Set to 0
@@ -302,7 +302,7 @@ AUDIT_RETENTION_DAYS = env_int("AUDIT_RETENTION_DAYS", 365, minimum=0)
 # until they exhaust their attempts. No local MTA: point this at an external
 # relay (587 STARTTLS or 465 SMTPS).
 SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
-SMTP_PORT = env_int("SMTP_PORT", 587, minimum=1)
+SMTP_PORT = env_int("SMTP_PORT", 587, minimum=1, maximum=65535)
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")

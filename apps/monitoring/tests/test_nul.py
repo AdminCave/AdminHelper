@@ -5,10 +5,9 @@
 """A NUL byte is refused at the monitoring edge: path, query, body, agent report.
 So is a lone surrogate in a body or an agent report.
 
-This suite runs on sqlite, which stores a NUL without complaint — here the
-unguarded requests answer 2xx or 404, not 500, and it is the 422 assertions that
-go red without the guards. In production the database is Postgres, where the
-same requests died in the driver."""
+Without the guards a NUL dies in the Postgres driver (500); on the SQLite fallback, which
+stores it without complaint, the requests answer 2xx or 404. The 422 assertions go red
+without the guards on either."""
 
 import json
 

@@ -90,7 +90,8 @@ def test_scheduler_fires_server_startup_once_and_drains_events_on_stop(monkeypat
         def wait(self):
             calls.append("stop")
 
-    monkeypatch.setattr(scheduler_main.threading, "Event", _Stopped)
+    # Swap the module attribute, not threading.Event: that would replace it for the whole process.
+    monkeypatch.setattr(scheduler_main, "threading", types.SimpleNamespace(Event=_Stopped))
 
     scheduler_main.main()
 

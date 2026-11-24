@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -45,15 +44,7 @@ func runWithTimeout(ctx context.Context, name string, args ...string) ([]byte, e
 
 // dockerCLI indirects collectDocker's docker lookup and calls so tests can drive every path without
 // docker, which is slow and host-dependent (same reason as pluginCollectors, 6.18).
-var dockerCLI = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, args ...string) ([]byte, error)
-}{exec.LookPath, runDocker}
-
-// runDocker runs one docker CLI call under dockerTimeout.
-func runDocker(ctx context.Context, args ...string) ([]byte, error) {
-	return runTimed(ctx, dockerTimeout, "docker", args...)
-}
+var dockerCLI = newCommand()
 
 // DockerBlock is the docker block. Containers is never nil: the wire carries [] for no container,
 // also when docker is unavailable. Error is null while available and the error code otherwise.
@@ -93,11 +84,11 @@ func collectDocker(ctx context.Context) *DockerBlock {
 	if _, err := dockerCLI.lookPath("docker"); err != nil {
 		return nil
 	}
-	if _, err := dockerCLI.run(ctx, "info"); err != nil {
+	if _, err := dockerCLI.run(ctx, dockerTimeout, nil, "docker", "info"); err != nil {
 		return dockerUnavailable("info", "daemon_unreachable", err)
 	}
 
-	out, err := dockerCLI.run(ctx, "ps", "-a", "--format", "{{json .}}")
+	out, err := dockerCLI.run(ctx, dockerTimeout, nil, "docker", "ps", "-a", "--format", "{{json .}}")
 	if err != nil {
 		return dockerUnavailable("ps", "cli_failed", err)
 	}
@@ -115,7 +106,7 @@ func collectDocker(ctx context.Context) *DockerBlock {
 
 	// ONE batch inspect for all containers, as plain JSON: a Go template on .State.Health.Status fails
 	// for a container without a healthcheck.
-	out, err = dockerCLI.run(ctx, append([]string{"inspect", "--type", "container"}, ids...)...)
+	out, err = dockerCLI.run(ctx, dockerTimeout, nil, "docker", append([]string{"inspect", "--type", "container"}, ids...)...)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return dockerUnavailable("inspect", "timeout", err)
 	}
@@ -330,16 +321,10 @@ type dockerPortBinding struct {
 // from and the corosync config its cluster name comes from, so tests can drive every path without
 // pvesh (same reason as dockerCLI).
 var pveshCLI = struct {
-	lookPath     func(file string) (string, error)
-	run          func(ctx context.Context, args ...string) ([]byte, error)
+	command
 	hostname     func() (string, error)
 	corosyncConf string
-}{exec.LookPath, runPvesh, os.Hostname, "/etc/pve/corosync.conf"}
-
-// runPvesh runs one pvesh call under pluginTimeout (runWithTimeout).
-func runPvesh(ctx context.Context, args ...string) ([]byte, error) {
-	return runWithTimeout(ctx, "pvesh", args...)
-}
+}{newCommand(), os.Hostname, "/etc/pve/corosync.conf"}
 
 // pveshGet runs `pvesh get <path> <args> --output-format json` and decodes the answer into out, a
 // pointer to a map or a slice. On failure it returns the outage code and its text for
@@ -348,7 +333,7 @@ func runPvesh(ctx context.Context, args ...string) ([]byte, error) {
 // without error, to a nil map or slice, so it is checked for on its own.
 func pveshGet(ctx context.Context, out any, path string, args ...string) (code, text string) {
 	call := "pvesh get " + path
-	raw, err := pveshCLI.run(ctx, append(append([]string{"get", path}, args...), "--output-format", "json")...)
+	raw, err := pveshCLI.run(ctx, pluginTimeout, nil, "pvesh", append(append([]string{"get", path}, args...), "--output-format", "json")...)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout", fmt.Sprintf("%s timed out after %s", call, pluginTimeout)
@@ -829,15 +814,7 @@ func (check *backupIndexCheck) fresh(node string, storages []string, now time.Ti
 
 // zpoolCLI indirects collectZFS's zpool lookup and calls so tests can drive every path without zpool
 // (same reason as dockerCLI).
-var zpoolCLI = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, args ...string) ([]byte, error)
-}{exec.LookPath, runZpool}
-
-// runZpool runs one zpool call under pluginTimeout; runTimed, so a hung zpool is a timeout.
-func runZpool(ctx context.Context, args ...string) ([]byte, error) {
-	return runTimed(ctx, pluginTimeout, "zpool", args...)
-}
+var zpoolCLI = newCommand()
 
 // ZFSBlock is the zfs block. Pools is never nil (the wire carries [] for none, also when
 // unavailable); Error is null while available. Errors is the text of `zpool status -x`, sent only when
@@ -893,7 +870,7 @@ func collectZFS(ctx context.Context) *ZFSBlock {
 		return nil
 	}
 
-	out, err := zpoolCLI.run(ctx, "list", "-H", "-o",
+	out, err := zpoolCLI.run(ctx, pluginTimeout, nil, "zpool", "list", "-H", "-o",
 		"name,size,alloc,free,cap,health,frag")
 	if err != nil {
 		return zfsUnavailable(err)
@@ -905,7 +882,7 @@ func collectZFS(ctx context.Context) *ZFSBlock {
 	// Error details for non-ONLINE pools
 	for _, p := range pools {
 		if p.Health != "ONLINE" {
-			statusOut, err := zpoolCLI.run(ctx, "status", "-x")
+			statusOut, err := zpoolCLI.run(ctx, pluginTimeout, nil, "zpool", "status", "-x")
 			if err == nil {
 				text := strings.TrimSpace(string(statusOut))
 				result.Errors = &text
@@ -936,7 +913,7 @@ func zfsUnavailable(err error) *ZFSBlock {
 }
 
 // parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health,frag` (tab-separated) into
-// pool maps, skipping lines with too few columns and stripping the % from the capacity column — the
+// ZPool values, skipping lines with too few columns and stripping the % from the capacity column — the
 // positional parsing, testable without running zpool (6.16). fragmentation_percent is left out where
 // zpool prints "-" (unknown, zpoolprops(7)) or something else than a percentage.
 func parseZpoolList(out []byte) []ZPool {
@@ -1005,7 +982,7 @@ type zpoolStatus struct {
 // 2.2 and older), a call that fails or times out, or output it cannot read gives none and no error:
 // the pools go out as before, like without `zpool status -x`.
 func zpoolDetails(ctx context.Context) map[string]zpoolDetail {
-	out, err := zpoolCLI.run(ctx, "status", "-j", "--json-int", "--json-flat-vdevs")
+	out, err := zpoolCLI.run(ctx, pluginTimeout, nil, "zpool", "status", "-j", "--json-int", "--json-flat-vdevs")
 	if err != nil {
 		return nil
 	}

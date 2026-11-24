@@ -70,7 +70,6 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 	}
 }
 
-// failedLogs is the failed_logs of the report's systemd block (as in servicelogs_linux_test.go).
 // failedLogs is the systemd.failed_logs block as the monitoring service decodes it.
 func failedLogs(t *testing.T, report *Report) map[string]any {
 	t.Helper()

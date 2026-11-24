@@ -4,7 +4,9 @@
 
 """The server's calls to the monitoring service: one place for its base URL and the internal key.
 
-Config is read at call time, so a test that patches app.core.config sees every caller follow.
+Config is read at call time, so a test that patches app.core.config sees every caller follow —
+except the monitoring proxy: it forwards through its own async client and takes base_url() once at
+import, so it does not use request() and does not follow a later change.
 """
 
 import httpx

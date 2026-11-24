@@ -7,7 +7,7 @@ on each channel on its own, one message from BUNDLE_MIN members on, single
 messages below; flush_agent_alerts collects the open heartbeats, bundles BUNDLE_MIN
 or more and lets fewer wait BUNDLE_WINDOW, at most until a minute before their next
 check, before they go out on their own. Real
-SQLite session; mail is captured at _send_email, the webhook below the SSRF pin
+database session; mail is captured at _send_email, the webhook below the SSRF pin
 (httpx.HTTPTransport) and the hub at httpx.post."""
 
 import json
