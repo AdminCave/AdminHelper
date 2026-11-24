@@ -9,6 +9,7 @@
 #                             postgres18-data, victoria-data, das alte
 #                             postgres-data von PostgreSQL 17  (unwiederbringlich)
 #   3. Host-Daten           — die Bind-Mounts ./data und ./certs (uid 10001)
+#                             und das Agent-Paket-Repo ./repo
 #   4. Secrets              — .env (+ eine evtl. .env.restored aus einem Restore
 #                             und die Arbeitskopien .env.ah-* der Skripte)
 #   5. Backups              — ./backups/   (Default: BEHALTEN)

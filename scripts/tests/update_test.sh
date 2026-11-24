@@ -151,7 +151,10 @@ case "$*" in
     else printf '%s\n' "  -d, --detach   Detached mode" "      --wait   Wait for services" \
       "      --wait-timeout int   Maximum duration in seconds to wait"; fi
     exit 0 ;;
-  "compose pull"*) [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0 || { echo "stub: pull failed" >&2; exit 1; } ;;
+  "compose pull"*)
+    [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0
+    [ -z "${AH_TEST_ENV_LOCK:-}" ] || : > "$AH_TEST_ENV_LOCK"
+    echo "stub: pull failed" >&2; exit 1 ;;
   "compose stop server "*)
     [ "${AH_TEST_STOP_FAIL:-}" != 1 ] || { echo "stub: stop failed" >&2; exit 1; }
     case "$*" in *scheduler*)
@@ -184,7 +187,8 @@ case "$*" in
         health_marker="$AH_TEST_STUB_STATE/health-$PPID"
         if [ "${AH_TEST_HEALTH:-0}" = always ] \
           || { [ "${AH_TEST_HEALTH:-0}" = 1 ] && [ ! -e "$health_marker" ]; }; then
-          : > "$health_marker"; echo "stub: container adminhelper-server-1 is unhealthy" >&2; exit 1
+          : > "$health_marker"; [ -z "${AH_TEST_ENV_LOCK:-}" ] || : > "$AH_TEST_ENV_LOCK"
+          echo "stub: container adminhelper-server-1 is unhealthy" >&2; exit 1
         fi ;;
     esac
     exit 0 ;;
@@ -276,6 +280,16 @@ chmod +x "$BIN/tar"
 AH_TEST_REAL_MV=$(command -v mv); export AH_TEST_REAL_MV
 cat > "$BIN/mv" <<'EOF'
 #!/usr/bin/env bash
+# AH_TEST_ENV_LOCK names a marker the docker stub sets when a pull or a health
+# check fails: from then on a .env working copy does not go onto .env (test 26).
+if [ -n "${AH_TEST_ENV_LOCK:-}" ] && [ -e "$AH_TEST_ENV_LOCK" ] && [ "${*: -1}" = .env ]; then
+  case "${*: -2:1}" in *.env.ah-*) echo "stub: mv onto .env failed" >&2; exit 1 ;; esac
+fi
+# AH_TEST_MV_TERM names a marker: while it exists, the first mv of a .env working
+# copy onto .env sends update.sh SIGTERM instead of moving (test 40b).
+if [ -n "${AH_TEST_MV_TERM:-}" ] && [ -e "$AH_TEST_MV_TERM" ] && [ "${*: -1}" = .env ]; then
+  case "${*: -2:1}" in *.env.ah-*) rm -f "$AH_TEST_MV_TERM"; kill -TERM "$PPID"; exit 1 ;; esac
+fi
 "$AH_TEST_REAL_MV" "$@" || exit
 [ "$*" = "-fT .env.example.ah-new .env.example" ] || exit 0
 case "${AH_TEST_MV_LOCK:-}" in
@@ -672,9 +686,9 @@ grep -E '_IMAGE=' "$INST/.env" | sort | cmp -s - "$WORK/inst19.pins" \
   || bad "floating pins after health-fail: $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ';')"
 grep -q '^NEW_FEATURE_FLAG=on' "$INST/.env" \
   && ok "health-fail kept the keys the migration added" || bad "health-fail dropped the migrated keys"
-{ [ "$(stat -c %a "$INST/.env")" = 600 ] && [ ! -e "$INST/.env.ah-new" ]; } \
+{ [ "$(stat -c %a "$INST/.env")" = 600 ] && ! compgen -G "$INST/.env.ah-*" >/dev/null; } \
   && ok "the pin restore left .env at 0600 and no copy behind" \
-  || bad "pin restore: .env mode $(stat -c %a "$INST/.env"), copy left: $([ -e "$INST/.env.ah-new" ] && echo yes || echo no)"
+  || bad "pin restore: .env mode $(stat -c %a "$INST/.env"), copies left: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
 grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
   && ok "health-fail on :main rolled back compose" || bad "compose not rolled back on :main"
 out=$(run_update "$INST" 2>&1); rc=$?
@@ -807,15 +821,15 @@ grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$ms
   && ok "--no-rollback health-fail on :main names Alembic and restore.sh" || bad "--no-rollback health-fail on :main: $msg"
 
 # ── 26. a restore that fails is not reported as a rollback ──────────────────
-# A directory in the way of the .env copy makes the restore fail; the closing
-# message must say the rollback is incomplete, not "zurueckgerollt".
+# An mv that fails once the pull or the health check failed makes the .env
+# restore fail; the closing message must say the rollback is incomplete, not
+# "zurueckgerollt".
 for how in pull health; do
   INST="$WORK/inst26-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
-  mkdir "$INST/.env.ah-new"
   if [ "$how" = pull ]; then
-    out=$(AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
+    out=$(AH_TEST_ENV_LOCK="$WORK/envlock26-$how" AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
   else
-    out=$(AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
+    out=$(AH_TEST_ENV_LOCK="$WORK/envlock26-$how" AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
   fi
   echo "$out" | sed 's/^/    │ /'
   msg=$(grep 'FEHLER: ' <<<"$out")
@@ -823,10 +837,11 @@ for how in pull health; do
       && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
     && ok "failed .env restore ($how): the closing message says incomplete" \
     || bad "failed .env restore ($how): rc=$rc $msg"
-  # The directory takes no copy of the old .env (a plain cp -p put env.prev into it).
-  { [ -d "$INST/.env.ah-new" ] && [ -z "$(find "$INST/.env.ah-new" -mindepth 1)" ]; } \
-    && ok "failed .env restore ($how): nothing landed in the directory in the way" \
-    || bad "failed .env restore ($how): .env.ah-new holds $(find "$INST/.env.ah-new" -mindepth 1 -printf '%f ' 2>&1)"
+  grep -q 'stub: mv onto .env failed' <<<"$out" \
+    && ok "failed .env restore ($how): the restore hit the failing mv" \
+    || bad "failed .env restore ($how): the mv stub never refused"
+  ! compgen -G "$INST/.env.ah-*" >/dev/null && ok "failed .env restore ($how): no .env.ah-* copy left" \
+    || bad "failed .env restore ($how): copies left: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
 done
 
 # ── 27. the installed state does not start again: the rollback is incomplete ─
@@ -1409,10 +1424,15 @@ else
   cp "$INST/.env" "$INST.env"
   out=$(LC_ALL=C AH_TEST_MV_LOCK=env on_tty "$INST" bash ./scripts/update.sh --ref v0.34.0 2>&1); rc=$?
   echo "$out" | sed 's/^/    │ /'
-  { [ $rc -ne 0 ] && grep -qF ': .env: Permission denied' <<<"$out" \
-      && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
-    && ok "rollback before the deploy over a read-only .env on a terminal exits with the rollback message" \
+  [ $rc -ne 0 ] && [ $rc -ne 124 ] \
+    && ok "rollback before the deploy over a read-only .env on a terminal exits non-zero without waiting" \
     || bad "rollback before the deploy over a read-only .env on a terminal: exit $rc (124: mv waited for an answer)"
+  grep -qF ': .env: Permission denied' <<<"$out" \
+    && ok "rollback before the deploy over a read-only .env on a terminal names the denied .env" \
+    || bad "rollback before the deploy over a read-only .env on a terminal: no ': .env: Permission denied' in the output"
+  grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out" \
+    && ok "rollback before the deploy over a read-only .env on a terminal prints the rollback message" \
+    || bad "rollback before the deploy over a read-only .env on a terminal: no 'zurueckgerollt auf 0.33.0' message"
   cmp -s "$INST.env" "$INST/.env" \
     && ok "rollback before the deploy over a read-only .env on a terminal restored .env byte for byte" \
     || bad "rollback before the deploy over a read-only .env on a terminal: .env now $(tr '\n' ' ' < "$INST/.env")"
@@ -1438,6 +1458,21 @@ else
     && ok "rollback after the deploy over a read-only .env on a terminal put every pin back on 0.33.0" \
     || bad "rollback after the deploy over a read-only .env on a terminal: pins $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ' ')"
 fi
+
+# ── 40b. a signal between mktemp and mv: no .env working copy stays (R-0592) ─
+# SIGTERM arrives where pin_images would put its copy in place of .env; the
+# rollback writes a copy of its own. Both go, .env is the old one byte for byte.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst40b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$INST.env"; : > "$WORK/mvterm40b"
+out=$(AH_TEST_MV_TERM="$WORK/mvterm40b" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && [ ! -e "$WORK/mvterm40b" ] && grep -q 'interrupted by SIGTERM.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+  && ok "SIGTERM while .env is written rolls back" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "SIGTERM while .env is written: rc=$rc"; }
+! compgen -G "$INST/.env.ah-*" >/dev/null && ok "SIGTERM while .env is written leaves no .env.ah-* copy" \
+  || bad "copies left after SIGTERM: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
+cmp -s "$INST.env" "$INST/.env" && ok "SIGTERM while .env is written: .env byte for byte the old one" \
+  || bad "SIGTERM while .env is written: .env now $(tr '\n' ' ' < "$INST/.env")"
 
 # ── 41. the install directory is at most 0750 after an update, a container UID is named ──
 INST="$WORK/inst41"; make_install 0.33.0 "$SRC_OLD" "$INST"; chmod 0755 "$INST"
@@ -1571,13 +1606,13 @@ AH_TEST_HEALTH=1 interrupt_update "$INST" "$WORK/inst44e.block" AH_TEST_STOP_BLO
   && ok "SIGTERM during a rollback after a failed health check: the rollback runs once to its end" \
   || bad "SIGTERM during the rollback: rc=$rc $(tr '\n' ';' < "$INST.docker") $(cat "$INST.out")"
 # cp blocks in the swap (-T) and in the .env restore of rollback_before_deploy
-# (-pT), mktemp in pin_images (upsert_env is its only user of .env.ah-XXXXXX).
+# (-pT), mktemp in pin_images (the first .env working copy after the pull).
 BLOCKBIN="$WORK/blockbin"; mkdir -p "$BLOCKBIN"
-for _t in "cp:-T:AH_TEST_SWAP_BLOCK" "cp:-pT:AH_TEST_RESTORE_BLOCK" "mktemp:.env.ah-XXXXXX:AH_TEST_PIN_BLOCK"; do
+for _t in "cp:-T:AH_TEST_SWAP_BLOCK" "cp:-pT:AH_TEST_RESTORE_BLOCK" "mktemp:*/.env.ah-XXXXXX:AH_TEST_PIN_BLOCK"; do
   IFS=: read -r _cmd _arg _var <<<"$_t"
   [ -e "$BLOCKBIN/$_cmd" ] || echo '#!/usr/bin/env bash' > "$BLOCKBIN/$_cmd"
   cat >> "$BLOCKBIN/$_cmd" <<EOF
-if [ "\$1" = "$_arg" ] && [ -n "\${$_var:-}" ] && [ ! -e "\$$_var" ]; then
+if [[ "\$1" == $_arg ]] && [ -n "\${$_var:-}" ] && [ ! -e "\$$_var" ]; then
   : > "\$$_var.started"
   for _ in \$(seq 300); do [ -e "\$$_var" ] && break; sleep 0.1; done
 fi
@@ -1945,6 +1980,9 @@ done <<< "$(images_for 0.35.0)"
     && grep -q 'Images gepinnt auf :0.35.0@sha256 (Digest aus dem signierten Bundle)' <<<"$out"; } \
   && ok "a bundle with IMAGES pins tag and digest of all five images" \
   || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
+# The pins live in .env; the swap leaves no copy of IMAGES in the install directory.
+[ ! -e "$INST/IMAGES" ] && ok "update leaves no IMAGES in the install directory" \
+  || bad "update left IMAGES in the install directory"
 # The version in front of the digest is still the installed version.
 out=$(run_update "$INST" --check --ref v0.35.0 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Installiert: 0.35.0 ' <<<"$out"; } \

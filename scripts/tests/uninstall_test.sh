@@ -48,9 +48,9 @@ seed() {
   rm -rf "$dir"; mkdir -p "$dir"/data "$dir"/certs "$dir"/repo "$dir"/backups
   printf 'services: {}\n' > "$dir/docker-compose.yml"
   printf 'SECRET_KEY=x\n' > "$dir/.env"
-  # Beside .env: a restore's leftover and the copies install.sh, update.sh and
-  # init-secrets.sh write next to it (mktemp .env.ah-XXXXXX, 0600; .env.ah-new),
-  # all with the same secrets; .env.example is a runtime file.
+  # Beside .env: a restore's leftover, the working copies the scripts write next
+  # to it (mktemp .env.ah-XXXXXX, 0600) and the fixed .env.ah-new older versions
+  # left, all with the same secrets; .env.example is a runtime file.
   printf 'SECRET_KEY=x\n' > "$dir/.env.restored"
   ENV_COPY=$(mktemp "$dir/.env.ah-XXXXXX"); printf 'SECRET_KEY=x\n' > "$ENV_COPY"
   printf 'SECRET_KEY=x\n' > "$dir/.env.ah-new"

@@ -45,7 +45,10 @@ set -euo pipefail
 # Single temp root so an abort (signal, set -e) can't leak the per-fetch mktemp
 # dirs; the trap sweeps it on any exit (4.121).
 _TMPROOT="$(mktemp -d)"
-trap 'rm -rf "$_TMPROOT"' EXIT
+# The .env working copies of upsert_env sit next to .env; one an abort leaves
+# between mktemp and mv goes with the exit as well (R-0592).
+ENV_TMPS=()
+trap 'rm -rf "$_TMPROOT"; rm -f -- "${ENV_TMPS[@]}"' EXIT
 
 REPO="AdminCave/AdminHelper"
 REF=""                       # empty -> resolve the latest published release
@@ -194,7 +197,7 @@ fetch_bundle_into() {
         PINNED_IMAGES=$(image_pins "$TARGET_DIR/IMAGES" "${REF#v}") \
             || { echo "ERROR: the IMAGES file of the bundle is invalid; aborted before the first start." >&2; rm -rf "$tmp"; exit 1; }
     fi
-    rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256"
+    rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256" "$TARGET_DIR/IMAGES"
     rm -rf "$tmp"
 }
 
@@ -638,7 +641,8 @@ upsert_env() {
     # write when stdin is a terminal, and waits for an answer that a wrapper
     # collecting the output never shows.
     local tmp failed="FEHLER: ${key} konnte nicht in die .env geschrieben werden — Abbruch. Die .env bleibt beim letzten vollstaendigen Stand; Stack, Admin und Enroll-Token werden nicht angelegt."
-    tmp=$(mktemp .env.ah-XXXXXX) || { echo "$failed" >&2; exit 1; }
+    tmp=$(mktemp "${PWD}/.env.ah-XXXXXX") || { echo "$failed" >&2; exit 1; }
+    ENV_TMPS+=("$tmp")
     { { LC_ALL=C grep -a -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
         && mv -f "$tmp" .env; } \
