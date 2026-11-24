@@ -75,6 +75,7 @@ type resourceStub struct {
 	loopErr     error
 	devices     map[string]bool
 	deviceReads int
+	arc         uint64
 }
 
 // stubResources swaps resourceCalls for a host on goos with 8 CPUs, 84 of 2048 MB swap in use and
@@ -120,6 +121,7 @@ func stubResources(t *testing.T, goos string) *resourceStub {
 		s.deviceReads++
 		return s.devices[name]
 	}
+	resourceCalls.arc = func() uint64 { return s.arc }
 	t.Cleanup(func() { resourceCalls = old })
 	return s
 }

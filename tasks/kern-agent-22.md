@@ -5,12 +5,14 @@ Heavy: linux-full — apps/agent (Sammler, Self-Update, Probe-Listener); Windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1688: Last-Tor zählt rückforderbaren ZFS-ARC als verfügbar  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/arc_linux.go, apps/agent/internal/monitor/arc_freebsd.go, apps/agent/internal/monitor/arc_other.go, apps/agent/internal/monitor/arc_test.go
+### T1 — R-1688: Last-Tor zählt rückforderbaren ZFS-ARC als verfügbar  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/arc_linux.go, apps/agent/internal/monitor/arc_freebsd.go, apps/agent/internal/monitor/arc_other.go, apps/agent/internal/monitor/arc_test.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-agent-22.md, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @582accaff 2026-11-24T16:37:00+01:00
+Review: approve (.ah-out/review/kern-agent-22/T1.verdict.json)
 Beweis: main@4c8173e06 apps/agent/internal/monitor/loadgate.go:19,121 (100 - memory_percent, ARC zählt als belegt) · Dedup-Key: bug:agent:loadgate.go:zfs-arc-counts-as-used
 Änderung: `loadReadingOf` addiert `max(0, size - c_min)` des ARC (Linux `/proc/spl/kstat/zfs/arcstats`, FreeBSD Sysctl `kstat.zfs.misc.arcstats.*`) als Anteil am Gesamtspeicher zum verfügbaren Speicher, über eine Naht für die Tests; ohne ZFS unverändert. `memory_percent` im Report bleibt. Test erst rot: ein Host mit 95 % belegt, davon 40 % ARC über c_min, löst das Tor nicht aus; Parser der arcstats mit Fixture. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
-Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html (Schonung unter Last), changelog.d/kern-agent-22.md
+Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html (Schonung unter Last), docs/developer/agent.html, docs/en/developer/agent.html (Last-Tor), changelog.d/kern-agent-22.md
 
 ### T2 — R-1700: Updates und ProxmoxBackups bleiben nach einem gescheiterten Push gedrosselt  [ ]
 Komponente: agent · Dateien: apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/reportstate_test.go

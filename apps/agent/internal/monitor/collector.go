@@ -153,7 +153,9 @@ var resourceCalls = struct {
 	netIO    func(pernic bool) ([]gnet.IOCountersStat, error)
 	loopback func() (map[string]bool, error)
 	device   func(name string) bool
-}{runtime.GOOS, mem.SwapMemory, cpu.Counts, gnet.IOCounters, loopbackNames, hasNetDevice}
+	// arc is the ZFS ARC the kernel gives back under memory pressure (arcReclaimable).
+	arc func() uint64
+}{runtime.GOOS, mem.SwapMemory, cpu.Counts, gnet.IOCounters, loopbackNames, hasNetDevice, arcReclaimable}
 
 // loopbackNames are the interfaces flagged loopback. gopsutil names its counters like the standard
 // library on Windows and like /proc/net/dev on Linux, both the names net.Interfaces returns.
