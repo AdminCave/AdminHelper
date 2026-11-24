@@ -174,7 +174,11 @@ The optional **AdminHelper Server** enables centralized management and shared ac
 Download and run the installer — it fetches the **latest release's verified
 runtime bundle** (the self-contained `docker-compose.yml` + the ops scripts,
 **not** the source), brings up the stack, creates the first admin plus a one-time
-enrollment token, and leaves mTLS **enforced by default**:
+enrollment token, and leaves mTLS **enforced by default**. It needs a Linux host with
+Docker Engine 24+ and Docker Compose v2.17+, plus `curl`, `openssl` (generates the
+secrets) and `minisign` (the installer checks the signature of the runtime bundle and
+aborts without it); the open ports and DNS records are in the
+[installation guide](docs/en/admin/installation.html#prerequisites):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/install.sh \
@@ -231,10 +235,10 @@ The web UI/API is then reachable at `https://localhost` — served by the built-
 
 **First login — bootstrap-token flow:**
 
-There is **no** default `admin/admin` login anymore. On the first start (with an empty `ADMIN_PASSWORD`), the server writes a one-time setup token to `data/.bootstrap_token` and shows it in the log:
+There is **no** default `admin/admin` login anymore. On the first start (with an empty `ADMIN_PASSWORD`), the server writes a one-time setup token to `data/.bootstrap_setup` (mode 0600; `data/.bootstrap_token` only holds its hash). The log names the file and the command, it never contains the token:
 
 ```bash
-docker compose logs server | grep -A2 'Setup-Token'
+docker compose exec server cat /app/data/.bootstrap_setup
 ```
 
 Use it to create the first admin:
@@ -245,7 +249,7 @@ curl -k -X POST https://localhost/api/auth/bootstrap \
   -d '{"token":"<TOKEN>","username":"admin","password":"<your-password>"}'
 ```
 
-The response directly contains `access_token` + `refresh_token` — no additional login required. The token file is automatically deleted after the bootstrap.
+The response directly contains `access_token` + `refresh_token` — no additional login required. Both token files are deleted after the bootstrap.
 
 > **Why `init-secrets.sh`?** The server and monitoring containers share a `MONITOR_API_KEY` as an internal shared secret. If the value in `.env` is empty, the monitoring container does not start and the server logs `MONITOR_API_KEY is empty`. The init script fixes that. It also fills the four role passwords `SERVER_DB_PASSWORD`, `SCHEDULER_DB_PASSWORD`, `MONITOR_DB_PASSWORD` and `CA_DB_PASSWORD`; without them no service starts.
 

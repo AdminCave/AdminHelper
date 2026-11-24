@@ -883,7 +883,7 @@ die gleich in beiden Diensten steht.
 
 Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface; die API-Docs unter `/api/docs` (Swagger UI) bzw. `/openapi.json` liefert er nur mit `SERVER_ENABLE_DOCS=1` aus.
 
-**Erstanmeldung:** Es gibt keinen Default-Login mehr. Im Log nach `Setup-Token` suchen, dann mit dem Token einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
+**Erstanmeldung:** Es gibt keinen Default-Login mehr. Den Token aus `.bootstrap_setup` im `DATA_DIR` lesen (das Log nennt nur den Pfad), dann mit ihm einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
 
 Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden (siehe `.env.example`); uvicorn liest sie nur mit `--env-file ../../.env`, der Server selbst liest keine `.env`.
 
@@ -924,8 +924,8 @@ Das startet:
 - **redis** (`redis:8-alpine`, Redis 8 unter AGPLv3, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern
 
 **Erstanmeldung:** Es gibt keinen Default-Login. Entweder den
-Bootstrap-Token-Flow nutzen (`docker compose logs server | grep -A2
-'Setup-Token'`, dann `POST /api/auth/bootstrap` — siehe README) oder fuer
+Bootstrap-Token-Flow nutzen (`docker compose exec server cat
+/app/data/.bootstrap_setup`, dann `POST /api/auth/bootstrap` — siehe README) oder fuer
 lokale Entwicklung `ADMIN_PASSWORD=dev` in der `.env`/Override setzen, dann
 existiert direkt ein Admin `admin`/`dev`.
 
