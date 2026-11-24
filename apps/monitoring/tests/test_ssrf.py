@@ -16,8 +16,8 @@ import types
 
 import pytest
 
-import app.core.ssrf as ssrf_mod
-from app.core.ssrf import is_private_url
+import ah_common.ssrf as ssrf_mod
+from ah_common.ssrf import is_private_url
 
 # One public A record, so a stubbed resolution that succeeds is distinguishable from a
 # fail-closed one: the guard answers False only on a real, public result.

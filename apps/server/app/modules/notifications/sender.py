@@ -23,8 +23,8 @@ from email.utils import formataddr
 
 import httpx
 
+from ah_common.ssrf import UrlVerdict, check_target, pinned_client
 from app.core.config import SMTP_CA_FILE
-from app.core.ssrf import UrlVerdict, check_target, pinned_client
 from app.core.time import iso_utc
 from app.modules.notifications import mail_template
 from app.modules.notifications.channel_config import current

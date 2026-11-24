@@ -28,8 +28,10 @@ nach `/app/ah_common/`; `-e ../pycommon` in beiden `requirements-dev.txt` (an `r
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T2 — ssrf in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/ssrf.py, apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf_parity.py, scripts/dev/review-risk.txt
+### T2 — ssrf in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/ssrf.py, apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf_parity.py, scripts/dev/review-risk.txt, apps/monitoring/alembic/env.py, apps/monitoring/app/alerter.py, apps/monitoring/app/checkers/http.py, apps/monitoring/tests/test_alembic_logging.py, apps/monitoring/tests/test_alert_bundle.py, apps/monitoring/tests/test_alerter.py, apps/monitoring/tests/test_alerter_dispatch.py, apps/monitoring/tests/test_checker_messages.py, apps/monitoring/tests/test_http_checker.py, apps/monitoring/tests/test_ssrf.py, apps/monitoring/tests/test_ssrf_proxy_route.py, apps/server/app/modules/hooks/script_worker.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/sender.py, apps/server/tests/shard_weights.toml, apps/server/tests/test_alembic_logging.py, apps/server/tests/test_ci_changes.py, apps/server/tests/test_hooks_http_ssrf.py, apps/server/tests/test_notification_channels.py, apps/server/tests/test_ssrf.py, apps/server/tests/test_ssrf_pin.py, apps/server/tests/test_ssrf_properties.py, apps/server/app/modules/hooks/script_runner.py, apps/server/tests/conftest.py, apps/monitoring/tests/conftest.py, docs/developer/cicd.html, docs/en/developer/cicd.html, apps/server/app/core/config.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @dea6663ce 2026-11-24T01:23:50+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T2.verdict.json)
 Änderung: Eine Implementierung in `ah_common/ssrf.py`; die Dienst-Module werden Fassaden oder entfallen, Tests patchen
 das `ah_common`-Modul. Der Paritätstest entfällt, weil es nur noch eine Implementierung gibt; `review-risk.txt`
 nennt `apps/pycommon/ah_common/ssrf.py`.
@@ -112,3 +114,8 @@ Task-Review: am Ende
 - T1: Das Monitoring-Image nimmt seinen Kontext über `apps/monitoring/Dockerfile.dockerignore` (Allowlist wie frps),
   nicht über die Root-`.dockerignore`; die bleibt unverändert.
 - T1: `pagination` hatte nur neun Importeure: die Dienst-Module entfallen, die Imports zeigen direkt auf `ah_common`.
+- T2: Keine Fassaden für `ssrf`: Tests patchen Modul-Globals (`_resolve`, `socket.getaddrinfo`, `_DNS_*`), über eine
+  Fassade griffe das still ins Leere. Beide Dienste und alle Tests importieren `ah_common.ssrf` direkt.
+- T2: Der Hook-Worker (`script_runner.py`) bekommt neben `server/` das Verzeichnis, aus dem der Server `ah_common`
+  geladen hat, in `PYTHONPATH` (im Image dasselbe `/app`); die Conftests geben `apps/pycommon` über `PYTHONPATH` an
+  die Python-Subprozesse der Tests weiter.

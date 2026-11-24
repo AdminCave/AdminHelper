@@ -29,8 +29,7 @@ apps/desktop/src-tauri/src/auth.rs
 apps/desktop/src-tauri/src/keyring_store.rs
 
 # SSRF guards and what sends requests on a user's behalf
-apps/server/app/core/ssrf.py
-apps/monitoring/app/core/ssrf.py
+apps/pycommon/ah_common/ssrf.py
 apps/server/app/modules/notifications/*
 apps/server/app/modules/monitoring_proxy/*
 apps/monitoring/app/alerter.py

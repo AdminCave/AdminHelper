@@ -57,6 +57,7 @@ import threading
 import time
 from pathlib import Path
 
+import ah_common
 from app.core import config
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,9 @@ def run_hook_script(
     # PYTHONNOUSERSITE does for every Python process a script starts what -s does for the worker
     # (see the Popen call).
     server_dir = str(Path(__file__).parents[3])  # server/
+    # The worker imports ah_common too. In the image it lies in server/ (/app/ah_common); from the
+    # source tree it is apps/pycommon, so the worker gets the directory this process took it from.
+    common_dir = str(Path(ah_common.__file__).parents[1])
     try:
         home = os.environ.get("HOME") or _fallback_home()
     except OSError as exc:
@@ -151,7 +155,7 @@ def run_hook_script(
         "PATH": os.environ.get("PATH", ""),
         "HOME": home,
         "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "PYTHONPATH": server_dir,
+        "PYTHONPATH": os.pathsep.join(dict.fromkeys([server_dir, common_dir])),
         "PYTHONNOUSERSITE": "1",
         "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
         "DATA_DIR": os.environ.get("DATA_DIR", ""),

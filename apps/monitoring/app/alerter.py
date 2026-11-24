@@ -29,6 +29,7 @@ import httpx
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from ah_common.ssrf import UrlVerdict, check_target, pinned_client
 from app import mail_template, notify_config
 from app.core.bounds import storable
 from app.core.config import (
@@ -41,7 +42,6 @@ from app.core.config import (
     SMTP_PORT,
     SMTP_USER,
 )
-from app.core.ssrf import UrlVerdict, check_target, pinned_client
 from app.core.time import utcnow_naive
 from app.maintenance import is_in_maintenance
 from app.models import (

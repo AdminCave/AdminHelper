@@ -384,7 +384,7 @@ def _warn_own_addresses(networks) -> None:
 
 # Private networks ntfy and webhook targets may be in (R-1080), e.g.
 # 192.168.1.0/24,100.64.0.0/10. Empty = none. Loopback, link-local and the cloud
-# metadata addresses stay blocked whatever this holds (app/core/ssrf.py).
+# metadata addresses stay blocked whatever this holds (ah_common/ssrf.py).
 NOTIFY_PRIVATE_TARGETS = _private_targets(os.environ.get("NOTIFY_PRIVATE_TARGETS", ""))
 _warn_own_addresses(NOTIFY_PRIVATE_TARGETS)
 # Bell-feed retention in days. A daily system job prunes notification rows older

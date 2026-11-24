@@ -6,7 +6,7 @@
 
 `logging.config.fileConfig` defaults to disable_existing_loggers=True, which sets
 `.disabled = True` on every logger that already exists and is not named in alembic.ini —
-`adminhelper.*` and `app.core.ssrf` included. Nothing fails loudly when that happens: a log
+`adminhelper.*` and `ah_common.ssrf` included. Nothing fails loudly when that happens: a log
 line simply stops appearing, for the rest of the process.
 
 This copy has passed `disable_existing_loggers=False` since 4060e141 (2026-07-06) and says

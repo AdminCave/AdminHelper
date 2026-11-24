@@ -20,6 +20,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from ah_common.ssrf import Target, UrlVerdict
 from app import alert_bundle, alerter, check_engine, scheduler
 from app.alert_bundle import (
     BACK,
@@ -31,7 +32,6 @@ from app.alert_bundle import (
     send_bundle,
 )
 from app.core import database
-from app.core.ssrf import Target, UrlVerdict
 from app.models import (
     Base,
     MonitorAlertLog,

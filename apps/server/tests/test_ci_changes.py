@@ -555,10 +555,6 @@ _NOT_READ = {
         "apps/agent/*",
     ): "the Go packages of the frps-policy plugin under it (_PLUGIN_SOURCES), which lie in the "
     "server scope",
-    (
-        "apps/server/tests/test_ssrf_parity.py",
-        "apps/monitoring",
-    ): "the label of a diff; the file it reads is apps/monitoring/app/core/ssrf.py",
 }
 
 

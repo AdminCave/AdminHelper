@@ -10,7 +10,7 @@ agree (DNS rebinding). check_target hands the checked addresses back, and
 pinned_client connects to one of them while URL, Host header and TLS name stay the
 hostname. Tested below the pin: at socket.create_connection, at the inner
 httpx.HTTPTransport, and with a real TLS handshake against a local server. The
-monitoring copy is the same code (test_ssrf_parity.py), so it is covered here too.
+monitoring imports the same module (ah_common.ssrf), so it is covered here too.
 """
 
 import datetime
@@ -28,8 +28,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-import app.core.ssrf as ssrf_mod
-from app.core.ssrf import Target, UrlVerdict, check_target, pinned_client
+import ah_common.ssrf as ssrf_mod
+from ah_common.ssrf import Target, UrlVerdict, check_target, pinned_client
 
 # Public on purpose: the guard really checks these, and RFC 5737 / 2001:db8:: count
 # as private to it (ipaddress: is_private).

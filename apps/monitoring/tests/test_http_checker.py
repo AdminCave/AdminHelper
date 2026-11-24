@@ -25,9 +25,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+import ah_common.ssrf as ssrf_mod
+from ah_common.ssrf import Target, UrlVerdict
 from app.checkers import http as http_mod
-from app.core import ssrf as ssrf_mod
-from app.core.ssrf import Target, UrlVerdict
 
 from ._helpers import no_env_proxy
 

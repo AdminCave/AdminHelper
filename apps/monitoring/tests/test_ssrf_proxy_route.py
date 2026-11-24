@@ -16,8 +16,8 @@ import ssl
 import httpx
 import pytest
 
-import app.core.ssrf as ssrf_mod
-from app.core.ssrf import check_target, pinned_client
+import ah_common.ssrf as ssrf_mod
+from ah_common.ssrf import check_target, pinned_client
 
 _V4 = "93.184.216.34"
 _PROXY = "http://192.0.2.10:3128"

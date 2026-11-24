@@ -25,8 +25,11 @@ os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
 # =True explicitly (see test_mtls_scope).
 os.environ.setdefault("MTLS_ENFORCE", "false")
 # The images copy apps/pycommon/ah_common next to app/ (/app/ah_common); the tests
-# take it from the tree.
+# take it from the tree, and so do the Python subprocesses they start.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pycommon"))
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    p for p in (sys.path[0], os.environ.get("PYTHONPATH", "")) if p
+)
 
 import hypothesis
 import pytest

@@ -2,11 +2,15 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Shared SSRF guard for outbound HTTP targets (HTTP checker + alert webhooks).
+"""SSRF guard for outbound HTTP targets of both services.
 
-A user-supplied URL (check target or webhook URL) is resolved and rejected if
-it points at a private/reserved/link-local address, so it cannot be abused to
-probe the internal network from the monitoring service.
+A user-supplied URL is resolved and rejected if it points at a private, reserved or
+link-local address. Callers: in the server the hook scripts' http_get/http_post (a hook
+can be triggered via the *unauthenticated* public webhook with the target URL taken
+straight from the payload, see docs/examples/webhook_http_import.py) and the
+notification channels; in the monitoring the HTTP checker and the alert webhooks. So
+nobody can make a service fetch internal targets (cloud metadata 169.254.169.254,
+internal admin APIs) and reflect the response back.
 """
 
 from __future__ import annotations
@@ -28,8 +32,7 @@ import httpx
 # apps/server/tests/test_ssrf_pin.py reports a change after an httpx upgrade.
 from httpx._utils import get_environment_proxies
 
-# getLogger(__name__) gives "app.core.ssrf", not this service's "monitor.*" — the parity
-# test requires both copies to be one implementation, and a hard-coded name cannot be.
+# "ah_common.ssrf" in both services; their root handler formats it.
 logger = logging.getLogger(__name__)
 
 # Extra reserved ranges as an explicit backstop to the category checks below
@@ -52,13 +55,15 @@ _PRIVATE_NETWORKS = [ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network
 IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 # socket.getaddrinfo has no timeout and uses the resolver defaults (up to ~30 s for a hung
-# nameserver). is_private_url runs on the scheduler worker thread (before httpx's own timeout) and
-# in the webhook path, so a slow DNS server for a check target blocks the worker far longer than
-# the configured check timeout suggests. Cap it with a hard deadline, one dedicated daemon thread
-# per call: the shared four-worker pool this replaced let four hung lookups starve every other
-# caller into its own timeout, and fail-closed turned that into "every check target counts as
-# private" (R-0042). Same mechanism as the server guard, which this file is required to mirror
-# (4.111, harness 8a T5).
+# nameserver). In the server the hook script worker calls this before its own HTTP timeout
+# applies, and the webhook that triggers it is unauthenticated, so an attacker-chosen host
+# pointed at a dead nameserver parks the resolution for half a minute; in the monitoring it runs
+# on the scheduler worker thread, so a slow DNS server for a check target blocks the worker far
+# longer than the check timeout suggests. Cap it with a hard deadline, one dedicated daemon
+# thread per call: the shared four-worker pool this replaced let four hung lookups starve every
+# other caller into its own timeout, and fail-closed turned that into "every check target counts
+# as private" (R-0042, 4.111). The daemon flag matters to the server's hook worker, a short-lived
+# process per call (script_runner.py) that a non-daemon thread stuck in the kernel held open.
 _DNS_TIMEOUT_S = 5
 # The semaphore is sized from the constant once, at import: raising _DNS_MAX_INFLIGHT alone
 # later would only change the number in the warning, not the cap it reports.

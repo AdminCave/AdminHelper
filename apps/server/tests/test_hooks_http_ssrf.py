@@ -13,7 +13,7 @@ import socket
 import httpx
 import pytest
 
-from app.core import ssrf as ssrf_mod
+import ah_common.ssrf as ssrf_mod
 from app.modules.hooks.script_worker import _safe_http_get, _safe_http_post
 
 # Public on purpose where the real guard checks it: RFC 5737 addresses count as private.

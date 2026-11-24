@@ -28,10 +28,10 @@ import httpx
 from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
-from app.core import ssrf
-from app.core.ssrf import is_private_url
+from ah_common import ssrf
+from ah_common.ssrf import is_private_url
 
-# Spelled out, NOT imported from app.core.ssrf: an oracle that takes its answer
+# Spelled out, NOT imported from ah_common.ssrf: an oracle that takes its answer
 # from the code under test agrees with that code by construction, including when
 # the code is wrong. These are what the guard adds on top of the categories the
 # ipaddress module already knows — 0.0.0.0/8 ("this network", which resolves to
