@@ -5,8 +5,10 @@ Heavy: linux-full — apps/ca-issuer (Start-Prüfung LOG_LEVEL); die Stack-Probe
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1747: CA-Issuer nimmt nur die fünf Log-Level  [ ]
+### T1 — R-1747: CA-Issuer nimmt nur die fünf Log-Level  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_logging.py, changelog.d/kern-ca-13.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @9872110ac 2026-11-24T19:47:58+01:00
+Review: am Ende (Branch-Review)
 Beweis: security kern-config-1 T4 2026-11-24 · apps/ca-issuer/app/main.py:38-44 (`logging.getLevelName` lässt registrierte Namen wie TRACE durch) · Dedup-Key: ref:ca-issuer:app/main.py:_log_level-trace
 Semantik: docs/admin/betrieb.html:133 „ein anderer Wert bricht den Start ab“
 Änderung: `_log_level` prüft gegen eine feste Liste (DEBUG, INFO, WARNING, ERROR, CRITICAL). Der Test registriert `TRACE` per `logging.addLevelName` und erwartet `ValueError` (erst rot). Danach entfernt er den Namen wieder.

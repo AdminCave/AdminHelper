@@ -53,6 +53,15 @@ def test_unknown_level_stops_the_start(monkeypatch):
         main.configure_logging()
 
 
+def test_a_registered_extra_level_stops_the_start(monkeypatch):
+    # uvicorn registers TRACE with logging.addLevelName; only the five names count all the same (R-1747).
+    monkeypatch.setitem(logging._nameToLevel, "TRACE", 5)
+    monkeypatch.setitem(logging._levelToName, 5, "TRACE")
+    monkeypatch.setenv("LOG_LEVEL", "trace")
+    with pytest.raises(ValueError, match=r"^LOG_LEVEL='trace' is not one of "):
+        main.configure_logging()
+
+
 def _import_main(**env):
     return subprocess.run(
         [
