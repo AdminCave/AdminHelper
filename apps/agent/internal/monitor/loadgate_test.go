@@ -329,6 +329,7 @@ func TestBuildReportShedsNoThrottleItHasNot(t *testing.T) {
 	}
 }
 
+// Since kern-agent-23 this test runs runCycle (Collect, then Done), not Push; the name stays.
 func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 	stubReportHost(t)
 	stubCPU(t)

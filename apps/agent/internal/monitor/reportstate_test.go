@@ -365,6 +365,7 @@ func runCycle(t *testing.T, pushed bool) ([]byte, error) {
 	return data, nil
 }
 
+// Since kern-agent-23 this test runs runCycle (Collect, then Done), not Push; the name stays.
 func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	stubReportHost(t)
 	s := stubCPU(t)

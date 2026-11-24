@@ -53,7 +53,7 @@ func TestMonitorInitEnablesTheTimerAfterTheSetup(t *testing.T) {
 			t.Errorf("timer enabled %d times, want 1", *calls)
 		}
 		if got.URL != "https://monitor.example/api/monitoring" || got.APIKey != "key" || got.ServerID != "srv-1" {
-			t.Errorf("monitor.Init got %+v, want the flags", got)
+			t.Errorf("push.Init got %+v, want the flags", got)
 		}
 	})
 	t.Run("setup refused", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestMonitorInitEnablesTheTimerAfterTheSetup(t *testing.T) {
 		}, nil)
 
 		if err := runMonitorInit(); !errors.Is(err, refused) {
-			t.Errorf("monitor init = %v, want the error of monitor.Init", err)
+			t.Errorf("monitor init = %v, want the error of push.Init", err)
 		}
 		if *calls != 0 {
 			t.Errorf("timer enabled %d times after a refused setup, want 0", *calls)
@@ -128,7 +128,7 @@ func TestMonitorInitAPIKeyStdinErrors(t *testing.T) {
 			t.Errorf("%s: err %v, want one naming %q", name, err, c.want)
 		}
 		if calls != 0 || stdin.read {
-			t.Errorf("%s: monitor.Init ran %d times, stdin read %v", name, calls, stdin.read)
+			t.Errorf("%s: push.Init ran %d times, stdin read %v", name, calls, stdin.read)
 		}
 		if strings.Contains(out, "zz9") {
 			t.Errorf("%s: the output quotes stdin:\n%s", name, out)

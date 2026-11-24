@@ -361,6 +361,7 @@ func TestRunDueProbesDropsAProbeTheRunEndedUnder(t *testing.T) {
 	}
 }
 
+// Since kern-agent-23 this test runs runCycle (Collect, then Done), not Push; the name stays.
 func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 	stubReportHost(t)
 	s := stubCPU(t)
@@ -462,6 +463,7 @@ const planCredentialProbe = `{"plan_version": 1, "catalog_version": "c1", "scan"
 	"probes": [{"id": "chk-1", "sensor": "fake", "interval_s": 600, "timeout_s": 5, "target": null,
 	"params": {}, "fields": ["status"], "credential": {"ref": "db", "use": "basic"}}]}`
 
+// Since kern-agent-23 this test runs runCycle (Collect, then Done), not Push; the name stays.
 func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *testing.T) {
 	stubReportHost(t)
 	stubCPU(t)
@@ -720,6 +722,7 @@ func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T)
 const planScan = `{"plan_version": 1, "catalog_version": "c1", "scan": true,
 	"discovery": {"markers": [{"id": "nginx", "paths": ["/etc/nginx"], "packages": ["nginx"]}]}, "probes": []}`
 
+// Since kern-agent-23 this test runs runCycle (Collect, then Done), not Push; the name stays.
 func TestPushRunsTheDiscoveryThePlanAsksForOnce(t *testing.T) {
 	stubReportHost(t)
 	stubCPU(t)
