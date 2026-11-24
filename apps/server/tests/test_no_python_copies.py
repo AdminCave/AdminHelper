@@ -11,7 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 
 _APPS = Path(__file__).resolve().parents[2]
-_TREES = ("server/app", "monitoring/app")
+_TREES = (_APPS / "server" / "app", _APPS / "monitoring" / "app")
 
 # Known copies, per pair of modules: the names that may stay doubled until their row is built.
 _KNOWN = {
@@ -50,8 +50,8 @@ def _shape(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
 def _copies() -> dict[tuple[str, ...], set[str]]:
     seen: dict[tuple[str, str], set[str]] = defaultdict(set)
     for tree in _TREES:
-        files = sorted((_APPS / tree).rglob("*.py"))
-        assert files, f"no Python files under apps/{tree}"
+        files = sorted(tree.rglob("*.py"))
+        assert files, f"no Python files under {tree.relative_to(_APPS)}"
         for path in files:
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

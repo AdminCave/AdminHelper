@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pycommon-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-pycommon-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-pycommon-1 · Review: pro Task
 Spec: docs/features/kern-pycommon-1.md (Roadmap R-0698)
 Heavy: linux-full — Build-Kontext und Dockerfiles von server und monitoring, `docker-compose.test.yml`; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -124,10 +124,12 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T12 — Wächter-Meldung ohne Pfad-Muster  [ ]
+### T12 — Wächter-Meldung ohne Pfad-Muster  [x]
 Komponente: server · Dateien: apps/server/tests/test_no_python_copies.py
-Änderung: Die Assert-Meldung `apps/{tree}` las `test_ci_changes.py` als `apps/*` (PR #647, Server-Shard 2/2 rot:
-`apps/agent/.gitignore is not in the scope server`); die Meldung nennt den Baum ohne `apps/`-Präfix.
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d8874bfe6 2026-11-24T10:25:19+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T12.verdict.json)
+Änderung: `_APPS / tree` mit `tree` aus einer Schleife las `test_ci_changes.py` als `apps/*` (PR #647, Server-Shard
+2/2 rot: `apps/agent/.gitignore is not in the scope server`); `_TREES` nennt beide Bäume als feste Pfade.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_changes.py tests/test_no_python_copies.py
 Doku: keine (nur Testtext)
 
