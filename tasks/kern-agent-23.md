@@ -1,5 +1,5 @@
 # kern-agent-23 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-23 · Review: pro Task
+Status: erledigt · Branch: feature/kern-agent-23 · Review: pro Task
 Spec: docs/features/kern-agent-23.md (Roadmap R-1701, R-1728)
 Heavy: linux-full — apps/agent (Platten-Sammler FreeBSD, Paketaufteilung monitor/send/push mit Provisioning-Aufrufer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
