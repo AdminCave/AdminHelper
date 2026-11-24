@@ -1544,7 +1544,7 @@ def _dashboard_toml(box: Box, dashboard: Dashboard) -> str:
     )
 
 
-def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
+def _with_dashboard(box: Box, dashboard: Dashboard, timeout: float = 3 * WAIT, **env: str):
     """A supervisor that polls every second, frps running with webServer on the dashboard;
     returns once the four proxy lists are there."""
     box.write_input(_dashboard_toml(box, dashboard))
@@ -1552,7 +1552,7 @@ def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
     box.run(frps=True)
     try:
         box.wait_until(
-            lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists", 3 * WAIT
+            lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists", timeout
         )
     except AssertionError as err:
         # The supervisor log alone does not say whether a poll ever reached the dashboard (R-1293):
@@ -1613,7 +1613,7 @@ def test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait(box,
     dashboard.hang = True
 
     with pytest.raises(AssertionError) as caught:
-        _with_dashboard(box, dashboard, FRPS_READ_SECONDS="1")
+        _with_dashboard(box, dashboard, timeout=6, FRPS_READ_SECONDS="1")
 
     message = str(caught.value)
     assert "not the proxy lists within" in message

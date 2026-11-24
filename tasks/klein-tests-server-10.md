@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@4c8173e06`.
 
-### T1 — Server-Test: kurzer Timeout für den Dashboard-Hänger (R-1718)  [ ]
+### T1 — Server-Test: kurzer Timeout für den Dashboard-Hänger (R-1718)  [x]
 Komponente: server · Dateien: apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @41999f9b3 2026-11-24T16:10:56+01:00
+Review: am Ende (Branch-Review)
 Beweis: ci.yml Lauf 44997618373, Server (pytest, py3.14, shard 1/2): 90.50s call, test_frps_supervisor.py:1612
 Dedup-Key: ref:server:tests/test_frps_supervisor.py:ninety-second-helper-timeout-test
 Änderung: `_with_dashboard` nimmt `timeout: float = 3 * WAIT` und reicht ihn an `wait_until` weiter; der Hänger-Test ruft ihn mit 6 s. Dauer vorher/nachher (`--durations`) in den Commit-Body.
