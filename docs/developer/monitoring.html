@@ -108,7 +108,7 @@
 
           <p>Pagination, SSRF-Schutz, Zeit-Helfer, Logging, Engine-Fabrik, Request-Schranken, 422-Handler, der Vergleich des internen Schl&uuml;ssels und der SMTP-Versand kommen aus <code>apps/pycommon/ah_common</code>, demselben Code wie im Server; die <code>core</code>-Module des Dienstes binden ihn mit den eigenen Werten ein (Architektur: <a href="./index.html">&Uuml;berblick</a>). Der Pool der Datenbank folgt wie beim Server <code>DB_POOL_SIZE</code>/<code>DB_MAX_OVERFLOW</code> (Vorgabe 10/20). Jede Logzeile tr&auml;gt die PID (<code>Zeit Stufe [PID] Logger Meldung</code>).</p>
 
-          <p>Ein Query-Parameter, den das Schema als Einzelwert beschreibt, ergibt bei mehrfacher Angabe (<code>?offset=1&amp;offset=2</code>) ein <code>422</code> mit <code>loc</code> <code>["query", &lt;name&gt;]</code> und den Werten als Liste in <code>input</code> (R-1131). Das macht die App-weite Abh&auml;ngigkeit <code>reject_repeated_scalar_query</code> in <code>core/query_params.py</code>; ein Parameter, den das Schema nicht kennt, wird weiter ignoriert.</p>
+          <p>Ein Query-Parameter, den das Schema als Einzelwert beschreibt, ergibt bei mehrfacher Angabe (<code>?offset=1&amp;offset=2</code>) ein <code>422</code> mit <code>loc</code> <code>["query", &lt;name&gt;]</code> und den Werten als Liste in <code>input</code> (R-1131). Das macht die App-weite Abh&auml;ngigkeit <code>reject_repeated_scalar_query</code> aus <code>ah_common/query_params.py</code> (gemeinsam mit dem Server); ein Parameter, den das Schema nicht kennt, wird weiter ignoriert.</p>
 
           <h2>Push-Checks vs. Pull-Checks</h2>
           <p>Es gibt zwei Klassen von Checks &ndash; entscheidend ist, <em>wer</em> die Daten beschafft:</p>

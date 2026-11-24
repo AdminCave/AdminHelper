@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pycommon-2 — Task-Ledger
-Status: aktiv · Branch: feature/kern-pycommon-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-pycommon-2 · Review: pro Task
 Spec: docs/features/kern-pycommon-2.md (Roadmap R-1740)
 Heavy: linux-full — Laufzeit-Imports von Server und Monitoring ändern sich (Images mit ah_common); kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -36,8 +36,10 @@ Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T3
 Test-Löschung: apps/monitoring/tests/test_mail_template_parity.py::* — ersetzt durch die eine Implementierung in ah_common; Fixture-Fälle und format_time prüft apps/server/tests/test_notify_mail_template.py; apps/monitoring/tests/fixtures/mail_template_parity.json::* — Fixture des geloeschten Paritaetstests; dieselben Faelle liegen in apps/server/tests/fixtures/mail_template_parity.json
 
-### T3 — Doku: gemeinsamer Code, Changelog (R-1740)  [ ]
+### T3 — Doku: gemeinsamer Code, Changelog (R-1740)  [x]
 Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-pycommon-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @725d0efb4 2026-11-24T22:23:49+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Liste des gemeinsamen Codes nennt NUL-Prüfung, Query-Prüfung und Mail-Renderer; `server.html` verliert
 den Satz über zwei Renderer-Kopien (DE+EN). Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
