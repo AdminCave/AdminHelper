@@ -12,14 +12,15 @@ RUN apt-get update \
 
 # Hashed lockfile: requirements.in (intent) -> requirements.txt (pinned + hashed
 # via pip-compile --generate-hashes). --require-hashes enforces artifact integrity.
-COPY requirements.txt .
+COPY apps/monitoring/requirements.txt .
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
  && pip uninstall -y pip
 
-COPY app/ ./app/
-COPY alembic.ini ./alembic.ini
-COPY alembic/ ./alembic/
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY apps/monitoring/app/ ./app/
+COPY apps/pycommon/ah_common/ ./ah_common/
+COPY apps/monitoring/alembic.ini ./alembic.ini
+COPY apps/monitoring/alembic/ ./alembic/
+COPY apps/monitoring/docker-entrypoint.sh /docker-entrypoint.sh
 
 ENV DATA_DIR=/app/data
 

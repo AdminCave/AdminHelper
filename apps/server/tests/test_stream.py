@@ -301,19 +301,28 @@ def _stream_route():
     return next(r for r in _collect_api_routes(app) if r.path == "/api/notifications/stream")
 
 
+def _get_db_name() -> str:
+    # Taken from the object, the way the walk names it: get_db comes from a factory in
+    # ah_common, so its module:qualname is not the module it is imported from.
+    from app.core.database import get_db
+    from tests.test_route_auth_gate import _qualname
+
+    return _qualname(get_db)
+
+
 def test_the_include_walk_sees_a_router_scope_guard():
     # Positive control: the feed router is included with the access scope guard, whose
     # get_db the walk must find; else a changed FastAPI would leave the next test blind.
     from tests.test_route_auth_gate import _include_dependency_qualnames
 
-    assert "app.core.database:get_db" in _include_dependency_qualnames("/api/notifications")
+    assert _get_db_name() in _include_dependency_qualnames("/api/notifications")
 
 
 def test_the_stream_route_depends_on_no_get_db():
     from tests.test_route_auth_gate import _dependency_qualnames
 
     names = _dependency_qualnames(_stream_route())
-    assert "app.core.database:get_db" not in names, sorted(names)
+    assert _get_db_name() not in names, sorted(names)
 
 
 @pytest.fixture

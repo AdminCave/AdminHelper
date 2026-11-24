@@ -863,8 +863,14 @@ als der Audit prueft. Ebenso muss der Default von `GO_VERSION` in
 ```bash
 cd apps/server
 source .venv/bin/activate
-DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
+PYTHONPATH=../pycommon DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```
+
+`PYTHONPATH=../pycommon` macht das gemeinsame Paket `ah_common` (`apps/pycommon/`) importierbar; ohne bricht der Start mit
+`ModuleNotFoundError: No module named 'ah_common'` ab. Es ist kein installiertes Paket: Die Images kopieren es nach
+`/app/ah_common/`, die `tests/conftest.py` von Server und Monitoring nehmen `apps/pycommon` selbst in `sys.path` auf.
+Was beide Dienste gleich brauchen, gehoert dorthin; `apps/server/tests/test_no_python_copies.py` meldet eine Funktion,
+die gleich in beiden Diensten steht.
 
 Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface und API-Docs unter `/api/docs` (Swagger UI) bzw. `/openapi.json`.
 
@@ -1064,6 +1070,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 
+PYTHONPATH=../pycommon \
 DATA_DIR="${TMPDIR:-/tmp}/adminhelper-monitor" \
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
@@ -1648,7 +1655,7 @@ cargo tauri dev
 
 ```bash
 cd apps/server && source .venv/bin/activate
-DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
+PYTHONPATH=../pycommon DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # In einem anderen Terminal:
 curl http://127.0.0.1:8080/api/docs
@@ -1694,6 +1701,7 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
 │  │  └─ Dockerfile
+│  ├─ pycommon/ah_common/    # gemeinsamer Python-Code von Server und Monitoring (ins Image kopiert, kein pip-Paket)
 │  ├─ ca-issuer/             # Python/FastAPI PKI-Enrollment-Plane (eigenes mTLS, eigene pytest-Suite)
 │  ├─ gateway/               # nginx Reverse-Proxy: TLS-/Header-/mTLS-Terminierung, Ratelimit
 │  ├─ agent/                 # Unified Go Agent (Linux + Windows)

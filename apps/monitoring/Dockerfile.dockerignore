@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The build context of the monitoring image is the repository root (for apps/pycommon);
+# Docker reads this file instead of the root .dockerignore. The leading * leaves nothing in,
+# each ! takes in what the Dockerfile copies.
+*
+!apps/monitoring/requirements.txt
+!apps/monitoring/app/
+!apps/monitoring/alembic.ini
+!apps/monitoring/alembic/
+!apps/monitoring/docker-entrypoint.sh
+!apps/pycommon/ah_common/
+**/__pycache__/
+**/*.pyc

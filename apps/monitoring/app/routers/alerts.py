@@ -13,10 +13,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from ah_common.pagination import paginate
 from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
-from app.core.pagination import paginate
 from app.models import MonitorAlertLog, MonitorAlertRule, keep_smtp_password
 from app.schemas import (
     VALID_CHANNELS,

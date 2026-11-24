@@ -12,6 +12,7 @@ output (T7).
 """
 
 import json
+import smtplib
 from datetime import datetime, timezone
 from email import message_from_bytes
 from pathlib import Path
@@ -91,7 +92,7 @@ def smtp(monkeypatch):
     server.send_message.side_effect = lambda msg: sent.append(message_from_bytes(msg.as_bytes()))
     plain = MagicMock()
     plain.return_value.__enter__.return_value = server
-    monkeypatch.setattr(sender_mod.smtplib, "SMTP", plain)
+    monkeypatch.setattr(smtplib, "SMTP", plain)
     return sent
 
 

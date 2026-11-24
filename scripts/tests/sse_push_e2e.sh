@@ -75,6 +75,9 @@ for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -h 127.0.0.1 -U ad
 [ "$pg_ok" = 1 ] || { echo "FAIL: postgres never became ready within 30s" >&2; exit 1; }
 
 cd "$SERVER"
+# From the source tree, not the image: the image copies apps/pycommon/ah_common next to app/,
+# here it has to be on the path for alembic and both instances.
+export PYTHONPATH="$ROOT/apps/pycommon${PYTHONPATH:+:$PYTHONPATH}"
 echo "[stack] alembic upgrade head"
 "$PY/alembic" upgrade head >/dev/null
 

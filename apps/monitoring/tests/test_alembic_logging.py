@@ -6,7 +6,7 @@
 
 `logging.config.fileConfig` defaults to disable_existing_loggers=True, which sets
 `.disabled = True` on every logger that already exists and is not named in alembic.ini —
-`monitor.*` and `app.core.ssrf` included. Nothing fails loudly when that happens: a log line
+`monitor.*` and `ah_common.ssrf` included. Nothing fails loudly when that happens: a log line
 simply stops appearing, for the rest of the process. It cost a red CI run on the SSRF
 guard's cap warning, while the server copy had carried the fix since 2026-07-06.
 

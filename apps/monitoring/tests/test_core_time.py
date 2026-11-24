@@ -7,7 +7,9 @@ iso_utc (R-0202): the API writes those values as RFC 3339 in UTC with ``Z``."""
 
 from datetime import datetime, timedelta, timezone
 
-from app.core.time import iso_utc, utcnow_naive
+from sqlalchemy.dialects import postgresql, sqlite
+
+from app.core.time import iso_utc, utc_now_sql, utcnow_naive
 
 
 def test_utcnow_naive_is_naive_and_utc():
@@ -44,3 +46,9 @@ def test_iso_utc_handles_year_one():
     # A maintenance window may store year 1 (test_maintenance_router); naive UTC to
     # UTC moves nothing, so nothing overflows.
     assert iso_utc(datetime(1, 1, 1)) == "0001-01-01T00:00:00Z"
+
+
+def test_utc_now_sql_compiles_per_dialect():
+    # The SQL the migrations and server_defaults were written with: UTC wall-clock, naive.
+    assert str(utc_now_sql().compile(dialect=postgresql.dialect())) == "timezone('UTC', now())"
+    assert str(utc_now_sql().compile(dialect=sqlite.dialect())) == "CURRENT_TIMESTAMP"

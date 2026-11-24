@@ -2,12 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""DNS resolution of the server's SSRF guard (harness 8a T5, R-0042).
+"""DNS resolution of the SSRF guard in ah_common (harness 8a T5, R-0042).
 
 The address classification itself is covered by the monitoring suite
-(apps/monitoring/tests/test_ssrf.py) and pinned to this copy by
-test_ssrf_parity.py — repeating the range table here would be the second copy
-this stage exists to prevent. What is specific to this file is the mechanism
+(apps/monitoring/tests/test_ssrf.py), against the same module — repeating the
+range table here would be a second copy. What is specific to this file is the mechanism
 around it: a hung resolver must neither park the caller for the OS default nor,
 since R-0042, park *every other* caller with it.
 """
@@ -21,7 +20,7 @@ import types
 
 import pytest
 
-import app.core.ssrf as ssrf_mod
+import ah_common.ssrf as ssrf_mod
 
 # One public A record, so a stubbed resolution that succeeds is distinguishable
 # from a fail-closed one: the guard answers False only on a real, public result.
@@ -65,8 +64,8 @@ def test_hung_resolutions_do_not_block_a_healthy_one(monkeypatch):
     # R-0042: with the shared four-worker pool this replaced, four hung lookups held every
     # worker, so the fifth caller fell into its own 5 s deadline and fail-closed reported
     # "private" — the guard refusing a healthy target. Service-wide that is the monitoring
-    # copy this file mirrors (one pool behind every check); here it is one hook worker
-    # resolving several hosts. Either way four hung resolutions must cost the fifth nothing.
+    # (one pool behind every check); here it is one hook worker resolving several hosts.
+    # Either way four hung resolutions must cost the fifth nothing.
     release = threading.Event()
     entered = threading.Semaphore(0)
     monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _hanging_resolver(release, entered))

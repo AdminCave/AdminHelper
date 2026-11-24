@@ -9,9 +9,9 @@ the session TZ (the stack runs postgres with TZ=Europe/Berlin), storing local ti
 
 from datetime import timedelta
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
-from app.core.time import utcnow_naive
+from app.core.time import utc_now_sql, utcnow_naive
 from app.modules.api_keys.models import ApiKey
 
 
@@ -29,3 +29,14 @@ def test_server_default_stores_utc_regardless_of_session_timezone(db_session):
     assert key.created_at.tzinfo is None  # stored tz-naive
     drift = abs(key.created_at - utcnow_naive())
     assert drift < timedelta(minutes=5), f"created_at is not UTC-naive (drift {drift})"
+
+
+def test_sql_default_in_a_statement_is_utc_naive(db_session):
+    # Outside DDL (onupdate, the ON CONFLICT SET of revoke_identity) the default is part of
+    # a statement; it must stay UTC-naive there too, whatever the session's zone.
+    db_session.execute(text("SET LOCAL TIME ZONE 'Europe/Berlin'"))
+    now = db_session.execute(select(utc_now_sql())).scalar_one()
+
+    assert now.tzinfo is None
+    drift = abs(now - utcnow_naive())
+    assert drift < timedelta(minutes=5), f"utc_now_sql() is not UTC-naive (drift {drift})"

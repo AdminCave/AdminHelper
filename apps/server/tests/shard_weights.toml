@@ -159,7 +159,6 @@
 "tests/test_shard.py" = { seconds = 20.052, tests = 16 }
 "tests/test_spa_fallback.py" = { seconds = 0.021, tests = 2 }
 "tests/test_ssrf.py" = { seconds = 0.172, tests = 67 }
-"tests/test_ssrf_parity.py" = { seconds = 0.012, tests = 2 }
 "tests/test_ssrf_pin.py" = { seconds = 1.425, tests = 69 }
 "tests/test_ssrf_properties.py" = { seconds = 0.754, tests = 7 }
 "tests/test_stream.py" = { seconds = 0.783, tests = 24 }

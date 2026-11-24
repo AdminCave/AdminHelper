@@ -41,7 +41,7 @@ jobs:
             context: .
             dockerfile: Dockerfile
           - image: monitoring
-            context: apps/monitoring
+            context: .
             dockerfile: apps/monitoring/Dockerfile
           - image: ca-issuer
             context: apps/ca-issuer

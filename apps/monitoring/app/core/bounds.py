@@ -2,36 +2,38 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Bounded scalar types for values that travel into a database column.
-
-Declared here rather than imported: monitoring is its own service with its own
-database and shares no code with the server, and the same file exists there for
-the same reason (apps/server/app/core/bounds.py).
-
-Careful at the call site: a constraint carried in ``Annotated`` is silently
-dropped when the parameter's default is a ``Query()``/``Path()`` instance —
-``offset: Offset = Query(0)`` generates no ``maximum`` at all. Put the marker
-into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
-0``) or leave the default a plain value.
+"""Bounded scalar types for values that travel into a database column, and the base of
+every request body schema. The shared part is ah_common.bounds (the column widths, the
+NUL/surrogate/depth refusal, storable/readable); the domains below are monitoring's own.
 """
 
-import re
-from typing import Annotated, Any
+from typing import Annotated
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
-from pydantic_core import InitErrorDetails
+from pydantic import Field
 
-# Rows a list endpoint skips. Not a column width — SQL OFFSET takes a bigint,
-# and unbounded the value reached it and raised (OverflowError on SQLite,
-# NumericValueOutOfRange on Postgres) before a response existed. Capped at
-# INTEGER per the design gate: past the last row every offset returns the same
-# empty page, so a wider one buys nothing.
-Offset = Annotated[int, Field(ge=0, le=2147483647)]
+from ah_common.bounds import (
+    MAX_DEPTH,
+    IntColumn,
+    Offset,
+    RequestModel,
+    find_unstorable,
+    readable,
+    storable,
+)
 
-# A value stored in a plain Column(Integer) that is not a key — the signed INTEGER
-# range, as in the server's bounds.py (R-0052). Without it the published schema had
-# no upper bound, and a value past the column failed only in the database driver.
-IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
+__all__ = [
+    "CREDENTIAL_REF_MAX",
+    "CREDENTIAL_REF_PATTERN",
+    "MAX_DEPTH",
+    "IntColumn",
+    "Offset",
+    "RequestModel",
+    "Weekday",
+    "WindowMinutes",
+    "find_unstorable",
+    "readable",
+    "storable",
+]
 
 # A day of the week, 0 = Monday — the domain of a weekly maintenance window.
 Weekday = Annotated[int, Field(ge=0, le=6)]
@@ -39,130 +41,6 @@ Weekday = Annotated[int, Field(ge=0, le=6)]
 # The length of a weekly maintenance window, at most a day: the evaluator's
 # day_offset loop relies on that cap (schemas.MaintenanceInput._kind_fields).
 WindowMinutes = Annotated[int, Field(ge=1, le=1440)]
-
-
-_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
-
-
-# What the state write cannot take: Postgres keeps no NUL in a text column, and the driver
-# cannot encode a lone surrogate (U+D800 to U+DFFF) — nor can a response that later carries
-# the stored text. The agent report refuses both at its boundary (find_unstorable); a text
-# with no sender to refuse — a scheduler checker's, a channel's reason — is replaced.
-_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
-
-
-def _replaced(value: Any, pattern: re.Pattern[str]) -> Any:
-    """`value` with every `pattern` match in its strings, dict keys included, as U+FFFD.
-
-    Recursive like the json.dumps that writes the value: a checker builds it, so the
-    depth is the checker's."""
-    if isinstance(value, str):
-        return pattern.sub("\ufffd", value)
-    if isinstance(value, dict):
-        return {
-            (_replaced(key, pattern) if isinstance(key, str) else key): _replaced(item, pattern)
-            for key, item in value.items()
-        }
-    if isinstance(value, list | tuple):
-        return [_replaced(item, pattern) for item in value]
-    return value
-
-
-def storable(value: Any) -> Any:
-    """`value` with every NUL and lone surrogate replaced, so a text column takes it."""
-    return _replaced(value, _UNSTORABLE)
-
-
-def readable(value: Any) -> Any:
-    """`value` read from a stored JSON column with every lone surrogate replaced, so a
-    response can encode it; an older row may hold one as an escape (\\ud800)."""
-    return _replaced(value, _LONE_SURROGATE)
-
-
-def _unstorable(text: str) -> str | None:
-    """Why `text` can be neither stored nor answered, if it cannot."""
-    if "\x00" in text:
-        return "must not contain a NUL byte"
-    if _LONE_SURROGATE.search(text):
-        return "must not contain a lone surrogate (U+D800 to U+DFFF)"
-    return None
-
-
-# How deep a request body may nest, counted from the body: a dict or list whose
-# location has more segments is refused. Far beyond any body the clients send (the
-# agent report stays under ten), far below what the encoders of a stored value and
-# of a response carry.
-MAX_DEPTH = 32
-_TOO_DEEP = f"must not nest deeper than {MAX_DEPTH} levels"
-
-
-def find_unstorable(data: dict) -> tuple[tuple, str | None, str] | None:
-    """Location, value and reason of a string in `data` that _unstorable refuses,
-    or of a dict or list nested deeper than MAX_DEPTH, if any. For the latter the
-    value is None: a refusal echoes its input, and the input is the deep subtree.
-
-    Walks with an explicit stack rather than recursion: the body is whatever the
-    client nested, and a RecursionError here would be the 500 this exists to
-    prevent."""
-    stack: list[tuple[tuple, Any]] = [((), data)]
-    while stack:
-        loc, value = stack.pop()
-        if isinstance(value, dict | list) and len(loc) > MAX_DEPTH:
-            return loc, None, _TOO_DEEP
-        if isinstance(value, str):
-            if reason := _unstorable(value):
-                return loc, value, reason
-        elif isinstance(value, dict):
-            for key, item in value.items():
-                if isinstance(key, str) and (reason := _unstorable(key)):
-                    return (*loc, key), key, reason
-                stack.append(((*loc, key), item))
-        elif isinstance(value, list):
-            stack.extend(((*loc, i), item) for i, item in enumerate(value))
-    return None
-
-
-def _refuse_unstorable(data: Any, title: str) -> Any:
-    # Anything that is not a dict passes through untouched and meets its own
-    # type check. The rejection is a ValidationError carrying the string's own
-    # location, which pydantic merges into the field path — a ValueError here
-    # would only say ["body"].
-    if not isinstance(data, dict):
-        return data
-    found = find_unstorable(data)
-    if found is None:
-        return data
-    loc, value, reason = found
-    raise ValidationError.from_exception_data(
-        title,
-        [
-            InitErrorDetails(
-                type="value_error",
-                loc=loc,
-                input=value,
-                ctx={"error": ValueError(reason)},
-            )
-        ],
-    )
-
-
-class RequestModel(BaseModel):
-    """Base of every schema that describes a request body: no string anywhere in
-    it may carry a NUL byte or a lone surrogate, and nothing in it may nest deeper
-    than MAX_DEPTH. A copy of the server's class of
-    the same name, like the rest of this file (see the module docstring).
-
-    Postgres stores no 0x00 in a text value: psycopg raises DataError while
-    binding it, before the query runs. A lone surrogate (U+D800 to U+DFFF; JSON
-    spells one only as an escape, \\ud800) has no UTF-8 form: the driver cannot
-    bind it to a text column either. Where a route stores a value as json.dumps
-    text (a check's config), the escape went into the row, and every later
-    response carrying that row was a 500."""
-
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_unstorable_anywhere(cls, data: Any) -> Any:
-        return _refuse_unstorable(data, cls.__name__)
 
 
 # <module id>/<instance key>/<slot>: the key of a secret in the host's credential file,

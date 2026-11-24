@@ -46,7 +46,7 @@ CATEGORY_MAX = 64
 def _check_target_url(v: Optional[str]) -> Optional[str]:
     """The form of an ntfy or webhook URL: http(s) with a host, no credentials in the
     userinfo (ntfy takes its token as ?auth=). Where it points is checked on every send
-    (app.core.ssrf), not here: DNS may change in between."""
+    (ah_common.ssrf), not here: DNS may change in between."""
     if v is None or v == "":
         return None
     if len(v) > URL_MAX:

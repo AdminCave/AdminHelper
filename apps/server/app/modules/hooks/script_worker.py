@@ -26,7 +26,7 @@ import httpx
 import psycopg
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.ssrf import UrlVerdict, check_target, pinned_client
+from ah_common.ssrf import UrlVerdict, check_target, pinned_client
 
 # Cap the reflected body so a large internal response can't flood the worker's
 # memory (the hook may echo it back through the result dict).

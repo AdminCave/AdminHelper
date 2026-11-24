@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import httpx
 
-from app.core.ssrf import Target, UrlVerdict, check_target, pinned_client
+from ah_common.ssrf import Target, UrlVerdict, check_target, pinned_client
 
 # Redirects are followed manually (see _fetch) so every hop is re-checked against the
 # SSRF guard; cap the chain length like a browser would.

@@ -38,6 +38,7 @@ NARROW = (
     "apps/frps/**",
     "apps/gateway/**",
     "apps/monitoring/**",
+    "apps/pycommon/**",
     "apps/server/**",
     "apps/web/**",
     "docs/**",
@@ -69,6 +70,8 @@ SCOPES = {
         "!apps/ca-issuer/tests/**",
         "apps/monitoring/**",
         "!apps/monitoring/tests/**",
+        # the code both services import (ah_common)
+        "apps/pycommon/**",
         "apps/web/src/lib/**",
         "apps/desktop/src-tauri/src/tunnel.rs",
         "docs/examples/**",
@@ -79,13 +82,19 @@ SCOPES = {
     ),
     "monitoring": (
         "apps/monitoring/**",
+        "apps/pycommon/**",
         "apps/server/app/modules/notifications/schemas.py",
         "apps/desktop/ui/src/components/monitoring/section/SecServices.svelte",
         "apps/desktop/ui/src/lib/models/monitoring.ts",
         "apps/agent/internal/monitor/hostfacts.go",
     ),
     "ca-issuer": ("apps/ca-issuer/**",),
-    "schemathesis": ("apps/server/**", "apps/monitoring/**", "apps/ca-issuer/**"),
+    "schemathesis": (
+        "apps/server/**",
+        "apps/monitoring/**",
+        "apps/ca-issuer/**",
+        "apps/pycommon/**",
+    ),
     # The image lock jobs run the suites against the hashed lock the image installs; on a pull
     # request only when the lock or the image changes (the server image is the root Dockerfile,
     # outside the narrow areas). Kevin's trade-off: a lock-only failure surfaces on main.

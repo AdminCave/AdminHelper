@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
  && pip uninstall -y pip
 
 COPY apps/server/app/ ./app/
+COPY apps/pycommon/ah_common/ ./ah_common/
 COPY apps/server/alembic.ini ./alembic.ini
 COPY apps/server/alembic/ ./alembic/
 COPY apps/server/docker-entrypoint.sh /docker-entrypoint.sh

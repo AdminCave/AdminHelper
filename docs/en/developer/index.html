@@ -47,6 +47,7 @@
 ├── apps/             All runnable units
 │   ├── server/       FastAPI backend (Python)
 │   ├── monitoring/   Check-execution service (own DB)
+│   ├── pycommon/     ah_common: Python code shared by server and monitoring
 │   ├── ca-issuer/    PKI enrollment plane (FastAPI, own mTLS)
 │   ├── gateway/      nginx reverse proxy (TLS/mTLS/headers, rate limit)
 │   ├── frps/         frps image (FRP server under a supervisor)
@@ -62,7 +63,7 @@
 <pre><code># Server (needs Postgres; DATABASE_URL and first login: see DEVELOPMENT.md)
 cd apps/server &amp;&amp; python3 -m venv .venv &amp;&amp; . .venv/bin/activate
 pip install -r requirements-dev.txt
-DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
+PYTHONPATH=../pycommon DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # Web panel (with a proxy to the running server)
 cd apps/web &amp;&amp; npm ci &amp;&amp; npm run dev
@@ -78,6 +79,8 @@ cargo tauri dev
 
 # Go agent
 cd apps/agent &amp;&amp; go run ./cmd/adminhelper-agent version</code></pre>
+
+          <p><strong>Shared Python code:</strong> what server and monitoring both need (SSRF guard, time helpers, logging, engine factory, request bounds, 422 handler, internal key comparison, SMTP sending, paging) lives once in the package <code>ah_common</code> under <code>apps/pycommon/</code>. It is not an installed package: both images copy it to <code>/app/ah_common/</code> next to <code>/app/app/</code>, the test conftests put <code>apps/pycommon</code> on <code>sys.path</code>, and whoever starts a service by hand sets <code>PYTHONPATH=../pycommon</code>. <code>apps/server/tests/test_no_python_copies.py</code> fails when a function stands identically in both services; such a helper belongs in <code>ah_common</code>.</p>
 
           <h2>Unified PKI &amp; mTLS</h2>
           <p>AdminHelper runs its <strong>own internal PKI</strong> as the foundation for mTLS across all entrances. The full, canonical model (decisions D1–D11, trust, lifecycle, backup) is in <a href="../../adr/0001-unified-pki-and-secure-deployment.md">ADR 0001</a>; the implementation status in <a href="../../adr/0002-phase-a-task-plan.md">ADR 0002</a>. In brief:</p>

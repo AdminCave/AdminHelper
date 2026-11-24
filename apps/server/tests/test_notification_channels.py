@@ -20,10 +20,10 @@ from email.header import decode_header
 import httpx
 import pytest
 
+import ah_common.ssrf as ssrf_mod
 import app.core.config as app_config
-import app.core.ssrf as ssrf_mod
+from ah_common.ssrf import UrlVerdict
 from app.core import secretbox
-from app.core.ssrf import UrlVerdict
 from app.modules.notifications import outbox as outbox_mod
 from app.modules.notifications import sender as sender_mod
 from app.modules.notifications.models import (

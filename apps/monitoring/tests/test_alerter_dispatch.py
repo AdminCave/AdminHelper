@@ -19,8 +19,8 @@ import httpx
 import pytest
 
 import app.alerter as alerter
+from ah_common.ssrf import Target, UrlVerdict
 from app.alerter import _dispatch, _send_email
-from app.core.ssrf import Target, UrlVerdict
 
 from ._helpers import no_env_proxy
 

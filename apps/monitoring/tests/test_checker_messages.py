@@ -23,6 +23,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
 import app.core.database as database_mod
+from ah_common.ssrf import Target, UrlVerdict
 from app.checkers import agent, get_checker
 from app.checkers import forecast as forecast_mod
 from app.checkers import http as http_mod
@@ -32,7 +33,6 @@ from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceP
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.checkers.smart import SmartHealthChecker
 from app.checkers.system import SystemStateChecker
-from app.core.ssrf import Target, UrlVerdict
 from app.core.time import utcnow_naive
 from app.models import Base, MonitorCheck, MonitorState
 
