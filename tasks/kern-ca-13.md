@@ -1,5 +1,5 @@
 # kern-ca-13 — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-13 · Review: am Ende
+Status: aktiv · Branch: feature/kern-ca-13 · Review: am Ende
 Spec: docs/features/kern-ca-13.md (Roadmap R-1747)
 Heavy: linux-full — apps/ca-issuer (Start-Prüfung LOG_LEVEL); die Stack-Probe sse_push_e2e läuft in integration-stack und im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
