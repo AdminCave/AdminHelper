@@ -19,8 +19,10 @@ Komponente: server · Dateien: apps/server/app/modules/monitoring_proxy/router.p
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_proxy_plan.py tests/test_monitoring_proxy_audit.py
 Doku: keine (internes Verhalten)
 
-### T3 — R-1697: Waisen gelöschter Server im Tag-Abgleich abräumen  [ ]
+### T3 — R-1697: Waisen gelöschter Server im Tag-Abgleich abräumen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/tag_sync.py, apps/monitoring/app/server_cleanup.py, apps/monitoring/tests/test_tag_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4ab88ed0c 2026-11-24T15:42:04+01:00
+Review: approve (.ah-out/review/kern-server-14/T3.verdict.json)
 Änderung: Der periodische Tag-Abgleich ruft `cleanup_server` für jede `server_id` auf, die das Monitoring kennt und das Inventar nicht, nur bei erfolgreich geholtem, nicht leerem Inventar. Tests: Waise wird entfernt; leeres und gescheitertes Inventar entfernen nichts.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: → T7
@@ -51,3 +53,4 @@ Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite 
 
 ## Entscheidungen
 - 2026-11-24: R-1694 als Glocken-Notiz, keine Migration (Kevin). R-1744/R-1715 als Route `/api/health` ohne DB (Kevin).
+- 2026-11-24 T3: Die bekannten Server-IDs werden vor dem Holen des Inventars gelesen. Der Hub legt einen Server an, bevor das Monitoring Daten zu ihm bekommt, so kann ein gerade angelegter Server nicht als Waise gelten. `test_assignment_of_a_server_missing_from_the_inventory_stays` sicherte das alte Verhalten ab, das R-1697 absichtlich ändert. Er ist ersetzt durch `test_server_missing_from_the_inventory_is_cleaned_up`, dazu kommen Tests für leeres und gescheitertes Inventar.
