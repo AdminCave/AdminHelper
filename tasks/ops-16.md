@@ -15,12 +15,14 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - 2026-11-24 Kevin (R-1713): pg-backup als Compose-Profil `backup`, eingeschaltet über `COMPOSE_PROFILES` in der `.env`; pg-restore.sh ins Bundle.
 - 2026-11-24 Kevin (R-1714): update.sh behält die letzten 3 runtime-prev-Archive.
 
-### T1 — R-1703: agent-install.sh schreibt die Repo-Konfiguration nach dem Stand der Identitäts-CA  [ ]
-Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-16.md
+### T1 — R-1703: agent-install.sh schreibt die Repo-Konfiguration nach dem Stand der Identitäts-CA  [x]
+Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-16.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @35185702a 2026-11-24T15:27:26+01:00
+Review: approve (.ah-out/review/ops-16/T1.verdict.json)
 Änderung: Eine Stelle schreibt die apt- bzw. dnf-TLS-Konfiguration: mit vorhandener Identitäts-CA den gehärteten Stand, sonst den Bootstrap-Stand; `setup_repo_apt`, `setup_repo_dnf` und der Schritt nach der Provisionierung rufen sie. Test: erneuter Lauf ohne `--server-id` auf einem Host mit Identitäts-CA (apt und dnf), Gegenprobe ohne CA.
 Beweis: Roadmap R-1703 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
-Doku: changelog.d/ops-16.md (neutral)
+Doku: docs/admin/agent-deployment.html DE+EN · changelog.d/ops-16.md (neutral)
 
 ### T2 — R-1692, R-1714: update.sh: Zeilenende vor neuen .env-Schlüsseln, runtime-prev auf 3 begrenzt  [ ]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-16.md

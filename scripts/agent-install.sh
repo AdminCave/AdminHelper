@@ -235,13 +235,7 @@ Components: main
 Architectures: amd64
 Signed-By: ${KEYRING_DIR}/adminhelper-archive-keyring.gpg
 EOF
-    # Bootstrap TLS stance (flipped to CA pinning after enrollment): the GPG
-    # signature carries package authenticity. Scope is the PLAIN host — apt does
-    # not match a host:port scope key here (verified against a real apt: the
-    # port-qualified form is silently ignored and the handshake still fails).
-    cat > "${APT_CONF_DIR}/99adminhelper-ca" <<EOF
-Acquire::https::${HOST}::Verify-Peer "false";
-EOF
+    write_repo_tls "${SERVER_ID:+bootstrap}"
     log "apt source configured (${REPO_BASE}/apt, Signed-By pinned)."
     # Error-Mode=any: index fetch failures are mere warnings by default (exit 0),
     # which would let the run limp on and die confusingly at install time.
@@ -274,9 +268,43 @@ setup_repo_dnf() {
     install -D -m 0644 "$_TMPROOT/pinned.asc" "${RPM_KEY_DIR}/RPM-GPG-KEY-adminhelper"
 
     install -d -m 0755 "$YUM_REPO_DIR"
-    write_dnf_repo "sslverify=0"
+    write_repo_tls "${SERVER_ID:+bootstrap}"
     log "dnf repo configured (${REPO_BASE}/rpm, gpgcheck+repo_gpgcheck)."
     dnf install -y adminhelper-agent || die "dnf install adminhelper-agent failed"
+}
+
+# write_repo_tls [bootstrap] writes the repo TLS stance by whether this host is enrolled:
+# with the identity CA the repo pins it (hardened steady state), without it the
+# bootstrap stance, where the GPG signature carries package authenticity. Every run
+# decides here, so a later run on an enrolled host keeps the pinned stance. A
+# provisioning run (--server-id) passes "bootstrap" before it enrolls: the CA on the
+# host may belong to another server's PKI, which would fail the repo handshake before
+# provision could replace it; that run pins after enrolling.
+write_repo_tls() {
+    case "$PKG_MGR" in
+        apt)
+            # Scope is the PLAIN host — apt does not match a host:port scope key here
+            # (verified against a real apt: the port-qualified form is silently ignored
+            # and the handshake still fails).
+            if [ -f "$IDENTITY_CA" ] && [ "${1:-}" != bootstrap ]; then
+                install -D -m 0644 "$IDENTITY_CA" "$REPO_CA" || die "could not copy the internal CA to ${REPO_CA} for apt"
+                cat > "${APT_CONF_DIR}/99adminhelper-ca" <<EOF
+Acquire::https::${HOST}::CAInfo "${REPO_CA}";
+EOF
+            else
+                cat > "${APT_CONF_DIR}/99adminhelper-ca" <<EOF
+Acquire::https::${HOST}::Verify-Peer "false";
+EOF
+            fi
+            ;;
+        dnf)
+            if [ -f "$IDENTITY_CA" ] && [ "${1:-}" != bootstrap ]; then
+                write_dnf_repo "sslcacert=${IDENTITY_CA}"
+            else
+                write_dnf_repo "sslverify=0"
+            fi
+            ;;
+    esac
 }
 
 # write_dnf_repo TLS_LINE — single source for the .repo body, so the bootstrap
@@ -409,17 +437,7 @@ fi
 
 # ── 3) post-enroll hardening: pin the internal CA for future repo pulls ──────
 if [ -f "$IDENTITY_CA" ]; then
-    case "$PKG_MGR" in
-        apt)
-            install -D -m 0644 "$IDENTITY_CA" "$REPO_CA" || die "could not copy the internal CA to ${REPO_CA} for apt"
-            cat > "${APT_CONF_DIR}/99adminhelper-ca" <<EOF
-Acquire::https::${HOST}::CAInfo "${REPO_CA}";
-EOF
-            ;;
-        dnf)
-            write_dnf_repo "sslcacert=${IDENTITY_CA}"
-            ;;
-    esac
+    write_repo_tls
     log "repo TLS now pins the enrolled internal CA — hardened steady state."
 else
     warn "no enrolled identity found (${IDENTITY_CA}) — repo transport stays unverified; package authenticity remains GPG-covered."
