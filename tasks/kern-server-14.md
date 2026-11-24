@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API (neue Route), docker-compose.yml (Healthcheck),
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1694: Glocken-Notiz an die Admins bei einem fehlgeschlagenen Hook  [ ]
+### T1 — R-1694: Glocken-Notiz an die Admins bei einem fehlgeschlagenen Hook  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/app/core/events.py, apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hooks.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @cc18d0601 2026-11-24T15:37:24+01:00
+Review: approve (.ah-out/review/kern-server-14/T1.verdict.json)
 Änderung: Scheitert ein geplanter oder ein Event-Hook (auch „Hook-Limit erreicht“), bekommen die Admins über `notify_users` eine Glocken-Notiz, entprellt je Hook. Der Log-Eintrag bleibt. Der Test belegt Notiz, Entprellung und den Fall des vollen Semaphors.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: → T7

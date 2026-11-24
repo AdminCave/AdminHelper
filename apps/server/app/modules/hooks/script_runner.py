@@ -55,10 +55,17 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import ah_common
 from app.core import config
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.modules.hooks.models import Hook
 
 logger = logging.getLogger(__name__)
 
@@ -347,3 +354,51 @@ def failed_run_error(result: dict) -> str | None:
     if len(error) > _LOGGED_ERROR_MAX:
         return "…" + error[-_LOGGED_ERROR_MAX:]
     return error
+
+
+HOOK_FAILED_EVENT = "lifecycle.hook.failed"
+# A hook that fails every five minutes would otherwise ring the bell every five minutes;
+# a nightly one still rings once a night.
+_FAILURE_NOTICE_EVERY = timedelta(hours=12)
+
+
+def notify_hook_failure(db: "Session", hook: "Hook", error: str) -> None:
+    """Tell the admins in the bell that a scheduled or event hook failed (R-1694): the run
+    result reaches nothing but the log otherwise. At most one notice per hook within
+    _FAILURE_NOTICE_EVERY. Never raises: the caller has already logged the failure."""
+    from app.modules.notifications.models import Notification
+    from app.modules.notifications.schemas import IncomingEvent
+    from app.modules.notifications.service import notify_users
+    from app.modules.users.models import User
+
+    try:
+        since = datetime.now(timezone.utc) - _FAILURE_NOTICE_EVERY
+        recent = (
+            db.query(Notification.id)
+            .filter(
+                Notification.event_type == HOOK_FAILED_EVENT,
+                Notification.source_type == "hook",
+                Notification.source_id == hook.id,
+                Notification.notified_at >= since,
+            )
+            .first()
+        )
+        if recent is not None:
+            return
+        admins = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id).all()
+        notify_users(
+            db,
+            admins,
+            IncomingEvent(
+                event_type=HOOK_FAILED_EVENT,
+                severity="warning",
+                category="hooks",
+                title=f"Hook failed: {hook.name}"[:512],
+                body=error,
+                source_type="hook",
+                source_id=hook.id,
+            ),
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Bell notice for the failed hook %r could not be written", hook.name)
