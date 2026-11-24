@@ -371,6 +371,9 @@ def notify_hook_failure(db: "Session", hook: "Hook", error: str) -> None:
     from app.modules.notifications.service import notify_users
     from app.modules.users.models import User
 
+    # Read before the try: the rollback below expires the hook, and loading it again with the
+    # database gone would raise out of here.
+    hook_id, hook_name = hook.id, hook.name
     try:
         since = datetime.now(timezone.utc) - _FAILURE_NOTICE_EVERY
         recent = (
@@ -378,7 +381,7 @@ def notify_hook_failure(db: "Session", hook: "Hook", error: str) -> None:
             .filter(
                 Notification.event_type == HOOK_FAILED_EVENT,
                 Notification.source_type == "hook",
-                Notification.source_id == hook.id,
+                Notification.source_id == hook_id,
                 Notification.notified_at >= since,
             )
             .first()
@@ -393,12 +396,12 @@ def notify_hook_failure(db: "Session", hook: "Hook", error: str) -> None:
                 event_type=HOOK_FAILED_EVENT,
                 severity="warning",
                 category="hooks",
-                title=f"Hook failed: {hook.name}"[:512],
+                title=f"Hook failed: {hook_name}"[:512],
                 body=error,
                 source_type="hook",
-                source_id=hook.id,
+                source_id=hook_id,
             ),
         )
     except Exception:
         db.rollback()
-        logger.exception("Bell notice for the failed hook %r could not be written", hook.name)
+        logger.exception("Bell notice for the failed hook %r could not be written", hook_name)

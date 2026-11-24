@@ -652,6 +652,36 @@ class TestFailedRunsRingTheBell:
         assert [r.user_id for r in rows] == [admin_user.id]
         assert "runner broke" in (rows[0].body or "")
 
+    def test_a_failed_notice_does_not_raise_after_the_rollback(self, caplog):
+        """The rollback expires the hook: reading its name afterwards would load it again,
+        and with the database gone that raises out of a function that must never raise
+        (in _run_event it would skip the event's remaining hooks)."""
+        from app.modules.hooks.script_runner import notify_hook_failure
+
+        class _Expiring:
+            id = "h-1"
+            expired = False
+
+            @property
+            def name(self):
+                if self.expired:
+                    raise RuntimeError("database gone")
+                return "nightly-backup"
+
+        hook = _Expiring()
+
+        class _GoneDb:
+            def query(self, *args):
+                raise RuntimeError("database gone")
+
+            def rollback(self):
+                hook.expired = True
+
+        with caplog.at_level(logging.ERROR):
+            notify_hook_failure(_GoneDb(), hook, "Timeout nach 30s")
+
+        assert "nightly-backup" in caplog.text
+
 
 class TestHookWorkerRobustness:
     """4.69/4.70/4.71: the hook worker's timeout, response-size and result-return handling."""

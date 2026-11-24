@@ -1,5 +1,5 @@
 # kern-server-14 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-14 · Review: pro Task
 Spec: docs/features/kern-server-14.md (Roadmap R-1694, R-1695, R-1697, R-1698, R-1699, R-1734, R-1737, R-1744, R-1715)
 Heavy: linux-full — Server-API (neue Route), docker-compose.yml (Healthcheck), Monitoring-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -70,8 +70,10 @@ Beweis: feature/kern-server-14@27c1119e9 tests/test_route_auth_gate.py::test_eve
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_route_auth_gate.py tests/test_health.py
 Doku: keine (Test-Inventar)
 
-### T9 — R-1694: Glocken-Notiz wirft nach einem Rollback nicht  [ ]
+### T9 — R-1694: Glocken-Notiz wirft nach einem Rollback nicht  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, apps/server/tests/test_hooks.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @6d5cf2af8 2026-11-24T16:47:50+01:00
+Review: approve (.ah-out/review/kern-server-14/T9.verdict.json)
 Beweis: feature/kern-server-14@27c1119e9 app/modules/hooks/script_runner.py:403-404 (`hook.name` nach `db.rollback()` lädt das abgelaufene Objekt nach; bei toter DB wirft `notify_hook_failure`, in `core/events.py:71-74` bricht das die übrigen Hooks des Events ab)
 Änderung: `notify_hook_failure` liest Name und ID des Hooks vor dem `try` und nutzt danach nur die lokalen Werte. Test erst rot: scheitert das Schreiben und ist die DB danach nicht mehr erreichbar, wirft die Funktion nicht.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
