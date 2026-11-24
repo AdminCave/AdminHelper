@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@fae494411`.
 
-### T1 — Agent: Report-Structs, Kommentare (R-1730)  [ ]
+### T1 — Agent: Report-Structs, Kommentare (R-1730)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/systemstate.go, apps/agent/internal/monitor/systemstate_test.go, apps/agent/internal/monitor/servicelogs_windows_test.go, apps/agent/internal/monitor/plugins.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @880a49007 2026-11-24T15:03:21+01:00
+Review: approve (.ah-out/review/klein-nachlese-20/T1.verdict.json)
 Änderung: `parseScQuery` bei 0 Diensten: Wire prüfen (`all_services` fehlt statt `null`) und die Absicht kommentieren, Test festhalten. `empty()` per Reflect-Test je Feld absichern (jedes Feld einzeln gesetzt ⇒ nicht leer). Doppelten Doc-Kommentar vor `failedLogs` entfernen; `parseZpoolList`-Kommentar auf `[]ZPool`.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Kommentare und Tests)

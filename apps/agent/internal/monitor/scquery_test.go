@@ -6,11 +6,13 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -354,5 +356,21 @@ func TestScServiceHealthWithoutStartStates(t *testing.T) {
 		if svc["enabled_state"] != "unknown" {
 			t.Errorf("%s enabled_state = %q, want unknown", svc["unit"], svc["enabled_state"])
 		}
+	}
+}
+
+// TestScServiceHealthNoServicesOmitsInventory pins the wire of sc output without a service:
+// all_services stays nil (omitted by omitzero), not [] and not null.
+func TestScServiceHealthNoServicesOmitsInventory(t *testing.T) {
+	got := scServiceHealth([]byte(""), nil, nil, nil)
+	if got.AllServices != nil {
+		t.Errorf("AllServices = %#v, want nil", got.AllServices)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "all_services") {
+		t.Errorf("all_services in %s, want it left out", raw)
 	}
 }
