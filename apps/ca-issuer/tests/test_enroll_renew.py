@@ -18,8 +18,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
 
 from app import config, db, pki, rotation, storage
 from app.issuer import Issuer
@@ -382,11 +381,7 @@ def test_inmemory_expired_token_is_not_consumable():
 # --- the certificate register at enrollment (R-0224) -------------------------
 
 
-def _db_store():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    db.metadata.create_all(eng)
+def _db_store(eng):
     # The state row the server's migration writes: the register is installed now.
     with eng.begin() as conn:
         conn.execute(db.certificate_register_state.insert().values(id=1, installed_at=_now_naive()))
@@ -398,10 +393,10 @@ def _now_naive() -> datetime.datetime:
 
 
 @pytest.fixture(params=["memory", "db"])
-def register_client(request):
+def register_client(request, db_engine):
     """The same cases against both stores: the in-memory one and the DB one."""
     with TestClient(app) as c:
-        store = InMemoryTokenStore() if request.param == "memory" else _db_store()
+        store = InMemoryTokenStore() if request.param == "memory" else _db_store(db_engine)
         c.app.state.issuer.tokens = store
         c.app.state.token_store = store
         yield c

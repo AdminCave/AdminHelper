@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_r
 Doku: → T6
 Abhängt von: T1
 
-### T5 — CA-Issuer: DB-Tests auf Postgres  [ ]
+### T5 — CA-Issuer: DB-Tests auf Postgres  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/conftest.py, apps/ca-issuer/tests/test_db_token_store.py, apps/ca-issuer/tests/test_inventory.py, apps/ca-issuer/tests/test_enroll_renew.py, apps/ca-issuer/tests/test_cli.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @a3448a5be 2026-11-24T13:45:43+01:00
+Review: approve (.ah-out/review/kern-testdb-1/T5.verdict.json)
 Änderung: R-0700. Fixture `db_engine` wie T1 (abgeleitete Datenbank `<db>_ca_unit`, `db.metadata.create_all`, `TRUNCATE` je Test, ohne Postgres-URL SQLite). Die SQLite-Engines in den vier Testdateien weichen ihm; Tests, die bewusst einen SQLite-Zweig prüfen, bleiben auf SQLite und sagen das im Namen.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_db_token_store.py tests/test_inventory.py tests/test_enroll_renew.py tests/test_cli.py
 Doku: → T6
@@ -65,3 +67,4 @@ Task-Review: am Ende
 - 2026-11-24 (T2): Die Cooldown-Tests in `test_alerter` schrieben Log-Zeilen ohne die Check- und Regel-Zeilen, für die `make_check()`/`make_rule()` stehen; das Fixture legt sie jetzt an (Regel deaktiviert, damit `process_alert` nur die Regeln des Tests sieht). Sessions, die Tests offen ließen (`_HostDownDb`, Cooldown-Fixture, `test_only_enabled_rules…`), werden geschlossen, sonst wartet das `TRUNCATE` des nächsten Tests auf ihre Sperre. Kein Produktfehler.
 - 2026-11-24 (T3): `test_failed_host_facts_store_is_only_logged` erzwang den fehlschlagenden Flush mit einem SQLite-Trigger (`RAISE(ABORT)`). Auf Postgres legt der Helfer `_refusing_host_facts` eine Trigger-Funktion mit SQLSTATE 23000 an (dieselbe `IntegrityError`) und entfernt Trigger und Funktion danach wieder, weil `TRUNCATE` sie auf der geteilten Datenbank nicht abräumt; zwei Läufe nacheinander grün. Der R-0615-Pooltest in `test_checks_metrics` läuft auf `pooled_engine`.
 - 2026-11-24 (T4): `test_template_overrides` schaltete die Fremdschlüssel per `connect`-Listener ein; auf `db_engine` ist die Verbindung des SQLite-Rückfalls schon offen, also setzt das Fixture das Pragma direkt auf ihr (Postgres prüft ohnehin). `test_alert_log_cleanup_removes_only_old_entries` legt die Check- und Regel-Zeilen an, auf die die Log-Zeilen zeigen. `test_binding_for_deleted_template_is_skipped` stellt die verwaiste Bindung über ein gepatchtes `db.get` her (auf Postgres kaskadiert das Löschen der Vorlage die Bindung weg) und verlangt keinen Log-Eintrag; Gegenprobe ohne den `template is None`-Zweig rot.
+- 2026-11-24 (T5): Der CA-Fixture liest die Postgres-URL einmal beim Import: viele CLI-Tests setzen `DATABASE_URL` per monkeypatch auf einen unerreichbaren Host. `pg_engine` (TOCTOU, Zeilensperre) nimmt eine eigene Engine auf `<db>_ca_unit` statt `create_all`/`drop_all` auf der geteilten Test-DB. Bewusst SQLite bleiben nur die Fälle ohne Tabellen (`_sqlite_without_tables` in `test_inventory`, der parametrisierte Fall in `test_cli`). Vor dem TRUNCATE hebt der Fixture `statement_timeout` per `SET LOCAL` auf 30 s: `db.make_engine` begrenzt jede Anweisung auf 5 s, Sperrwartezeit eingeschlossen, sonst wäre der `lock_timeout` wirkungslos (Prüfer T5, Runde 1).

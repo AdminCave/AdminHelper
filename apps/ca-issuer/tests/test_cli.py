@@ -379,13 +379,9 @@ def _decrypts(path: Path, passphrase: bytes) -> bool:
     return True
 
 
-def _register(monkeypatch, installed_at=datetime.datetime(2020, 1, 1)):
-    """An sqlite register behind DATABASE_URL as the server's migration leaves it, from
-    `installed_at` (naive UTC) on; empty, and no ca-issuer start recorded yet."""
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    db.metadata.create_all(engine)
+def _register(monkeypatch, engine, installed_at=datetime.datetime(2020, 1, 1)):
+    """The register on `engine` behind DATABASE_URL as the server's migration leaves it,
+    from `installed_at` (naive UTC) on; empty, and no ca-issuer start recorded yet."""
     with engine.begin() as conn:
         conn.execute(
             insert(db.certificate_register_state), [{"id": 1, "installed_at": installed_at}]
@@ -468,11 +464,11 @@ def _started_at(engine) -> datetime.datetime:
     return at.replace(tzinfo=datetime.timezone.utc)
 
 
-def _switched(monkeypatch, d: Path, **register) -> tuple:
+def _switched(monkeypatch, d: Path, engine, **register) -> tuple:
     """Phase switched with a register, the ca-issuer started under the new root; returns
     the engine and the time of that start."""
     renewal.renewed(monkeypatch, d, "switched")
-    engine = _register(monkeypatch, **register)
+    engine = _register(monkeypatch, engine, **register)
     _start(engine, d)
     return engine, _started_at(engine)
 
@@ -700,9 +696,9 @@ def test_rotate_root_switch_ends_a_switch_that_stopped_without_the_old_root(
 
 
 def test_rotate_root_finish_once_every_device_renewed_since_the_restart(
-    monkeypatch, pki_dir, capsys
+    monkeypatch, pki_dir, capsys, db_engine
 ):
-    engine, started_at = _switched(monkeypatch, pki_dir)
+    engine, started_at = _switched(monkeypatch, pki_dir, db_engine)
     old, new = started_at - datetime.timedelta(days=1), started_at + datetime.timedelta(seconds=1)
     renewed = _line(engine, "renewed")
     _issue(engine, renewed, old)
@@ -728,8 +724,10 @@ def test_rotate_root_finish_once_every_device_renewed_since_the_restart(
     assert "./scripts/backup.sh" in out and cli._RESTART in out
 
 
-def test_rotate_root_finish_waits_for_devices_from_before_the_restart(monkeypatch, pki_dir, capsys):
-    engine, started_at = _switched(monkeypatch, pki_dir)
+def test_rotate_root_finish_waits_for_devices_from_before_the_restart(
+    monkeypatch, pki_dir, capsys, db_engine
+):
+    engine, started_at = _switched(monkeypatch, pki_dir, db_engine)
     old = started_at - datetime.timedelta(days=1)
     _issue(engine, _line(engine, "behind"), old, days=30)
     _issue(engine, _line(engine, "ahead"), started_at + datetime.timedelta(seconds=1))
@@ -752,10 +750,10 @@ def test_rotate_root_finish_waits_for_devices_from_before_the_restart(monkeypatc
 
 @pytest.mark.parametrize("started", ["never", "under the old root"])
 def test_rotate_root_finish_waits_for_a_start_under_the_new_root(
-    monkeypatch, pki_dir, capsys, started
+    monkeypatch, pki_dir, capsys, started, db_engine
 ):
     # Until it restarts, the ca-issuer signs under the old root.
-    engine = _register(monkeypatch)
+    engine = _register(monkeypatch, db_engine)
     if started != "never":
         _start(engine, pki_dir)
     renewal.renewed(monkeypatch, pki_dir, "switched")
@@ -770,12 +768,12 @@ def test_rotate_root_finish_waits_for_a_start_under_the_new_root(
 
 
 def test_rotate_root_finish_counts_a_device_from_the_first_restart_under_the_new_root_on(
-    monkeypatch, pki_dir, capsys
+    monkeypatch, pki_dir, capsys, db_engine
 ):
     # Between the switch and the restart the old process still signs under the old root; a
     # later restart does not move that limit.
     renewal.renewed(monkeypatch, pki_dir, "switched")
-    engine = _register(monkeypatch)
+    engine = _register(monkeypatch, db_engine)
     switched_at = root_rollover.load_state(pki_dir).switch.switched_at
     restart = switched_at + datetime.timedelta(hours=1)
     with monkeypatch.context() as m:
@@ -804,12 +802,12 @@ def test_rotate_root_finish_counts_a_device_from_the_first_restart_under_the_new
 
 @pytest.mark.parametrize("recorded", ["after the start", "before the start"])
 def test_rotate_root_finish_decides_a_renewal_in_the_second_of_the_start_by_its_record(
-    monkeypatch, pki_dir, capsys, recorded
+    monkeypatch, pki_dir, capsys, recorded, db_engine
 ):
     # A leaf's not_before holds whole seconds; the start under the new root has microseconds.
     # Within that second the time the issuing process recorded the leaf decides.
     renewal.renewed(monkeypatch, pki_dir, "switched")
-    engine = _register(monkeypatch)
+    engine = _register(monkeypatch, db_engine)
     restart = root_rollover.load_state(pki_dir).switch.switched_at.replace(
         microsecond=500_000
     ) + datetime.timedelta(hours=1)
@@ -831,12 +829,12 @@ def test_rotate_root_finish_decides_a_renewal_in_the_second_of_the_start_by_its_
 
 @pytest.mark.parametrize("first", ["before the start", "after the start"])
 def test_rotate_root_finish_takes_the_newest_record_of_a_line_within_one_second(
-    monkeypatch, pki_dir, capsys, first
+    monkeypatch, pki_dir, capsys, first, db_engine
 ):
     # Two certificates of one line in the second of the start: the one recorded after the
     # start is the newest, whatever order the rows come in.
     renewal.renewed(monkeypatch, pki_dir, "switched")
-    engine = _register(monkeypatch)
+    engine = _register(monkeypatch, db_engine)
     restart = root_rollover.load_state(pki_dir).switch.switched_at.replace(
         microsecond=500_000
     ) + datetime.timedelta(hours=1)
@@ -857,12 +855,12 @@ def test_rotate_root_finish_takes_the_newest_record_of_a_line_within_one_second(
 
 
 def test_rotate_root_finish_waits_while_the_register_may_miss_a_device(
-    monkeypatch, pki_dir, capsys
+    monkeypatch, pki_dir, capsys, db_engine
 ):
     # The register came after the old root: a certificate from before it may still renew
     # (tokens.legacy_admitted) and the register then learns of its device.
     installed_at = _root_of(pki_dir).not_valid_before_utc + datetime.timedelta(hours=1)
-    _switched(monkeypatch, pki_dir, installed_at=_naive(installed_at))
+    _switched(monkeypatch, pki_dir, db_engine, installed_at=_naive(installed_at))
     end = installed_at + cli.tokens.LEGACY_WINDOW
 
     assert cli.main(["rotate-root", "finish"]) == 1
@@ -975,10 +973,10 @@ def test_status_of_a_staged_renewal(monkeypatch, pki_dir, capsys):
     )
 
 
-def test_status_of_a_staged_renewal_counts_the_devices(monkeypatch, pki_dir, capsys):
+def test_status_of_a_staged_renewal_counts_the_devices(monkeypatch, pki_dir, capsys, db_engine):
     new_root = rotation.stage_root(pki_dir, NEXT_PW)
     staged_at = new_root.not_valid_before_utc
-    engine = _register(monkeypatch)
+    engine = _register(monkeypatch, db_engine)
     _issue(engine, _line(engine, "behind"), staged_at - datetime.timedelta(days=1))
     _issue(engine, _line(engine, "ahead"), staged_at + datetime.timedelta(seconds=1))
 
@@ -987,8 +985,8 @@ def test_status_of_a_staged_renewal_counts_the_devices(monkeypatch, pki_dir, cap
     assert "  devices: 2 active, 1 renewed since the stage\n" in capsys.readouterr().out
 
 
-def test_status_after_the_switch(monkeypatch, pki_dir, capsys):
-    engine, started_at = _switched(monkeypatch, pki_dir)
+def test_status_after_the_switch(monkeypatch, pki_dir, capsys, db_engine):
+    engine, started_at = _switched(monkeypatch, pki_dir, db_engine)
     state = root_rollover.load_state(pki_dir)
     switched_at = state.switch.switched_at
     staged_at = _root_of(pki_dir).not_valid_before_utc
