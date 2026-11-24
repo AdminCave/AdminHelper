@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@7d787e4d2`.
 
-### T1 — Voraussetzungen und Ports: minisign, openssl, 8445, DE und EN gleich (R-1716 a, b)  [ ]
+### T1 — Voraussetzungen und Ports: minisign, openssl, 8445, DE und EN gleich (R-1716 a, b)  [x]
 Komponente: scripts · Dateien: README.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c8a3049ca 2026-11-24T21:19:59+01:00
+Review: am Ende (Branch-Review)
 Beweis: Umschau 2026-11-23 · scripts/install.sh `verify_sums_signature` (bricht ohne minisign ab), scripts/init-secrets.sh (openssl), docs/admin/agent-deployment.html (Repo-Schlüssel von `:8445`)
 Semantik: docs/admin/agent-deployment.html: "Es holt den Repo-Signaturschlüssel von der :8445-Plane" (der Agent-Einzeiler braucht den Port)
 Dedup-Key: ref:docs:README.md:first-contact-drift-prereq
