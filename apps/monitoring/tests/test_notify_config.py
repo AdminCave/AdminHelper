@@ -13,7 +13,8 @@ import logging
 import httpx
 import pytest
 
-from app import mail_template, notify_config
+from ah_common import mail_template
+from app import notify_config
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
 BODY = {

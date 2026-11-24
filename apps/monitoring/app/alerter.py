@@ -29,9 +29,9 @@ import httpx
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from ah_common import smtp
+from ah_common import mail_template, smtp
 from ah_common.ssrf import UrlVerdict, check_target, pinned_client
-from app import mail_template, notify_config
+from app import notify_config
 from app.core.bounds import storable
 from app.core.config import (
     INTERNAL_API_KEY,

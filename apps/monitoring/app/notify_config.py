@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from app import mail_template
+from ah_common import mail_template
 from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
 
 logger = logging.getLogger("monitor.notify_config")

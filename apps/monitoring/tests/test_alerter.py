@@ -28,8 +28,9 @@ import httpx
 import pytest
 
 import ah_common.ssrf as ssrf_mod
+from ah_common import mail_template
 from ah_common.ssrf import Target, UrlVerdict
-from app import alerter, mail_template
+from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core.logging_config import configure_logging
 from app.models import (

@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The monitoring's copy of the hub's mail template renderer
-(apps/server/app/modules/notifications/mail_template.py, R-1533): the rule mails take the
-template an admin keeps in the panel, fetched by app.notify_config. Placeholders are
-replaced in one pass, nothing else; tests/fixtures/mail_template_parity.json (a copy of
-the server's) holds both renderers to the same output."""
+"""The renderer of the mail template an admin keeps in the panel (R-1533), one for the hub and
+the monitoring: a subject prefix, a sender name, an HTML part, a text part and an inline logo.
+Placeholders are replaced in one pass, nothing else: no code from the template runs, and a
+value that itself reads {{title}} stays as it is. The hub loads the template from its database
+(app.modules.notifications.mail_template), the monitoring fetches it (app.notify_config)."""
 
 import html
 import re

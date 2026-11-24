@@ -17,6 +17,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ah_common.errors import validation_error
+from ah_common.middleware import NulByteMiddleware
+from ah_common.query_params import reject_repeated_scalar_query
 
 # Every ORM model before the first query (the lifespan's), see app/model_registry.py.
 # Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
@@ -32,9 +34,8 @@ from app.core.config import (
 from app.core.database import SessionLocal
 from app.core.errors import install_coded_errors
 from app.core.identity import SCOPE_ACCESS, require_scope
-from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
+from app.core.middleware import IPFilterMiddleware
 from app.core.openapi import install_exact_int_bounds
-from app.core.query_params import reject_repeated_scalar_query
 from app.core.request_context import Actor
 from app.modules.ansible.router import router as ansible_router
 from app.modules.api_keys.router import router as api_keys_router
