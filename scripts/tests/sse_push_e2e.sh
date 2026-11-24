@@ -81,11 +81,22 @@ export PYTHONPATH="$ROOT/apps/pycommon${PYTHONPATH:+:$PYTHONPATH}"
 echo "[stack] alembic upgrade head"
 "$PY/alembic" upgrade head >/dev/null
 
+# Up means an HTTP answer below 500: /api/auth/me answers 401 without a session, a 5xx is a broken
+# instance and must not count as up.
+wait_up() {
+  local code
+  for _ in $(seq 1 40); do
+    code=$(curl -so /dev/null -w '%{http_code}' "http://127.0.0.1:$1/api/auth/me" 2>/dev/null) || true
+    case "$code" in [1-4][0-9][0-9]) return 0 ;; esac
+    sleep 0.5
+  done
+}
+
 # Instance A first (it bootstraps the admin), then B, to avoid a startup race.
 "$PY/uvicorn" app.main:app --host 127.0.0.1 --port 8081 >/tmp/sse-e2e-a.log 2>&1 & PID_A=$!
-for _ in $(seq 1 40); do curl -so /dev/null http://127.0.0.1:8081/api/auth/me 2>/dev/null && break; sleep 0.5; done
+wait_up 8081
 "$PY/uvicorn" app.main:app --host 127.0.0.1 --port 8082 >/tmp/sse-e2e-b.log 2>&1 & PID_B=$!
-for _ in $(seq 1 40); do curl -so /dev/null http://127.0.0.1:8082/api/auth/me 2>/dev/null && break; sleep 0.5; done
+wait_up 8082
 echo "[stack] both instances up"
 
 "$PY/python" - <<'PYEOF'
