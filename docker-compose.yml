@@ -560,6 +560,9 @@ services:
       - ALLOW_INSECURE_HUB=1
       # Postgres
       - DATABASE_URL=postgresql+psycopg://ah_monitor:${MONITOR_DB_PASSWORD}@postgres:5432/adminhelper_monitor
+      # SQLAlchemy pool of the monitoring process, same knobs as the server's.
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
       - PGHOST=postgres
       - PGPORT=5432
       - PGUSER=ah_monitor

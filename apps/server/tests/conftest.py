@@ -36,11 +36,13 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
+from ah_common.database import set_session_utc
+
 # Every ORM model, otherwise Base.metadata does not know their tables and create_all
 # skips them (app/model_registry.py, tests/test_conftest_models.py).
 from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
-from app.core.database import Base, _session_utc, get_db
+from app.core.database import Base, get_db
 from app.core.time import utcnow_naive
 from app.modules.users.models import User
 from tests import token_claims
@@ -120,7 +122,7 @@ def _utc_engine(url: str):
     # the database's default zone — Europe/Berlin locally, UTC in CI — and the suite
     # sees another session than the app does (R-0225).
     engine = create_engine(url)
-    event.listen(engine, "connect", _session_utc, insert=True)
+    event.listen(engine, "connect", set_session_utc, insert=True)
     return engine
 
 

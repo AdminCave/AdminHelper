@@ -58,8 +58,10 @@ bleibt je Dienst.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T5 — Engine-Fabrik in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/database.py, apps/server/app/core/database.py, apps/monitoring/app/core/database.py, apps/monitoring/app/core/config.py
+### T5 — Engine-Fabrik in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/database.py, apps/server/app/core/database.py, apps/monitoring/app/core/database.py, apps/monitoring/app/core/config.py, apps/server/tests/conftest.py, apps/monitoring/tests/test_db_pool_config.py, docker-compose.yml, .env.example, apps/server/tests/test_stream.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @8b18d774b 2026-11-24T06:02:54+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T5.verdict.json)
 Änderung: Engine mit `pool_pre_ping`, Pool aus `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` (Vorgabe 10/20) und UTC-Session-Listener
 in `ah_common/database.py`; das Monitoring liest die Pool-Variablen jetzt auch.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
@@ -130,3 +132,8 @@ Task-Review: am Ende
   `iso_utc` (der Plan sagte `iso_z`).
 - T4: Die Dienst-Module `app.core.logging_config` bleiben als Re-Export: `test_scheduler_schema_gate.py` patcht
   `configure_logging` dort, und `scheduler_main` importiert es zur Laufzeit von dort.
+- T5: `get_db` kommt aus `ah_common.database.session_dependency(SessionLocal)`, sonst bliebe es als identische
+  Kopie in beiden Diensten (T10 würde sie melden); `engine`, `SessionLocal` und `Base` bleiben je Dienst (eigene DB,
+  eigene Metadaten). Der UTC-Listener heißt öffentlich `set_session_utc`; die Server-Conftest importiert ihn von dort.
+- T5: Compose reicht `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` auch dem Monitoring durch, sonst bliebe das Lesen im Betrieb
+  wirkungslos; `.env.example` nennt es. Vorgabe weiter 10/20.

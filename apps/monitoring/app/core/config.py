@@ -67,6 +67,10 @@ if not DATABASE_URL:
     )
     DATABASE_URL = "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor"
 
+# SQLAlchemy pool of the process, as in the server (same variables, same defaults).
+DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
+DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+
 # SMTP (email alert channel). Empty SMTP_HOST disables email alerts. A non-integer
 # SMTP_PORT falls back to 587 with a warning instead of crashing the whole service at import —
 # SMTP is only an optional alert channel, so a typo in the compose file must not take monitoring
