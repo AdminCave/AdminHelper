@@ -10,6 +10,8 @@ import socket
 import tempfile
 from pathlib import Path
 
+from ah_common.env import env_int, parse_int
+
 logger = logging.getLogger("adminhelper.config")
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
@@ -127,23 +129,7 @@ WEB_IDLE_TIMEOUT_DEFAULT_MINUTES = 30
 
 def parse_web_idle_timeout(raw: str | None) -> int:
     """Minutes without user input after which the web panel signs out (0 = off)."""
-    value = (raw or "").strip()
-    if not value:
-        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
-    try:
-        minutes = int(value)
-    except ValueError:
-        minutes = -1
-    if minutes < 0:
-        # Fall back instead of refusing to start: a typo in this knob should not take the
-        # whole panel down.
-        logger.warning(
-            "WEB_IDLE_TIMEOUT_MINUTES=%r is not a whole number >= 0, using %d",
-            raw,
-            WEB_IDLE_TIMEOUT_DEFAULT_MINUTES,
-        )
-        return WEB_IDLE_TIMEOUT_DEFAULT_MINUTES
-    return minutes
+    return parse_int("WEB_IDLE_TIMEOUT_MINUTES", raw, WEB_IDLE_TIMEOUT_DEFAULT_MINUTES, minimum=0)
 
 
 WEB_IDLE_TIMEOUT_MINUTES = parse_web_idle_timeout(os.environ.get("WEB_IDLE_TIMEOUT_MINUTES", ""))
@@ -153,21 +139,7 @@ WEB_SESSION_MAX_DEFAULT_HOURS = 24
 
 def parse_web_session_max_hours(raw: str | None) -> int:
     """Hours after its sign-in at which a browser session ends, active or not (0 = off)."""
-    value = (raw or "").strip()
-    if not value:
-        return WEB_SESSION_MAX_DEFAULT_HOURS
-    try:
-        hours = int(value)
-    except ValueError:
-        hours = -1
-    if hours < 0:
-        logger.warning(
-            "WEB_SESSION_MAX_HOURS=%r is not a whole number >= 0, using %d",
-            raw,
-            WEB_SESSION_MAX_DEFAULT_HOURS,
-        )
-        return WEB_SESSION_MAX_DEFAULT_HOURS
-    return hours
+    return parse_int("WEB_SESSION_MAX_HOURS", raw, WEB_SESSION_MAX_DEFAULT_HOURS, minimum=0)
 
 
 WEB_SESSION_MAX_HOURS = parse_web_session_max_hours(os.environ.get("WEB_SESSION_MAX_HOURS", ""))
@@ -209,11 +181,11 @@ FRP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 FRPS_STATE_DIR = Path(os.environ.get("FRPS_STATE_DIR", str(DATA_DIR / "frps-state")))
 
 # Host port compose publishes for frps (its ${FRP_BIND_PORT} mapping).
-FRP_BIND_PORT = int(os.environ.get("FRP_BIND_PORT", "7000"))
+FRP_BIND_PORT = env_int("FRP_BIND_PORT", 7000, minimum=1)
 
 # Visitor port range for automatic assignment (STCP tunnels)
-VISITOR_PORT_START = int(os.environ.get("VISITOR_PORT_START", "6000"))
-VISITOR_PORT_END = int(os.environ.get("VISITOR_PORT_END", "6999"))
+VISITOR_PORT_START = env_int("VISITOR_PORT_START", 6000, minimum=1)
+VISITOR_PORT_END = env_int("VISITOR_PORT_END", 6999, minimum=1)
 
 # frps dashboard base URL for the status endpoint. Empty = the compose default: the
 # endpoint reads the proxy lists the frps supervisor puts into FRPS_STATE_DIR, since the
@@ -250,7 +222,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "").strip()
 # Number of uvicorn workers (informational; set by the entrypoint). With more
 # than one worker the in-memory rate-limit fallback counts per process, so Redis
 # is required for a correct global limit — warn loudly if it is missing.
-WEB_CONCURRENCY = int(os.environ.get("WEB_CONCURRENCY", "1"))
+WEB_CONCURRENCY = env_int("WEB_CONCURRENCY", 1, minimum=1)
 if WEB_CONCURRENCY > 1 and not REDIS_URL:
     logger.warning(
         "WEB_CONCURRENCY=%d (multi-worker) ohne REDIS_URL: Rate-Limiting zaehlt "
@@ -262,8 +234,8 @@ if WEB_CONCURRENCY > 1 and not REDIS_URL:
 # SQLAlchemy connection pool, per process. With WEB_CONCURRENCY=N the total is
 # N*(pool_size+max_overflow); keep it under Postgres max_connections (default
 # 100). Lower these for many workers.
-DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
-DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+DB_POOL_SIZE = env_int("DB_POOL_SIZE", 10, minimum=1)
+DB_MAX_OVERFLOW = env_int("DB_MAX_OVERFLOW", 20, minimum=0)
 
 
 def parse_mtls_enforce(raw: str | None) -> bool:
@@ -312,25 +284,25 @@ CA_TRUST_DIR = os.environ.get("CA_TRUST_DIR", "/app/ca-trust").strip()
 # no reliable view of its own public address, so it only returns this port hint
 # in the provision response — the agent derives the host from the URL it already
 # provisioned against and builds <host>:ENROLL_PORT/enroll itself.
-ENROLL_PORT = int(os.environ.get("ENROLL_PORT", "8444"))
+ENROLL_PORT = env_int("ENROLL_PORT", 8444, minimum=1)
 
 # The agent package repo the updater rolls out (./repo, mounted read-only) and the gateway's
 # public repo-plane port. The provisioning catalog reads which platforms carry packages there
 # and passes a non-default port to the installers (--repo-port).
 REPO_DIR = Path(os.environ.get("REPO_DIR", "/app/repo"))
-REPO_PORT = int(os.environ.get("REPO_PORT", "8445"))
+REPO_PORT = env_int("REPO_PORT", 8445, minimum=1)
 
 # Audit-log retention. A daily system job prunes audit_log rows older than this
 # many days — the ONLY delete path for the otherwise append-only trail. Set to 0
 # to keep entries forever (no pruning).
-AUDIT_RETENTION_DAYS = int(os.environ.get("AUDIT_RETENTION_DAYS", "365"))
+AUDIT_RETENTION_DAYS = env_int("AUDIT_RETENTION_DAYS", 365, minimum=0)
 
 # SMTP relay for outbound e-mail notifications (the notification hub). An empty
 # SMTP_HOST disables the e-mail channel — outbox entries then fail and retry
 # until they exhaust their attempts. No local MTA: point this at an external
 # relay (587 STARTTLS or 465 SMTPS).
 SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_PORT = env_int("SMTP_PORT", 587, minimum=1)
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
@@ -339,7 +311,7 @@ SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
 # certificate and hostname checks stay on. Mounted via docker-compose.override.yml.
 SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
-NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
+NOTIFICATION_MAX_ATTEMPTS = env_int("NOTIFICATION_MAX_ATTEMPTS", 5, minimum=1)
 # Bot token of the Telegram channel (R-1080). Empty = no Telegram delivery: no entry
 # is queued, and the drain leaves the ones already queued waiting.
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -389,4 +361,4 @@ NOTIFY_PRIVATE_TARGETS = _private_targets(os.environ.get("NOTIFY_PRIVATE_TARGETS
 _warn_own_addresses(NOTIFY_PRIVATE_TARGETS)
 # Bell-feed retention in days. A daily system job prunes notification rows older
 # than this so the feed does not grow without bound. 0 = keep forever.
-NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "90"))
+NOTIFICATION_RETENTION_DAYS = env_int("NOTIFICATION_RETENTION_DAYS", 90, minimum=0)

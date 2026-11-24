@@ -10,6 +10,7 @@ import time
 import jwt
 import pytest
 
+from ah_common.env import ConfigError
 from app.core import config
 from app.core.auth import create_refresh_token, hash_api_key, web_session_start
 from app.core.config import ALGORITHM, SECRET_KEY, parse_web_session_max_hours
@@ -207,7 +208,7 @@ class TestParse:
         assert parse_web_session_max_hours(raw) == hours
 
     @pytest.mark.parametrize("raw", ["-1", "abc", "1.5", "24h"])
-    def test_invalid_falls_back_with_a_warning(self, raw, caplog):
-        with caplog.at_level("WARNING"):
-            assert parse_web_session_max_hours(raw) == 24
-        assert "WEB_SESSION_MAX_HOURS" in caplog.text
+    def test_invalid_stops_the_start_naming_variable_and_value(self, raw):
+        with pytest.raises(ConfigError) as exc:
+            parse_web_session_max_hours(raw)
+        assert f"WEB_SESSION_MAX_HOURS={raw!r}" in str(exc.value)

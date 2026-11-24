@@ -377,7 +377,7 @@
           <p>Beide Modi sind in <code>core/auth.py</code> als FastAPI-Dependencies implementiert:</p>
           <ul>
             <li><code>require_agent</code> (Agent-Push): liest Header <code>X-API-Key</code>. Stimmt der Wert exakt mit dem internen Key &uuml;berein, gilt er als <code>__internal__</code> (Zugriff auf alle Server). Andernfalls wird der Key per <code>MonitorAgentKey.hash_key()</code> SHA-256-gehasht und gegen die Spalte <code>hashed_key</code> in <code>monitor_agent_keys</code> verglichen &ndash; bei Treffer liefert die Dependency die zugeh&ouml;rige <code>server_id</code> zur&uuml;ck. Es wird also nie ein Klartext-Key gespeichert; in der DB liegt nur der Hash.</li>
-            <li><code>require_internal</code> (AdminHelper &harr; Service): liest Header <code>X-Internal-Key</code> und vergleicht ihn gegen den internen Key. Quelle ist die Env-Variable <code>MONITOR_API_KEY</code>; fehlt sie, wird beim Start ein zuf&auml;lliger Key generiert und in <code>$DATA_DIR/.api_key</code> persistiert (<code>core/config.py</code>).</li>
+            <li><code>require_internal</code> (AdminHelper &harr; Service): liest Header <code>X-Internal-Key</code> und vergleicht ihn gegen den internen Key. Quelle ist die Env-Variable <code>MONITOR_API_KEY</code>; ist sie leer, bricht der Start mit <code>ConfigError</code> ab (<code>core/config.py</code>).</li>
           </ul>
 
           <h3>Agent-Key: Vergabe &amp; Server-Bindung</h3>

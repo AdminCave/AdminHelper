@@ -6,9 +6,9 @@
 
 Deliberately NO Postgres/testcontainers: only pure-logic tests run here
 (line-protocol escaping, alert filter/cooldown, check status transitions).
-The modules under test pull a writable DATA_DIR via app.core.config (creating
-an .api_key there if needed) — so redirect it to a tmp directory before every
-import.
+The modules under test pull a writable DATA_DIR via app.core.config — so redirect
+it to a tmp directory before every import. app.core.config refuses to import
+without MONITOR_API_KEY, so a fixed test key is set here as well.
 """
 
 import os
@@ -27,6 +27,7 @@ os.environ.setdefault("DATA_DIR", os.path.join(tempfile.gettempdir(), "adminhelp
 # Disable the notification-hub push by default — these are pure-logic tests with
 # no server to reach; the hub-emit tests set the URL explicitly.
 os.environ.setdefault("SERVER_HUB_URL", "")
+os.environ.setdefault("MONITOR_API_KEY", "monitor-test-key")
 # The images copy apps/pycommon/ah_common next to app/ (/app/ah_common); the tests
 # take it from the tree, and so do the Python subprocesses they start.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pycommon"))

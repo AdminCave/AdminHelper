@@ -506,9 +506,11 @@ def test_webhook_trigger_via_header_token(test_client, db_session, admin_user):
     assert wrong.status_code == 404
 
 
-def test_trigger_routes_declare_their_error_codes(test_client):
+def test_trigger_routes_declare_their_error_codes():
     # R-0838: the OpenAPI document lists the errors the trigger routes raise.
-    paths = test_client.get("/openapi.json").json()["paths"]
+    from app.main import app
+
+    paths = app.openapi()["paths"]
     header = paths["/api/hooks/trigger"]["post"]["responses"]
     by_token = paths["/api/hooks/trigger/{token}"]["post"]["responses"]
     assert {"401", "403", "404", "429"} <= set(header)

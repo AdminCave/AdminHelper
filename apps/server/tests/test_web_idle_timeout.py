@@ -8,6 +8,7 @@ import logging
 
 import pytest
 
+from ah_common.env import ConfigError
 from app.core import config
 from app.core.config import parse_web_idle_timeout
 
@@ -29,13 +30,10 @@ def test_unset_or_valid_value_is_taken_without_a_warning(raw, expected, caplog):
 
 
 @pytest.mark.parametrize("raw", ["-5", "abc", "1.5"])
-def test_invalid_value_falls_back_to_30_with_one_warning(raw, caplog):
-    with caplog.at_level(logging.DEBUG, logger=_LOGGER):
-        assert parse_web_idle_timeout(raw) == 30
-    records = _records(caplog)
-    assert len(records) == 1, records
-    assert records[0].levelno == logging.WARNING
-    assert "WEB_IDLE_TIMEOUT_MINUTES" in records[0].getMessage()
+def test_invalid_value_stops_the_start_naming_variable_and_value(raw):
+    with pytest.raises(ConfigError) as exc:
+        parse_web_idle_timeout(raw)
+    assert f"WEB_IDLE_TIMEOUT_MINUTES={raw!r}" in str(exc.value)
 
 
 def _me(client):

@@ -15,6 +15,8 @@ and one answer to the same check as /renew:
 from __future__ import annotations
 
 import logging
+import logging.config
+import os
 import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,7 +29,44 @@ from app.issuer import IssuanceError, Issuer, IssuerUnavailable
 from app.storage import Intermediate, ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+# The format of ah_common.logging_config, so `docker compose logs` reads the same for all
+# three services; ah_common itself is not in this image (R-0699).
+_LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(process)d] %(name)s %(message)s"
+_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _log_level() -> str:
+    raw = os.environ.get("LOG_LEVEL", "")
+    level = raw.strip().upper() or "INFO"
+    # getLevelName returns an int for known names, the "Level X" string otherwise.
+    if not isinstance(logging.getLevelName(level), int):
+        raise ValueError(f"LOG_LEVEL={raw!r} is not one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    return level
+
+
+def configure_logging() -> None:
+    level = _log_level()
+    console = {"handlers": ["console"], "level": level, "propagate": False}
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {"default": {"format": _LOG_FORMAT, "datefmt": _DATE_FORMAT}},
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                    "stream": "ext://sys.stderr",
+                },
+            },
+            "root": {"handlers": ["console"], "level": level},
+            # uvicorn installs its own handlers before it imports the app; re-route them.
+            "loggers": {"uvicorn": console, "uvicorn.access": console, "uvicorn.error": console},
+        }
+    )
+
+
+configure_logging()
 logger = logging.getLogger("ca-issuer")
 
 

@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>API Reference</h1>
-          <p class="lead">All HTTP endpoints of the AdminHelper server. Base URL: <code>https://&lt;host&gt;</code>. The complete OpenAPI schema lives at <code>/api/docs</code> (Swagger UI) and <code>/openapi.json</code>.</p>
+          <p class="lead">All HTTP endpoints of the AdminHelper server. Base URL: <code>https://&lt;host&gt;</code>. The complete OpenAPI schema lives at <code>/api/docs</code> (Swagger UI) and <code>/openapi.json</code> when the server runs with <code>SERVER_ENABLE_DOCS=1</code>; without it the server serves neither.</p>
 
           <h2>Authentication</h2>
           <p>Three mechanisms, depending on the caller:</p>
@@ -339,7 +339,7 @@ Content-Type: application/json
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Use Swagger directly</div><p><code>/api/docs</code> renders OpenAPI 3.1 interactively, including "Try it out". For CI clients, a single <code>openapi-generator generate -g go -i https://srv/openapi.json</code> is enough.</p></div>
+            <div><div class="callout-title">Use Swagger directly</div><p>With <code>SERVER_ENABLE_DOCS=1</code>, <code>/api/docs</code> renders OpenAPI 3.1 interactively, including "Try it out". For CI clients, a single <code>openapi-generator generate -g go -i https://srv/openapi.json</code> is enough.</p></div>
           </div>
 
           <div class="page-nav">

@@ -110,6 +110,12 @@ openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate   # client 
               If the file could not be renamed (on Windows, while another program holds it open), the desktop does not start, and <code>adminhelper.log</code> reports <code>the data was not moved into workspaces</code> with <code>was not set aside as</code>: close the other program and start the desktop again.</li>
           </ul>
 
+          <h2>A service does not start</h2>
+          <ul>
+            <li>The last line of <code>docker compose logs &lt;service&gt;</code> names the variable with an invalid value and what is expected (see <a href="installation.html#env">Environment Variables</a>). Fix the value in <code>.env</code> or remove the line, then run <code>docker compose up -d</code>.</li>
+            <li>Monitoring with <code>MONITOR_API_KEY is empty</code>: run <code>./scripts/init-secrets.sh</code>, then <code>docker compose up -d</code>. The server logs the same name at start and keeps running without monitoring.</li>
+          </ul>
+
           <h2>Monitoring ingest dropping samples</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Check auth

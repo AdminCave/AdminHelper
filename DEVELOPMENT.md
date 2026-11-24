@@ -872,7 +872,7 @@ PYTHONPATH=../pycommon DATA_DIR=../data uvicorn app.main:app --reload --host 127
 Was beide Dienste gleich brauchen, gehoert dorthin; `apps/server/tests/test_no_python_copies.py` meldet eine Funktion,
 die gleich in beiden Diensten steht.
 
-Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface und API-Docs unter `/api/docs` (Swagger UI) bzw. `/openapi.json`.
+Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface; die API-Docs unter `/api/docs` (Swagger UI) bzw. `/openapi.json` liefert er nur mit `SERVER_ENABLE_DOCS=1` aus.
 
 **Erstanmeldung:** Es gibt keinen Default-Login mehr. Im Log nach `Setup-Token` suchen, dann mit dem Token einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
 
@@ -1072,11 +1072,12 @@ pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 
 PYTHONPATH=../pycommon \
 DATA_DIR="${TMPDIR:-/tmp}/adminhelper-monitor" \
+MONITOR_API_KEY=dev-monitor-key \
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
 
-**`DATA_DIR`:** Der Dienst legt das Verzeichnis beim Import an; der Default `/app/data` gehört dem Container, ohne Root scheitert der Start dort mit `PermissionError: '/app'` (`apps/monitoring/app/core/config.py`). Im Verzeichnis liegt die automatisch erzeugte `.api_key`, solange `MONITOR_API_KEY` nicht gesetzt ist.
+**`DATA_DIR`:** Der Dienst legt das Verzeichnis beim Import an; der Default `/app/data` gehört dem Container, ohne Root scheitert der Start dort mit `PermissionError: '/app'` (`apps/monitoring/app/core/config.py`). Ohne `MONITOR_API_KEY` startet der Dienst nicht; fuer Tests setzt `apps/monitoring/tests/conftest.py` einen Test-Schluessel.
 
 **Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut im Stack nur der Einmal-Dienst `db-init` (`python -m app.db_roles setup`, `apps/server/app/db_roles.py`).
 
@@ -1655,10 +1656,10 @@ cargo tauri dev
 
 ```bash
 cd apps/server && source .venv/bin/activate
-PYTHONPATH=../pycommon DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
+PYTHONPATH=../pycommon DATA_DIR=../data SERVER_ENABLE_DOCS=1 uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # In einem anderen Terminal:
-curl http://127.0.0.1:8080/api/docs
+curl http://127.0.0.1:8080/openapi.json
 ```
 
 ### Server-Login per CLI testen

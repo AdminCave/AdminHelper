@@ -83,9 +83,9 @@ echo "[stack] alembic upgrade head"
 
 # Instance A first (it bootstraps the admin), then B, to avoid a startup race.
 "$PY/uvicorn" app.main:app --host 127.0.0.1 --port 8081 >/tmp/sse-e2e-a.log 2>&1 & PID_A=$!
-for _ in $(seq 1 40); do curl -sf http://127.0.0.1:8081/api/docs >/dev/null 2>&1 && break; sleep 0.5; done
+for _ in $(seq 1 40); do curl -so /dev/null http://127.0.0.1:8081/api/auth/me 2>/dev/null && break; sleep 0.5; done
 "$PY/uvicorn" app.main:app --host 127.0.0.1 --port 8082 >/tmp/sse-e2e-b.log 2>&1 & PID_B=$!
-for _ in $(seq 1 40); do curl -sf http://127.0.0.1:8082/api/docs >/dev/null 2>&1 && break; sleep 0.5; done
+for _ in $(seq 1 40); do curl -so /dev/null http://127.0.0.1:8082/api/auth/me 2>/dev/null && break; sleep 0.5; done
 echo "[stack] both instances up"
 
 "$PY/python" - <<'PYEOF'
