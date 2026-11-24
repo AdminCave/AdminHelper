@@ -10,8 +10,10 @@ Heavy: none — nur Testdateien und DEVELOPMENT.md; kein Stack-, Gateway-, PKI- 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Monitoring: gemeinsamer Fixture db_engine, client_db auf Postgres  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/tests/conftest.py
+### T1 — Monitoring: gemeinsamer Fixture db_engine, client_db auf Postgres  [x]
+Komponente: monitoring · Dateien: apps/monitoring/tests/conftest.py, apps/monitoring/tests/test_health.py, apps/monitoring/tests/test_response_shapes.py
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped @25bf2b881 2026-11-24T13:15:54+01:00
+Review: approve (.ah-out/review/kern-testdb-1/T1.verdict.json)
 Änderung: R-0700. Neuer Fixture `db_engine`: mit einer Postgres-URL aus `DATABASE_URL`, sonst `AH_TEST_DB`, eine abgeleitete Datenbank `<db>_mon_unit` (anlegen, wenn sie fehlt; Schema einmal je Lauf über `Base.metadata.create_all`), nach jedem Test `TRUNCATE … RESTART IDENTITY CASCADE` über alle Tabellen; ohne Postgres-URL die bisherige SQLite-Engine. `client_db` baut darauf. Laufzeit der Suite vorher und nachher in `## Entscheidungen`.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: → T6
@@ -51,3 +53,5 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- 2026-11-24 (T1): Laufzeit der Monitoring-Suite auf der Dev-Box: SQLite 225 s (`pytest -q`, ohne Postgres-URL), Postgres 253 s (195 s + 58 s der zweiten Stufe von `run.sh`), etwa +12 %. Der 15-Minuten-Deckel des CI-Jobs bleibt weit entfernt.
+- 2026-11-24 (T1): `test_health` und `test_response_shapes` legen Alarm-Log-Zeilen in derselben Session wie ihre Regeln an; ohne ORM-Beziehung ordnet SQLAlchemy die Regel nicht zuerst ein, Postgres prüft den Fremdschlüssel. Die Tests flushen die Regeln vorher (Test-Annahme, kein Produktfehler).

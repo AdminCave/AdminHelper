@@ -41,6 +41,8 @@ def _check(
 
 def _rule(db, rid, channel):
     db.add(MonitorAlertRule(id=rid, name=rid, channel=channel, channel_config="{}"))
+    # No ORM relationship orders the rule before its log rows; Postgres checks the foreign key.
+    db.flush()
 
 
 def _sent(db, rid, cid, *, ago, success, when=None):
