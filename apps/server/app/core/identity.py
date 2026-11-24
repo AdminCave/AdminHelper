@@ -42,7 +42,7 @@ from cryptography.x509.oid import NameOID
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core import config
+from app.core import config, database
 from app.core.database import get_db
 from app.core.errors import CodedHTTPException
 from app.core.middleware import _NameResolver
@@ -467,5 +467,24 @@ def require_scope(*allowed: str):
         db: Session = Depends(get_db),
     ) -> ClientIdentity:
         return check_scope(request, identity, db, allowed_set)
+
+    return dependency
+
+
+def require_scope_brief(*allowed: str):
+    """require_scope on a short session of its own, closed before the route runs: for a
+    route that then waits on another service, so no get_db connection is held for that
+    wait (R-1695; same reason as the SSE stream's check)."""
+    allowed_set = frozenset(allowed)
+
+    def dependency(
+        request: Request,
+        identity: ClientIdentity = Depends(get_client_identity),
+    ) -> ClientIdentity:
+        db = database.SessionLocal()
+        try:
+            return check_scope(request, identity, db, allowed_set)
+        finally:
+            db.close()
 
     return dependency

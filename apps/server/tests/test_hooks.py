@@ -518,6 +518,171 @@ def test_trigger_routes_declare_their_error_codes():
     assert "401" not in by_token
 
 
+class TestFailedRunsRingTheBell:
+    """R-1694: a failed scheduled or event hook (the full hook semaphore included) leaves one
+    warning in the bell of every admin, at most one per hook within twelve hours."""
+
+    @staticmethod
+    def _bind(db_session, monkeypatch):
+        from sqlalchemy.orm import sessionmaker
+
+        import app.core.database as database
+
+        monkeypatch.setattr(
+            database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
+        )
+
+    @staticmethod
+    def _add(db_session, hook_type):
+        from app.modules.hooks.models import Hook
+
+        db_session.add(
+            Hook(
+                id=f"{hook_type}-bell",
+                name=f"{hook_type}-bell",
+                hook_type=hook_type,
+                script="pass",
+                enabled=True,
+                schedule_interval="1h" if hook_type == "schedule" else None,
+                event_triggers=json.dumps(["server.created"]) if hook_type == "event" else None,
+            )
+        )
+        db_session.flush()
+
+    @staticmethod
+    def _notices(db_session):
+        from app.modules.notifications.models import Notification
+
+        return (
+            db_session.query(Notification)
+            .filter(Notification.source_type == "hook")
+            .order_by(Notification.id)
+            .all()
+        )
+
+    @staticmethod
+    def _run(hook_type):
+        if hook_type == "schedule":
+            from app.modules.hooks.scheduler import _execute_scheduled_hook
+
+            _execute_scheduled_hook("schedule-bell")
+        else:
+            from app.core.events import _run_event
+
+            _run_event("server.created", {"id": "s1"})
+
+    @pytest.mark.parametrize("hook_type", ["schedule", "event"])
+    def test_failed_run_rings_once_per_window(
+        self, db_session, admin_user, normal_user, monkeypatch, hook_type
+    ):
+        import app.modules.hooks.script_runner as script_runner
+
+        self._add(db_session, hook_type)
+        self._bind(db_session, monkeypatch)
+        monkeypatch.setattr(script_runner, "run_hook_script", lambda **kw: _TIMEOUT_RUN)
+
+        self._run(hook_type)
+        self._run(hook_type)
+
+        rows = self._notices(db_session)
+        assert [(r.user_id, r.event_type, r.category, r.severity, r.source_id) for r in rows] == [
+            (admin_user.id, "lifecycle.hook.failed", "hooks", "warning", f"{hook_type}-bell")
+        ]
+        assert f"{hook_type}-bell" in rows[0].title
+        assert "Timeout nach 30s" in (rows[0].body or "")
+
+    def test_rings_again_after_the_window(self, db_session, admin_user, monkeypatch):
+        from datetime import datetime, timedelta, timezone
+
+        import app.modules.hooks.script_runner as script_runner
+
+        self._add(db_session, "schedule")
+        self._bind(db_session, monkeypatch)
+        monkeypatch.setattr(script_runner, "run_hook_script", lambda **kw: _TIMEOUT_RUN)
+
+        self._run("schedule")
+        first = self._notices(db_session)
+        assert len(first) == 1
+        first[0].notified_at = datetime.now(timezone.utc) - timedelta(hours=13)
+        db_session.flush()
+        self._run("schedule")
+
+        assert len(self._notices(db_session)) == 2
+
+    def test_successful_run_rings_nothing(self, db_session, admin_user, monkeypatch):
+        import app.modules.hooks.script_runner as script_runner
+
+        self._add(db_session, "schedule")
+        self._bind(db_session, monkeypatch)
+        monkeypatch.setattr(script_runner, "run_hook_script", lambda **kw: _OK_RUN)
+
+        self._run("schedule")
+
+        assert self._notices(db_session) == []
+
+    def test_full_hook_semaphore_rings_the_bell(self, db_session, admin_user, monkeypatch):
+        import threading
+
+        import app.modules.hooks.script_runner as script_runner
+
+        self._add(db_session, "schedule")
+        self._bind(db_session, monkeypatch)
+        monkeypatch.setattr(script_runner, "_hook_semaphore", threading.Semaphore(0))
+
+        self._run("schedule")
+
+        rows = self._notices(db_session)
+        assert [r.user_id for r in rows] == [admin_user.id]
+        assert "Hook-Limit" in (rows[0].body or "")
+
+    @pytest.mark.parametrize("hook_type", ["schedule", "event"])
+    def test_raising_run_rings_the_bell(self, db_session, admin_user, monkeypatch, hook_type):
+        import app.modules.hooks.script_runner as script_runner
+
+        def boom(**kw):
+            raise RuntimeError("runner broke")
+
+        self._add(db_session, hook_type)
+        self._bind(db_session, monkeypatch)
+        monkeypatch.setattr(script_runner, "run_hook_script", boom)
+
+        self._run(hook_type)
+
+        rows = self._notices(db_session)
+        assert [r.user_id for r in rows] == [admin_user.id]
+        assert "runner broke" in (rows[0].body or "")
+
+    def test_a_failed_notice_does_not_raise_after_the_rollback(self, caplog):
+        """The rollback expires the hook: reading its name afterwards would load it again,
+        and with the database gone that raises out of a function that must never raise
+        (in _run_event it would skip the event's remaining hooks)."""
+        from app.modules.hooks.script_runner import notify_hook_failure
+
+        class _Expiring:
+            id = "h-1"
+            expired = False
+
+            @property
+            def name(self):
+                if self.expired:
+                    raise RuntimeError("database gone")
+                return "nightly-backup"
+
+        hook = _Expiring()
+
+        class _GoneDb:
+            def query(self, *args):
+                raise RuntimeError("database gone")
+
+            def rollback(self):
+                hook.expired = True
+
+        with caplog.at_level(logging.ERROR):
+            notify_hook_failure(_GoneDb(), hook, "Timeout nach 30s")
+
+        assert "nightly-backup" in caplog.text
+
+
 class TestHookWorkerRobustness:
     """4.69/4.70/4.71: the hook worker's timeout, response-size and result-return handling."""
 

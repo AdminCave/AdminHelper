@@ -428,3 +428,33 @@ def test_two_concurrent_bootstraps_with_the_token_create_one_admin(pg_engine, mo
         BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
     assert len(admins) == 1, (admins, statuses)
     assert sorted(statuses.values()) == [201, 409], statuses
+
+
+def test_a_name_taken_between_check_and_insert_answers_409(
+    test_client, db_session, fresh_token, monkeypatch
+):
+    """R-1734: a CLI create-admin that inserts the same name after the bootstrap's checks
+    makes the insert fail on the unique name; the route answers 409, not 500, and keeps
+    the token."""
+    from app.modules.users import service as users_service
+
+    create_user = users_service.create_user
+
+    def _competitor_first(db, **kwargs):
+        db.execute(
+            User.__table__.insert().values(
+                username=kwargs["username"], hashed_password="x", is_admin=True
+            )
+        )
+        return create_user(db, **kwargs)
+
+    monkeypatch.setattr(users_service, "create_user", _competitor_first)
+
+    res = test_client.post(
+        "/api/auth/bootstrap",
+        json={"token": fresh_token, "username": "first", "password": "abcdefgh"},
+    )
+
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"] == "Server ist bereits initialisiert"
+    assert BOOTSTRAP_TOKEN_FILE.exists()

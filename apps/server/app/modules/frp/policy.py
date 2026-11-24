@@ -9,7 +9,7 @@ The plugin admits only those.
 
 The proxies come from the text generate_frpc_toml writes for the host, read back as TOML:
 the same tunnels (active_tunnels), the same fields and the same allow users
-(get_allow_users), so the policy cannot drift from what the agent runs. The server writes
+(allow_users_by_server), so the policy cannot drift from what the agent runs. The server writes
 the file after each change of tunnels, the FRP config, servers or users' access, at
 startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
 registers, so a write changes nothing for proxies already up.
@@ -30,7 +30,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.core import database
-from app.modules.frp._helpers import get_allow_users, get_frp_config
+from app.modules.frp._helpers import allow_users_by_server, get_frp_config
 from app.modules.frp.config_generator import _first_warning, generate_frpc_toml
 from app.modules.frp.docker_manager import write_frps_policy
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -101,11 +101,11 @@ def _proxy(fields: dict) -> dict | None:
 
 
 def _proxies(
-    db: Session,
     config: FrpServerConfig,
     server_id: str,
     key_generation: int,
     tunnels: list[FrpTunnel],
+    allow_users: list[str],
 ) -> dict:
     """The proxies of the host's frpc.toml by tunnel ID."""
     try:
@@ -114,7 +114,7 @@ def _proxies(
                 config,
                 tunnels,
                 server_id,
-                get_allow_users(db, server_id),
+                allow_users,
                 key_generation=key_generation,
             )
         )
@@ -154,6 +154,7 @@ def _servers(db: Session) -> tuple[dict, str]:
     generations = dict(
         db.query(Server.id, Server.frp_key_generation).filter(Server.id.in_(by_server.keys()))
     )
+    allow_users = allow_users_by_server(db, by_server.keys())
     for server_id, tunnels in sorted(by_server.items()):
         # frps names a proxy "<user>.<name>" and the plugin cuts the user off at the first
         # dot after it; a dot in the user would make that split ambiguous.
@@ -165,7 +166,7 @@ def _servers(db: Session) -> tuple[dict, str]:
                 )
             continue
         generation = generations.get(server_id, 0)
-        proxies = _proxies(db, config, server_id, generation, tunnels)
+        proxies = _proxies(config, server_id, generation, tunnels, allow_users[server_id])
         if proxies:
             servers[server_id] = {
                 "keyHash": proxy_key_hash(server_id, generation),

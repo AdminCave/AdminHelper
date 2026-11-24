@@ -451,6 +451,17 @@ def normal_user(db_session):
     return user
 
 
+@pytest.fixture
+def scope_session_on_test_db(db_session, monkeypatch):
+    """require_scope_brief opens a SessionLocal of its own (R-1695): bind it to the test
+    connection, so the scope check sees the test's register rows and stays in its rollback."""
+    from app.core import database
+
+    monkeypatch.setattr(
+        database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
+    )
+
+
 @pytest.fixture()
 def test_client(db_session):
     """FastAPI TestClient with an overridden DB dependency."""

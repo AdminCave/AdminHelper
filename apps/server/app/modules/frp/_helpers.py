@@ -135,19 +135,29 @@ def get_allow_users(db: Session, server_id: str) -> list[str]:
     in allowUsers and the agent's config hash, and a set's order follows the
     per-process hash seed, so the hash would change on every restart.
     """
-    assigned = (
-        db.query(User)
-        .join(user_server_assoc, User.id == user_server_assoc.c.user_id)
-        .filter(user_server_assoc.c.server_id == server_id)
-        .all()
-    )
-    admins = db.query(User).filter(User.is_admin.is_(True)).all()
-    names = sorted({u.username for u in [*assigned, *admins]})
     # Fail CLOSED: if nobody resolves (no assigned users AND no admins — only
     # reachable if all admins were demoted, which update_user now also blocks),
     # return an empty allow-list (the config_generator then falls back to the
     # admin visitor), NOT ["*"] which would let ANY visitor reach the tunnel.
-    return names
+    return allow_users_by_server(db, [server_id])[server_id]
+
+
+def allow_users_by_server(db: Session, server_ids) -> dict[str, list[str]]:
+    """get_allow_users for each of server_ids in two queries, however many there are: the
+    policy and the bulk ZIP build every host's list (R-1699)."""
+    ids = list(server_ids)
+    admins = {name for (name,) in db.query(User.username).filter(User.is_admin.is_(True))}
+    assigned: dict[str, set[str]] = {server_id: set() for server_id in ids}
+    if ids:
+        rows = (
+            db.query(user_server_assoc.c.server_id, User.username)
+            .select_from(user_server_assoc)
+            .join(User, User.id == user_server_assoc.c.user_id)
+            .filter(user_server_assoc.c.server_id.in_(ids))
+        )
+        for server_id, name in rows:
+            assigned[server_id].add(name)
+    return {server_id: sorted(admins | names) for server_id, names in assigned.items()}
 
 
 def frpc_sync_inputs(

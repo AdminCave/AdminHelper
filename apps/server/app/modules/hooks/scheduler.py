@@ -115,7 +115,11 @@ def _execute_scheduled_hook(hook_id: str) -> None:
     from app.core.database import SessionLocal
     from app.core.time import iso_utc
     from app.modules.hooks.models import Hook
-    from app.modules.hooks.script_runner import failed_run_error, run_hook_script
+    from app.modules.hooks.script_runner import (
+        failed_run_error,
+        notify_hook_failure,
+        run_hook_script,
+    )
 
     db = SessionLocal()
     try:
@@ -145,8 +149,10 @@ def _execute_scheduled_hook(hook_id: str) -> None:
             error = failed_run_error(result)
             if error is not None:
                 logger.warning("Scheduled hook %r failed: %r", hook.name, error)
-        except Exception:
+                notify_hook_failure(db, hook, error)
+        except Exception as exc:
             logger.exception("Scheduled Hook '%s' fehlgeschlagen", hook.name)
+            notify_hook_failure(db, hook, failed_run_error({"error": repr(exc)}) or "")
     finally:
         db.close()
 

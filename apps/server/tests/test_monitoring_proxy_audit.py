@@ -152,3 +152,51 @@ def test_error_after_sending_is_audited(test_client, db_session, admin_user, mon
     for cell in _cells(row):
         assert "transport-msg-7b2e" not in cell
         assert mp._MONITOR_BASE not in cell
+
+
+def test_the_admin_proxy_closes_its_session_before_the_forward(
+    test_client, db_session, admin_user, monkeypatch
+):
+    """R-1695: the admin proxy hands back the session of its auth checks before it waits on
+    the monitoring; the audit row afterwards still lands."""
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from app.core import database
+    from app.main import app
+
+    opened: list[Session] = []
+    closed: list[Session] = []
+
+    class _Tracked(Session):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+        def close(self):
+            closed.append(self)
+            super().close()
+
+    factory = sessionmaker(bind=db_session.connection(), autoflush=False, class_=_Tracked)
+
+    def _get_db():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[database.get_db] = _get_db
+    headers = _headers(test_client)
+    open_at_forward: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        open_at_forward.append(len(opened) - len(closed))
+        return httpx.Response(200, json={"answer": 200})
+
+    monkeypatch.setattr(mp, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+
+    r = test_client.put("/api/monitoring/checks/c1", json={}, headers=headers)
+
+    assert r.status_code == 200, r.text
+    assert open_at_forward == [0]
+    assert len(_rows(db_session, "monitoring.put")) == 1

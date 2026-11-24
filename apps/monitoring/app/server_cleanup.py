@@ -40,6 +40,31 @@ from app.template_sync import SchedulerAction, apply_scheduler_actions
 logger = logging.getLogger("monitor.server_cleanup")
 
 
+def known_server_ids(db: Session) -> set[str]:
+    """Every server id that monitoring data of cleanup_server hangs on (global rows with a
+    NULL server id do not count)."""
+    columns = (
+        MonitorCheck.server_id,
+        MonitorAlertRule.match_server_id,
+        MonitorTemplateAssignment.server_id,
+        MonitorCheckTombstone.server_id,
+        MonitorModuleTombstone.server_id,
+        MonitorAgentKey.server_id,
+        MonitorMaintenance.server_id,
+        MonitorAgentLiveness.server_id,
+        MonitorHostFacts.server_id,
+        MonitorTemplateSuggestionDismissal.server_id,
+        MonitorDiscovery.server_id,
+        MonitorFinding.server_id,
+        MonitorServiceInventory.server_id,
+        MonitorServiceLog.server_id,
+    )
+    ids: set[str] = set()
+    for column in columns:
+        ids.update(sid for (sid,) in db.query(column).filter(column.isnot(None)).distinct())
+    return ids
+
+
 def cleanup_server(
     db: Session,
     server_id: str,

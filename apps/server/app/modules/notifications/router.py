@@ -649,9 +649,9 @@ def notify_config(db: Session = Depends(get_db), _internal: None = Depends(requi
 
 
 # The source types under which the server keeps notices of its own and by which it finds
-# them again: frp_config (main._report_rejected_fields, a field set already reported) and
-# frps (frp.supervisor_watch, an event already told and the hourly limit), certificate_expiry
-# (enrollment.expiry.notify_expiring, a level already reported). A row from this
+# them again: frp_config (frp.startup_checks._report_rejected_fields, a field set already
+# reported) and frps (frp.supervisor_watch, an event already told and the hourly limit),
+# certificate_expiry (enrollment.expiry.notify_expiring, a level already reported). A row from this
 # ingress under one of them would count as such a notice. IncomingEvent keeps taking them:
 # the server builds its own notices with it.
 _SERVER_SOURCE_TYPES = frozenset({"frp_config", "frps", "certificate_expiry"})

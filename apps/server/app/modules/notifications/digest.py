@@ -8,12 +8,13 @@ that waited for it (outbox status digest, set by incidents._queue).
 A person's digest is due at the first digest time (quiet.next_digest_at, 08:00 in their
 zone, daily or on Mondays) after their oldest waiting entry and after their last digest,
 so one window sends once. With the digest turned off, what still waits goes at the next
-run. A failed send counts an attempt on every entry and tries again at the next run,
-up to NOTIFICATION_MAX_ATTEMPTS, then the entries fail like a drained one.
+run. A failed send counts an attempt on every entry and tries again after the linear
+backoff of the outbox drain (R-1698), up to NOTIFICATION_MAX_ATTEMPTS, then the entries
+fail like a drained one.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from app.core.config import NOTIFICATION_MAX_ATTEMPTS
 from app.modules.notifications import mail_template
 from app.modules.notifications.channel_config import using
 from app.modules.notifications.models import NotificationOutbox, NotificationSettings
+from app.modules.notifications.outbox import _BACKOFF_MINUTES
 from app.modules.notifications.quiet import next_digest_at, zone
 from app.modules.notifications.sender import send_email
 
@@ -44,13 +46,19 @@ def send_digests(db: Session, now: datetime) -> tuple[int, int]:
 
 def _send_due(db: Session, now: datetime) -> tuple[int, int]:
     waiting = (
-        db.query(NotificationOutbox.user_id, func.min(NotificationOutbox.created_at))
+        db.query(
+            NotificationOutbox.user_id,
+            func.min(NotificationOutbox.created_at),
+            func.max(NotificationOutbox.next_attempt_at),
+        )
         .filter(NotificationOutbox.status == "digest")
         .group_by(NotificationOutbox.user_id)
         .all()
     )
     sent = failed = 0
-    for user_id, oldest in waiting:
+    for user_id, oldest, retry_at in waiting:
+        if retry_at is not None and retry_at > now:
+            continue
         settings = db.get(NotificationSettings, user_id)
         if not _due(settings, oldest, now):
             continue
@@ -108,6 +116,8 @@ def _send(
             if e.attempts >= NOTIFICATION_MAX_ATTEMPTS:
                 e.status = "failed"
                 gone += 1
+            else:
+                e.next_attempt_at = now + timedelta(minutes=_BACKOFF_MINUTES * e.attempts)
         logger.warning("Notification digest failed (user=%s, %s)", entries[0].user_id, exc)
         return False, gone
     for e in entries:

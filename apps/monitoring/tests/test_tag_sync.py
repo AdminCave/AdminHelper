@@ -11,11 +11,13 @@ changes nothing (None ≠ empty list)."""
 import json
 import logging
 import uuid
+from datetime import datetime
 
 import pytest
 from sqlalchemy.orm import sessionmaker
 
 from app.models import (
+    MonitorAgentLiveness,
     MonitorCheck,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -282,18 +284,58 @@ def test_rename_of_one_field_alone_refreshes_the_assignment(db, hostname, name, 
     assert json.loads(check.config) == config
 
 
-def test_assignment_of_a_server_missing_from_the_inventory_stays(db):
+def test_server_missing_from_the_inventory_is_cleaned_up(db):
+    """R-1697: the hub's one cleanup call after a deletion may have failed; the sync clears
+    what is left of a server the inventory no longer lists, manual rows included."""
     tid = _template(db, defs=[PING_DEF])
     _apply(db, tid, "srv-9", "old.example", "Old")
+    _apply(db, tid, "srv-1", "h.example", "H")
+    db.add(MonitorAgentLiveness(server_id="srv-9", last_report_at=datetime(2026, 1, 1)))
+    db.commit()
 
     assert sync_tag_assignments(db, [_renamed("srv-1", [])]) == {
         "created": 0,
         "removed": 0,
-        "refreshed": 0,
+        "refreshed": 1,
     }
-    row = _assignments(db)[(tid, "srv-9")]
-    assert (row.server_hostname, row.server_name) == ("old.example", "Old")
-    assert json.loads(db.query(MonitorCheck).one().config) == {"host": "old.example"}
+    assert set(_assignments(db)) == {(tid, "srv-1")}
+    assert [c.server_id for c in db.query(MonitorCheck).all()] == ["srv-1"]
+    assert db.query(MonitorAgentLiveness).count() == 0
+
+
+@pytest.mark.parametrize("inventory", [[], None], ids=["empty", "unavailable"])
+def test_empty_or_unavailable_inventory_cleans_up_nothing(db, monkeypatch, inventory):
+    import app.tag_sync as tag_sync_mod
+
+    tid = _template(db, defs=[PING_DEF])
+    _apply(db, tid, "srv-9", "old.example", "Old")
+    monkeypatch.setattr(tag_sync_mod, "fetch_inventory", lambda: inventory)
+
+    sync_tag_assignments(db)
+
+    assert (tid, "srv-9") in _assignments(db)
+    assert db.query(MonitorCheck).count() == 1
+
+
+def test_failed_orphan_cleanup_does_not_stop_the_next(db, monkeypatch, caplog):
+    import app.tag_sync as tag_sync_mod
+    from app.server_cleanup import cleanup_server
+
+    tid = _template(db, defs=[PING_DEF])
+    _apply(db, tid, "srv-8", "a.example", "A")
+    _apply(db, tid, "srv-9", "b.example", "B")
+
+    def flaky(session, server_id):
+        if server_id == "srv-8":
+            raise RuntimeError("boom")
+        return cleanup_server(session, server_id)
+
+    monkeypatch.setattr(tag_sync_mod, "cleanup_server", flaky)
+    with caplog.at_level(logging.ERROR, logger="monitor.tag_sync"):
+        sync_tag_assignments(db, [_srv("srv-1", [])])
+
+    assert set(_assignments(db)) == {(tid, "srv-8")}
+    assert "srv-8" in caplog.text
 
 
 def test_unavailable_inventory_refreshes_nothing(db, monkeypatch):

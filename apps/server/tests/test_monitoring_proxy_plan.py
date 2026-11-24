@@ -23,6 +23,9 @@ _LOGGER = "app.modules.monitoring_proxy.router"
 _PLAN = b'{"catalog_version":"sha256:x","checks":[],"scan":false}'
 
 
+pytestmark = pytest.mark.usefixtures("scope_session_on_test_db")
+
+
 @pytest.fixture(autouse=True)
 def _fresh_counters():
     reset_backend_for_tests()
@@ -241,3 +244,64 @@ def test_an_unanswered_forward(test_client, monkeypatch, caplog, error, status, 
     assert error.__name__ in message and "agent plan" in message
     assert proxy._MONITOR_BASE not in message
     assert not MONITOR_API_KEY or MONITOR_API_KEY not in message
+
+
+# --- no session open over the forward (R-1695) -----------------------------------------
+
+
+@pytest.mark.parametrize("route", ["plan", "report"])
+def test_no_db_session_is_open_while_the_agent_route_forwards(
+    test_client, db_session, monkeypatch, route
+):
+    """The scope check runs on a short session of its own, closed before the forward: a
+    hanging monitoring (client timeout 30 s) must not hold a pool connection per agent."""
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from app.core import database
+    from app.main import app
+
+    opened: list[Session] = []
+    closed: list[Session] = []
+
+    class _Tracked(Session):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+        def close(self):
+            closed.append(self)
+            super().close()
+
+    monkeypatch.setattr(
+        database,
+        "SessionLocal",
+        sessionmaker(bind=db_session.connection(), autoflush=False, class_=_Tracked),
+    )
+    entered: list[int] = []
+
+    def _get_db():
+        entered.append(1)
+        yield db_session
+
+    app.dependency_overrides[database.get_db] = _get_db
+    monkeypatch.setattr(config, "MTLS_ENFORCE", True)
+    open_at_forward: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        open_at_forward.append(len(opened) - len(closed))
+        return httpx.Response(200, content=_PLAN, headers={"content-type": "application/json"})
+
+    monkeypatch.setattr(proxy, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    headers = {"X-API-Key": "k", **_gateway_headers(cn="srv-1", ou=SCOPE_AGENT)}
+
+    if route == "plan":
+        resp = test_client.get("/api/monitoring/agent/srv-1/plan", headers=headers)
+    else:
+        resp = test_client.post(
+            "/api/monitoring/agent/srv-1/report", content=b"{}", headers=headers
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert open_at_forward == [0]
+    assert len(opened) == 1  # the scope check ran on its own session
+    assert entered == []

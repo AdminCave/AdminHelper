@@ -12,7 +12,7 @@ person's zone, daily or on Mondays, once per window, not without entries, at the
 run once it is turned off, and retries a failed send up to the cutoff."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -272,18 +272,54 @@ class TestSendDigests:
         user = _person(db_session, digest="daily", matrix=json.dumps({"warning": ["email"]}))
         ingest(db_session, _warning(), now=DAY)
 
+        now = NEXT_DIGEST
         for attempt in range(1, NOTIFICATION_MAX_ATTEMPTS):
-            assert send_digests(db_session, NEXT_DIGEST) == (0, 0)
+            assert send_digests(db_session, now) == (0, 0)
             (entry,) = _entries(db_session, user)
             assert (entry.status, entry.attempts, entry.last_error) == (
                 "digest",
                 attempt,
                 "relay down",
             )
-        assert send_digests(db_session, NEXT_DIGEST) == (0, 1)
+            # R-1698: linear backoff like the drain; a run before it leaves the entry alone.
+            wait = timedelta(minutes=5 * attempt)
+            assert entry.next_attempt_at == now + wait
+            assert send_digests(db_session, now + wait - timedelta(seconds=1)) == (0, 0)
+            assert _entries(db_session, user)[0].attempts == attempt
+            now += wait
+        assert send_digests(db_session, now) == (0, 1)
         (entry,) = _entries(db_session, user)
         assert entry.status == "failed"
         assert db_session.get(NotificationSettings, user.id).digest_last_at is None
+
+    def test_a_twenty_minute_relay_outage_does_not_drop_the_digest(
+        self, db_session, web01, wire, monkeypatch
+    ):
+        """R-1698: the job runs every five minutes; without a backoff five failures in
+        twenty minutes failed the digest for good."""
+        relay_down = [True]
+        delivered = digest_mod.send_email
+
+        def relay(*a, **k):
+            if relay_down[0]:
+                raise RuntimeError("relay down")
+            return delivered(*a, **k)
+
+        monkeypatch.setattr(digest_mod, "send_email", relay)
+        user = _person(db_session, digest="daily", matrix=json.dumps({"warning": ["email"]}))
+        ingest(db_session, _warning(), now=DAY)
+
+        for minute in range(0, 25, 5):
+            send_digests(db_session, NEXT_DIGEST + timedelta(minutes=minute))
+        (entry,) = _entries(db_session, user)
+        assert entry.status == "digest"
+
+        relay_down[0] = False
+        for minute in range(25, 35, 5):
+            send_digests(db_session, NEXT_DIGEST + timedelta(minutes=minute))
+        (entry,) = _entries(db_session, user)
+        assert entry.status == "sent"
+        assert [w[0] for w in wire] == ["digest"]
 
 
 def test_a_digest_mail_lists_at_most_its_cap_and_counts_the_rest(monkeypatch):

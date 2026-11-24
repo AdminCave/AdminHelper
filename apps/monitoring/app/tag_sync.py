@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
 from app.models import MonitorTemplate, MonitorTemplateAssignment, MonitorTemplateTagAssignment
+from app.server_cleanup import cleanup_server, known_server_ids
 from app.template_sync import (
     apply_template,
     record_override_baseline,
@@ -66,7 +67,13 @@ def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> di
     """Reconcile materialized tag assignments against the server inventory.
 
     Returns {"created": n, "removed": m, "refreshed": k} or None when the
-    inventory was unavailable (nothing is changed in that case)."""
+    inventory was unavailable (nothing is changed in that case).
+
+    Servers monitoring knows and a non-empty inventory does not are cleaned up like on a
+    server deletion: the hub's one cleanup call may have failed (R-1697)."""
+    # Taken before the fetch: the hub commits a server before monitoring gets data for it,
+    # so an id seen here but missing from the later inventory is really gone.
+    known_before = known_server_ids(db)
     if inventory is None:
         inventory = fetch_inventory()
     if inventory is None:
@@ -132,6 +139,9 @@ def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> di
         elif _refresh_names(db, assignment, servers_by_id.get(server_id)):
             refreshed += 1
 
+    if servers_by_id:
+        _cleanup_orphans(db, known_before - servers_by_id.keys())
+
     if created or removed or refreshed:
         logger.info(
             "Tag-sync: %d assignment(s) created, %d removed, %d refreshed",
@@ -140,6 +150,16 @@ def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> di
             refreshed,
         )
     return {"created": created, "removed": removed, "refreshed": refreshed}
+
+
+def _cleanup_orphans(db: Session, orphans: set[str]) -> None:
+    for server_id in sorted(orphans):
+        try:
+            cleanup_server(db, server_id)
+            logger.info("Tag-sync: cleaned up monitoring data of deleted server %s", server_id)
+        except Exception:
+            db.rollback()
+            logger.exception("Tag-sync: cleanup of deleted server %s failed", server_id)
 
 
 def _refresh_names(db: Session, assignment: MonitorTemplateAssignment, srv: dict | None) -> bool:

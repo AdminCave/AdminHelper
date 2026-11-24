@@ -367,6 +367,7 @@ def _agent_server(db) -> str:
     return raw
 
 
+@pytest.mark.usefixtures("scope_session_on_test_db")
 @pytest.mark.parametrize("enforced", [False, True])
 def test_an_agent_report_with_another_servers_certificate_is_refused(
     test_client, monkeypatch, enforced
@@ -383,6 +384,7 @@ def test_an_agent_report_with_another_servers_certificate_is_refused(
     assert monitoring.forwarded == []
 
 
+@pytest.mark.usefixtures("scope_session_on_test_db")
 def test_the_server_mismatch_body_is_the_text_and_its_code(test_client, monkeypatch):
     # The contract (R-0664): the detail word for word as before the code, the code next to it.
     import app.modules.monitoring_proxy.router as proxy
@@ -397,6 +399,7 @@ def test_the_server_mismatch_body_is_the_text_and_its_code(test_client, monkeypa
     }
 
 
+@pytest.mark.usefixtures("scope_session_on_test_db")
 def test_an_agent_report_with_its_own_certificate_is_forwarded(test_client, monkeypatch):
     import app.modules.monitoring_proxy.router as proxy
 
@@ -408,6 +411,7 @@ def test_an_agent_report_with_its_own_certificate_is_forwarded(test_client, monk
     assert len(monitoring.forwarded) == 1
 
 
+@pytest.mark.usefixtures("scope_session_on_test_db")
 def test_an_agent_report_without_a_certificate_stays_as_it_is_in_permissive_mode(
     test_client, monkeypatch
 ):
