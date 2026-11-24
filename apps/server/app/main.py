@@ -373,7 +373,7 @@ if (static_dir / "fonts").is_dir():
 # database, so a database outage does not turn into a restart loop of the container.
 # Registered before the SPA catch-all, which answers every other /api/ path with 404.
 @app.get("/api/health")
-def health():
+def api_health():
     return {"status": "ok"}
 
 

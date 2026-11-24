@@ -1,5 +1,5 @@
 # kern-server-14 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-14 · Review: pro Task
 Spec: docs/features/kern-server-14.md (Roadmap R-1694, R-1695, R-1697, R-1698, R-1699, R-1734, R-1737, R-1744, R-1715)
 Heavy: linux-full — Server-API (neue Route), docker-compose.yml (Healthcheck), Monitoring-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -79,8 +79,10 @@ Beweis: feature/kern-server-14@27c1119e9 app/modules/hooks/script_runner.py:403-
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: keine (Fehlerpfad)
 
-### T10 — R-1744: Health-Route des Servers ist keine Kopie der Monitoring-Route  [ ]
+### T10 — R-1744: Health-Route des Servers ist keine Kopie der Monitoring-Route  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @586ba7675 2026-11-24T17:09:32+01:00
+Review: approve (.ah-out/review/kern-server-14/T10.verdict.json)
 Beweis: PR #656 CI-Lauf 45430917300, Server shard 3/4: tests/test_no_python_copies.py::test_no_function_is_copied_between_server_and_monitoring rot ({('monitoring/app/main.py', 'server/app/main.py'): ['health']}); der Wächter kam mit kern-pycommon-1 auf main
 Änderung: Die Server-Funktion heißt `api_health` statt `health`, Route und Antwort bleiben; der OpenAPI-Snapshot nimmt die neue operationId auf. Erst rot nach dem Merge von origin/main.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_no_python_copies.py tests/test_health.py tests/test_openapi_snapshot.py tests/test_route_auth_gate.py
