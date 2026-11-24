@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-testdb-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-testdb-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-testdb-1 · Review: pro Task
 Spec: docs/features/kern-testdb-1.md (Roadmap R-0700)
 Heavy: none — nur Testdateien und DEVELOPMENT.md; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
