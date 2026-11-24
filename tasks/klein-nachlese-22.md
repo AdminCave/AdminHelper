@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@c7d1f4bed`.
 
-### T1 — Agent-Doku: Platten-Zelle nennt gopsutil/disk nur für Linux und Windows (R-1771)  [ ]
+### T1 — Agent-Doku: Platten-Zelle nennt gopsutil/disk nur für Linux und Windows (R-1771)  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @20a654319 2026-11-24T22:06:17+01:00
+Review: am Ende (Branch-Review)
 Task-Review: am Ende
 Beweis: reviewer/security kern-agent-23 2026-11-24 · apps/agent/internal/monitor/disks_other.go (`//go:build !freebsd`, `disk.Partitions`, `disk.Usage`), disks_freebsd.go (`getfsstat` statt `disk.Partitions`, R-1701)
 Semantik: docs/developer/agent.html: "Unter FreeBSD holt disks_freebsd.go nur die Liste der Mounts mit einem getfsstat ohne Warten"
