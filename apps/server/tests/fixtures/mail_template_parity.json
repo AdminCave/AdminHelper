@@ -1,5 +1,5 @@
 {
-  "_comment": "Inputs and expected output of the mail template renderer (R-1533). The server (app/modules/notifications/mail_template.py) and the monitoring (app/mail_template.py) render each case the same; template.logo true stands for any logo bytes.",
+  "_comment": "Inputs and expected output of the mail template renderer (R-1533). The renderer lives in apps/pycommon/ah_common/mail_template.py; apps/server/tests/test_notify_mail_template.py renders each case; template.logo true stands for any logo bytes.",
   "cases": [
     {
       "name": "no template: the mail as before",

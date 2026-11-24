@@ -4,14 +4,14 @@
 
 """No new copies between the services (R-0698): a helper both need lives in apps/pycommon
 (ah_common). Two functions of the same name, arguments and body (docstrings dropped) in
-apps/server/app and apps/monitoring/app are a copy."""
+two of apps/server/app, apps/monitoring/app and apps/pycommon/ah_common are a copy."""
 
 import ast
 from collections import defaultdict
 from pathlib import Path
 
 _APPS = Path(__file__).resolve().parents[2]
-_TREES = (_APPS / "server" / "app", _APPS / "monitoring" / "app")
+_TREES = (_APPS / "server" / "app", _APPS / "monitoring" / "app", _APPS / "pycommon" / "ah_common")
 
 # Known copies, per pair of modules: the names that may stay doubled until their row is built.
 _KNOWN: dict[tuple[str, str], set[str]] = {}
@@ -52,7 +52,7 @@ def test_no_function_is_copied_between_server_and_monitoring():
         for pair, names in _copies().items()
         if names - _KNOWN.get(pair, set())
     }
-    assert not new, f"move these into apps/pycommon/ah_common instead of copying: {new}"
+    assert not new, f"use apps/pycommon/ah_common instead of copying: {new}"
 
 
 def test_known_copies_are_still_copies():
