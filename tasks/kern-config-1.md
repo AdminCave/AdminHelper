@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-config-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-config-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-config-1 · Review: pro Task
 Spec: docs/features/kern-config-1.md (Roadmap R-0699)
 Heavy: linux-full — `docker-compose.yml`, Server-API (`/api/docs`), `apps/ca-issuer`; kein Install- oder PKI-Datenpfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,8 +51,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T6 — Doku: Web-Timeouts brechen bei ungültigem Wert ab  [ ]
+### T6 — Doku: Web-Timeouts brechen bei ungültigem Wert ab  [x]
 Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, DEVELOPMENT.md, changelog.d/kern-config-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @055da2432 2026-11-24T12:31:59+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: R-0699, Fund der Abschlussprüfung. Die Tabellenzeilen zu `WEB_IDLE_TIMEOUT_MINUTES` und `WEB_SESSION_MAX_HOURS` versprechen noch den Rückfall auf 30/24; seit T1 bricht der Start ab. Dazu, in derselben Korrekturrunde: Der Startbefehl des Monitorings in `DEVELOPMENT.md` setzt `MONITOR_API_KEY`, und das CHANGELOG-Fragment nennt die nicht mehr gelesene `DATA_DIR/.api_key` als löschbar.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task

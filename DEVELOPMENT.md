@@ -1072,6 +1072,7 @@ pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 
 PYTHONPATH=../pycommon \
 DATA_DIR="${TMPDIR:-/tmp}/adminhelper-monitor" \
+MONITOR_API_KEY=dev-monitor-key \
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 ```
