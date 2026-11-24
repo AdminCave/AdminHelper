@@ -85,8 +85,10 @@ Review: approve (.ah-out/review/kern-pycommon-1/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T8 — Internal-Key-Vergleich in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/auth.py, apps/server/app/core/auth.py, apps/monitoring/app/core/auth.py, scripts/dev/review-risk.txt
+### T8 — Internal-Key-Vergleich in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/auth.py, apps/server/app/core/auth.py, apps/monitoring/app/core/auth.py, scripts/dev/review-risk.txt, apps/monitoring/tests/test_auth.py, apps/monitoring/tests/test_require_agent.py, apps/server/tests/test_notifications.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @44d2215db 2026-11-24T08:49:48+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T8.verdict.json)
 Änderung: Der konstante Vergleich eines gelieferten mit dem erwarteten Key (`apps/monitoring/app/core/auth.py:14`,
 `apps/server/app/core/auth.py:365`) als eine Funktion; Statuscodes bleiben je Dienst (Server 403, Monitoring 401,
 Kevin 2026-11-23). `review-risk.txt` nennt `apps/pycommon/ah_common/auth.py`.

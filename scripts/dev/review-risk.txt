@@ -24,6 +24,7 @@ apps/server/app/core/rate_limit.py
 apps/server/app/modules/api_keys/*
 apps/server/app/modules/users/*
 apps/monitoring/app/core/auth.py
+apps/pycommon/ah_common/auth.py
 apps/monitoring/app/routers/agent.py
 apps/desktop/src-tauri/src/auth.rs
 apps/desktop/src-tauri/src/keyring_store.rs

@@ -19,6 +19,7 @@ from jwt.exceptions import InvalidTokenError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ah_common.auth import key_matches
 from app.core.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
@@ -364,14 +365,6 @@ _internal_key_scheme = APIKeyHeader(
 
 def require_internal_key(x_internal_key: str | None = Depends(_internal_key_scheme)) -> None:
     """Gate for service-to-service ingress. Fail-closed: a missing/blank shared
-    secret rejects everything (constant-time compare).
-
-    Compares BYTES: secrets.compare_digest raises TypeError on str arguments
-    holding non-ASCII, and header values are latin-1 decoded — so a single byte
-    above 0x7F turned this gate into an unhandled 500 instead of a 403. The
-    monitoring side (apps/monitoring/app/core/auth.py::_key_matches) was already hardened this
-    way; this pulls the server copy level with it."""
-    if not MONITOR_API_KEY or not secrets.compare_digest(
-        (x_internal_key or "").encode(), MONITOR_API_KEY.encode()
-    ):
+    secret rejects everything (constant-time compare, ah_common.auth.key_matches)."""
+    if not key_matches(x_internal_key, MONITOR_API_KEY):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")

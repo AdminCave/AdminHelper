@@ -4,7 +4,7 @@
 
 """require_agent auth flow (6.54): every endpoint suite overrides require_agent, so the real flow —
 SHA-256 hash lookup in monitor_agent_keys, the internal-key passthrough as '__internal__', and 401 on
-a missing/wrong key — was untested. test_auth.py only covers the _key_matches building block. A
+a missing/wrong key — was untested. test_auth.py only covers the key_matches building block. A
 regression comparing the raw key instead of hash_key would lock out every real agent (or worse, break
 the key/server binding), and nothing would go red. Tested by calling require_agent directly against a
 real sqlite DB and a fake request."""

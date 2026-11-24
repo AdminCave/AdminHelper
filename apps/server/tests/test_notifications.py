@@ -769,7 +769,7 @@ class TestIngress:
         # str arguments holding non-ASCII, and header values are latin-1 decoded
         # — so one byte above 0x7F turned this gate into an unhandled 500 that an
         # unauthenticated caller could trigger at will. The monitoring side was
-        # already hardened (app/core/auth.py::_key_matches); this pins the server.
+        # already hardened; both now share ah_common.auth.key_matches; this pins the server.
         monkeypatch.setattr("app.core.auth.MONITOR_API_KEY", "secret")
         # Bytes, because httpx refuses a non-ASCII str header outright (that
         # would test the client, not us). httpx transcodes them to UTF-8, so the
