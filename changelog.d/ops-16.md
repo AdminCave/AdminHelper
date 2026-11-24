@@ -11,6 +11,8 @@
 - **Restore ueber einem neueren Schema:** `restore.sh` leert jede Datenbank als ihre Dienst-Rolle, bevor es den
   Dump einspielt; ein Restore nach einem gescheiterten Update scheitert nicht mehr an Tabellen der neueren Version
   und laesst keine zurueck.
+- **Secrets: Aufraeumen bei Abbruch:** `init-secrets.sh` entfernt seine Arbeitskopie neben der `.env` auch dann,
+  wenn der Lauf durch ein Signal endet, wie `install.sh` und `update.sh`.
 
 ### Changed
 

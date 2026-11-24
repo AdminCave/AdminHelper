@@ -61,8 +61,10 @@ Beweis: main@6895f8eaf docker-compose.yml:636-637, scripts/update.sh:886,893-899
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py tests/test_compose_healthchecks.py tests/test_env_parity.py
 Doku: docs/admin/betrieb.html DE + docs/en/admin/operations.html · changelog.d/ops-16.md
 
-### T6 — R-1727: init-secrets.sh räumt auch bei einem Abbruch auf  [ ]
+### T6 — R-1727: init-secrets.sh räumt auch bei einem Abbruch auf  [x]
 Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, changelog.d/ops-16.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9676011e6 2026-11-24T16:41:25+01:00
+Review: approve (.ah-out/review/ops-16/T6.verdict.json)
 Änderung: Ein Trap (EXIT und Signale) entfernt die temporäre Kopie neben der `.env`, solange sie nicht umbenannt ist, wie in install.sh/update.sh seit ops-15. Test: Abbruch per Signal zwischen Anlegen und Umbenennen → keine Kopie bleibt.
 Beweis: Roadmap R-1727 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test

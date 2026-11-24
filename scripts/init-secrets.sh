@@ -78,11 +78,18 @@ upsert() {
     # and waits for an answer that a wrapper collecting the output never shows.
     local tmp failed="Fehler: ${key} konnte nicht in $ENV_FILE geschrieben werden — Abbruch. $ENV_FILE bleibt beim letzten vollstaendigen Stand."
     tmp=$(mktemp "${ENV_FILE}.ah-XXXXXX") || { echo "$failed" >&2; exit 1; }
+    ENV_TMPS+=("$tmp")
     { { LC_ALL=C grep -a -vE "^#?[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
         && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
         && mv -f "$tmp" "$ENV_FILE"; } \
         || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }
 }
+
+# The working copies of upsert sit next to the .env and hold its secrets (0600); one
+# an abort leaves between mktemp and mv goes with the exit, a signal included, as in
+# install.sh and update.sh (R-1727). After the mv the name is gone and rm -f is a no-op.
+ENV_TMPS=()
+trap 'rm -f -- "${ENV_TMPS[@]}"' EXIT
 
 generated=()
 left_alone=()

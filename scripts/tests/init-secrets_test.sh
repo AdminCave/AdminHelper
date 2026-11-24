@@ -278,6 +278,20 @@ bash "$INIT" "$ENV" >/dev/null 2>&1; rc=$?
   && ok "the last statement of a key counts, as for compose: nothing made anew" \
   || bad "last statement: rc=$rc keys: $(envkeys "$ENV")"
 
+# ── a signal between mktemp and mv: the working copy goes with the exit (R-1727) ─
+# The mv wrapper ends init-secrets.sh with SIGTERM where upsert would put its copy in
+# place of the .env, so the copy is still there when the script ends.
+TERMDIR="$WORK/term"; mkdir -p "$TERMDIR/bin"
+ENV="$TERMDIR/.env"; : > "$ENV"
+# shellcheck disable=SC2016 # the wrapper expands its own arguments
+printf '#!/usr/bin/env bash\ncase "${*: -2:1}" in *.env.ah-*) kill -TERM "$PPID"; exit 1 ;; esac\nexec %s "$@"\n' \
+  "$(command -v mv)" > "$TERMDIR/bin/mv"
+chmod +x "$TERMDIR/bin/mv"
+PATH="$TERMDIR/bin:$PATH" bash "$INIT" "$ENV" >/dev/null 2>&1; rc=$?
+[ $rc -ne 0 ] && ok "SIGTERM while the .env is written ends init-secrets.sh" || bad "SIGTERM while writing: exit $rc"
+! compgen -G "$TERMDIR/.env.ah-*" >/dev/null && ok "SIGTERM while the .env is written leaves no .env.ah-* copy" \
+  || bad "copies left after SIGTERM: $(compgen -G "$TERMDIR/.env.ah-*" | tr '\n' ' ')"
+
 echo
 echo "──────────────────────────────────────────"
 echo "  init-secrets_test: ${PASS} passed, ${FAIL} failed"
