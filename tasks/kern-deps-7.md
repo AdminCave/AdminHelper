@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — R-0701: Server ohne python-multipart, greenlet und pytest-asyncio  [ ]
+### T1 — R-0701: Server ohne python-multipart, greenlet und pytest-asyncio  [x]
 Komponente: server · Dateien: apps/server/requirements.in, apps/server/requirements.txt, apps/server/requirements-dev.txt
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ff0eefd89 2026-11-24T14:26:32+01:00
+Review: approve (.ah-out/review/kern-deps-7/T1.verdict.json)
 Änderung: `python-multipart` aus `requirements.in`, `sqlalchemy[asyncio]` → `sqlalchemy`, `pytest-asyncio` aus
 `requirements-dev.txt`; Lock mit dem DEVELOPMENT.md-Rezept (pip-compile in python:3.14-slim, ohne `--upgrade`)
 neu erzeugen, nur die drei Pakete fallen heraus. Die Pakete im Worktree-Venv deinstallieren, damit der Lauf ohne
@@ -44,3 +46,4 @@ Doku: THIRD_PARTY_LICENSES.md · changelog.d/kern-deps-7.md
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: Das Worktree-Venv (`~/.cache/ah-venv-kern-deps-7`) entstand beim ersten Verify frisch aus den neuen Requirements; `python-multipart`, `greenlet` und `pytest-asyncio` fehlen darin (find_spec leer), der Lauf belegt den Stand ohne sie. Lock per pip-compile ohne `--upgrade`: nur die drei Pakete fallen heraus, `sqlalchemy[asyncio]` wird `sqlalchemy`, alle übrigen Pins gleich.
