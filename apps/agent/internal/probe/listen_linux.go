@@ -8,9 +8,7 @@ package probe
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net/netip"
 	"os"
 	"slices"
@@ -18,20 +16,15 @@ import (
 	"strings"
 )
 
-// listenTCP reads the listening TCP sockets of this host from /proc/net/tcp and tcp6 and finds the
+// listenTCP reads the listening TCP sockets of this host from sock_diag and finds the
 // processes that hold each among the descriptors of every process: one listener per socket and
 // process. gopsutil keeps one process per address (connectionDedupKey), so a socket systemd holds for
 // a service that holds it too showed either of the two. A socket no process can be found for is a
 // listener of pid 0, which the guard cannot name and so refuses.
 func listenTCP(ctx context.Context) ([]listener, error) {
-	var socks []listener
-	for _, name := range []string{"tcp", "tcp6"} {
-		data, err := readProcFile("/proc/net/" + name)
-		// Without IPv6 the kernel has no tcp6 file.
-		if err != nil && !(name == "tcp6" && errors.Is(err, fs.ErrNotExist)) {
-			return nil, err
-		}
-		socks = append(socks, parseProcNetTCP(data)...)
+	socks, err := diagListeners()
+	if err != nil {
+		return nil, err
 	}
 	holders, err := socketHolders(ctx, socks)
 	if err != nil {
@@ -117,21 +110,19 @@ func osPrivilegedPorts() (lo, hi uint16) {
 // the connect (checkOwner).
 func osTakerOwners(server, _ netip.AddrPort) ([]uint32, error) {
 	ip := server.Addr().Unmap()
+	socks, err := diagListeners()
+	if err != nil {
+		return nil, err
+	}
 	var owners []uint32
-	for _, name := range []string{"tcp", "tcp6"} {
-		data, err := readProcFile("/proc/net/" + name)
-		if err != nil && !(name == "tcp6" && errors.Is(err, fs.ErrNotExist)) {
-			return nil, err
+	for _, l := range socks {
+		if l.port != server.Port() || (l.addr != ip && !l.addr.IsUnspecified()) {
+			continue
 		}
-		for _, l := range parseProcNetTCP(data) {
-			if l.port != server.Port() || (l.addr != ip && !l.addr.IsUnspecified()) {
-				continue
-			}
-			if !l.hasUID {
-				return nil, fmt.Errorf("a listener of port %d names no owner", server.Port())
-			}
-			owners = append(owners, l.uid)
+		if !l.hasUID {
+			return nil, fmt.Errorf("a listener of port %d names no owner", server.Port())
 		}
+		owners = append(owners, l.uid)
 	}
 	return owners, nil
 }

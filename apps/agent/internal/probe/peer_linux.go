@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net/netip"
+	"strconv"
 	"syscall"
 	"unsafe"
 
@@ -160,4 +161,85 @@ func endOf(family uint8, addr [16]byte, port [2]byte) (netip.AddrPort, bool) {
 
 func unmapped(ap netip.AddrPort) netip.AddrPort {
 	return netip.AddrPortFrom(ap.Addr().Unmap().WithZone(""), ap.Port())
+}
+
+// diagListeners asks sock_diag for the listening TCP sockets of this host, IPv4 and IPv6, each with
+// its inode as sock and its creator's uid. The kernel filters by state, so a host with many
+// connections answers no more than its listeners; /proc/net/tcp prints every socket.
+func diagListeners() ([]listener, error) {
+	var list []listener
+	for _, family := range []uint8{unix.AF_INET, unix.AF_INET6} {
+		got, err := diagDump(family, 1<<tcpListen)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range got {
+			end, ok := endOf(m.family, m.id.src, m.id.sport)
+			if !ok {
+				continue
+			}
+			list = append(list, listener{
+				addr: end.Addr(), port: end.Port(),
+				sock: strconv.FormatUint(uint64(m.inode), 10), uid: m.uid, hasUID: true,
+			})
+		}
+	}
+	return list, nil
+}
+
+// diagDump returns the TCP sockets of family in states (a bit per TCP state) from a sock_diag dump.
+func diagDump(family uint8, states uint32) ([]inetDiagMsg, error) {
+	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, unix.NETLINK_SOCK_DIAG)
+	if err != nil {
+		return nil, fmt.Errorf("sock_diag: %w", err)
+	}
+	defer unix.Close(fd)
+	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 1}); err != nil {
+		return nil, fmt.Errorf("sock_diag: %w", err)
+	}
+	req := inetDiagReqV2{family: family, protocol: unix.IPPROTO_TCP, states: states}
+	req.id.cookie = [2]uint32{inetDiagNoCookie, inetDiagNoCookie}
+	hdr := unix.NlMsghdr{
+		Len:   uint32(unix.SizeofNlMsghdr + unsafe.Sizeof(req)),
+		Type:  unix.SOCK_DIAG_BY_FAMILY,
+		Flags: unix.NLM_F_REQUEST | unix.NLM_F_DUMP,
+		Seq:   1,
+	}
+	msg := make([]byte, hdr.Len)
+	*(*unix.NlMsghdr)(unsafe.Pointer(&msg[0])) = hdr
+	*(*inetDiagReqV2)(unsafe.Pointer(&msg[unix.SizeofNlMsghdr])) = req
+	if err := unix.Sendto(fd, msg, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
+		return nil, fmt.Errorf("sock_diag: %w", err)
+	}
+
+	var out []inetDiagMsg
+	buf := make([]byte, 32<<10)
+	for {
+		n, _, err := unix.Recvfrom(fd, buf, 0)
+		if err != nil {
+			return nil, fmt.Errorf("sock_diag: %w", err)
+		}
+		msgs, err := syscall.ParseNetlinkMessage(buf[:n])
+		if err != nil {
+			return nil, fmt.Errorf("sock_diag: %w", err)
+		}
+		for _, m := range msgs {
+			switch m.Header.Type {
+			case unix.NLMSG_DONE:
+				return out, nil
+			case unix.NLMSG_ERROR:
+				if len(m.Data) < 4 {
+					return nil, fmt.Errorf("sock_diag: short error")
+				}
+				if errno := -int32(binary.NativeEndian.Uint32(m.Data)); errno != 0 {
+					return nil, fmt.Errorf("sock_diag: %w", syscall.Errno(errno))
+				}
+			case unix.SOCK_DIAG_BY_FAMILY:
+				if len(m.Data) < int(unsafe.Sizeof(inetDiagMsg{})) {
+					return nil, fmt.Errorf("sock_diag: short answer")
+				}
+				out = append(out, *(*inetDiagMsg)(unsafe.Pointer(&m.Data[0])))
+			}
+		}
+	}
 }

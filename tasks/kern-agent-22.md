@@ -39,9 +39,12 @@ Beweis: main@4c8173e06 apps/agent/internal/selfupdate/apply_windows.go:131 (http
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/
 Doku: changelog.d/kern-agent-22.md
 
-### T5 — R-1702: Listener-Schnappschuss über NETLINK_SOCK_DIAG  [ ]
+### T5 — R-1702: Listener-Schnappschuss über NETLINK_SOCK_DIAG  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/listen_linux.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/listen_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0bf443f3f 2026-11-24T17:41:54+01:00
+Review: approve (.ah-out/review/kern-agent-22/T5.verdict.json)
 Änderung: `listenTCP` und `osTakerOwners` holen die Listener (Adresse, Port, uid, inode) per sock_diag mit `idiag_states = 1<<TCP_LISTEN` für IPv4 und IPv6 statt `/proc/net/tcp*` zu parsen; die Halter-Suche über `/proc/*/fd` bleibt. Vorher und nachher messen (Benchmark mit vielen offenen Verbindungen, Zahlen in `## Entscheidungen`); bringt es nichts Messbares, `[~]`. Test: ein eigener Listener auf 127.0.0.1 und ::1 erscheint mit eigener uid und PID, eine bestehende Verbindung nicht.
+- T5 (R-1702) Messung, Dev-Box, 5000 offene Loopback-Verbindungen (10000 Sockets): /proc/net/tcp+tcp6 lesen und parsen 60-161 ms/op, 13-38 MB/op (steigt mit TIME_WAIT-Resten); sock_diag-Dump mit 1<<TCP_LISTEN 0,22-0,29 ms/op, 80 KB/op (BenchmarkDiagListeners). Die Halter-Suche ueber /proc/*/fd bleibt unveraendert.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (internes Verhalten)
 
