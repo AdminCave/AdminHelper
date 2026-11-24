@@ -13,9 +13,7 @@ import random
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import discovery
 from app.catalog.loader import load_catalog
@@ -34,7 +32,7 @@ from app.discovery import (
     next_scan_at,
     scan_due,
 )
-from app.models import Base, MonitorCheck, MonitorDiscovery, MonitorFinding
+from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding
 
 # Far from the real clock: nothing here may depend on today.
 T0 = datetime(2020, 1, 1)
@@ -153,14 +151,9 @@ def _recognised(port, protocol="https", proto="tcp"):
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    with sessionmaker(bind=engine)() as session:
+def db(db_engine):
+    with sessionmaker(bind=db_engine)() as session:
         yield session
-    engine.dispose()
 
 
 # --- the stored inventory ---------------------------------------------------------------

@@ -9,15 +9,13 @@ its assignments and their checks (R-0420), and an unavailable hub inventory
 changes nothing (None ≠ empty list)."""
 
 import json
+import logging
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.models import (
-    Base,
     MonitorCheck,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -30,7 +28,7 @@ from app.template_sync import apply_template
 
 
 @pytest.fixture()
-def db(monkeypatch):
+def db(monkeypatch, db_engine):
     # apply/remove_template mutate the scheduler — neutralize like test_template_sync.
     import app.template_sync as ts
 
@@ -40,11 +38,7 @@ def db(monkeypatch):
     monkeypatch.setattr(checks_router, "add_check", lambda *a, **k: None)
     monkeypatch.setattr(checks_router, "remove_check", lambda *a, **k: None)
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    session = sessionmaker(bind=db_engine)()
     try:
         yield session
     finally:
@@ -174,19 +168,27 @@ def test_unavailable_inventory_changes_nothing(db, monkeypatch):
     assert (tid, "srv-1") in _assignments(db)
 
 
-def test_binding_for_deleted_template_is_skipped(db):
+def test_binding_for_deleted_template_is_skipped(db, monkeypatch, caplog):
     tid = _template(db)
     _bind(db, tid, "web")
-    db.query(MonitorTemplate).delete()
-    db.commit()
+    # The template goes between reading the bindings and loading it. Deleting the row
+    # cannot stage that: the foreign key cascades the binding away with it.
+    real_get = db.get
+    monkeypatch.setattr(
+        db, "get", lambda model, ident, **kw: None if ident == tid else real_get(model, ident, **kw)
+    )
+    assert db.query(MonitorTemplateTagAssignment).filter_by(template_id=tid).count() == 1
 
-    # Stale binding without template must not crash the sync (SQLite keeps the
-    # row without FK enforcement; Postgres would CASCADE it away).
-    assert sync_tag_assignments(db, [_srv("srv-1", ["web"])]) == {
-        "created": 0,
-        "removed": 0,
-        "refreshed": 0,
-    }
+    # Skipped, not tried: applying a missing template would fail into the logged
+    # catch-all and end with the same counts.
+    with caplog.at_level(logging.ERROR, logger="monitor.tag_sync"):
+        assert sync_tag_assignments(db, [_srv("srv-1", ["web"])]) == {
+            "created": 0,
+            "removed": 0,
+            "refreshed": 0,
+        }
+    assert _assignments(db) == {}
+    assert caplog.records == []
 
 
 def test_malformed_inventory_entries_are_ignored(db):

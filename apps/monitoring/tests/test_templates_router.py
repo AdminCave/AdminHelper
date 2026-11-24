@@ -14,15 +14,12 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import (
-    Base,
     MonitorCheck,
     MonitorCheckTombstone,
     MonitorSeedState,
@@ -33,14 +30,10 @@ from app.template_sync import OVERRIDE_BASELINE_KEY
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(monkeypatch, db_engine):
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
     # After the first start: it marked the changes from before the update. Without
     # the key a restore would mark first, against the template a test just changed
     # (test_template_overrides covers that path).

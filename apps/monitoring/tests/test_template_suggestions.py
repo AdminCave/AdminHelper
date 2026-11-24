@@ -11,14 +11,12 @@ import json
 import uuid
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.builtin_templates import seed_builtin_templates
 from app.models import (
-    Base,
     MonitorAgentKey,
     MonitorHostFacts,
     MonitorTemplate,
@@ -30,14 +28,9 @@ from app.template_suggestions import SUGGESTED_SLUGS
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    with sessionmaker(bind=engine)() as session:
+def db(db_engine):
+    with sessionmaker(bind=db_engine)() as session:
         yield session
-    engine.dispose()
 
 
 def _dismissal(server_id="srv-1", slug="linux-base"):

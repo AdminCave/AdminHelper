@@ -13,14 +13,11 @@ import uuid
 
 import pytest
 from fastapi import BackgroundTasks
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import template_sync
 from app.builtin_templates import BUILTIN_TEMPLATES, seed_builtin_templates
 from app.models import (
-    Base,
     MonitorAgentKey,
     MonitorAlertRule,
     MonitorCheck,
@@ -70,12 +67,8 @@ def test_substitute_unknown_placeholder_stays():
 
 
 @pytest.fixture()
-def db(monkeypatch):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+def db(monkeypatch, db_engine):
+    factory = sessionmaker(bind=db_engine)
     # After the first start: it marked the changes from before the update. Without
     # the key every sync would mark first, against the template a test just changed
     # (test_template_overrides covers that path).
