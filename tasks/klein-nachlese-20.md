@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-20 — Nachlese kern-agent-20 bis kern-testdb-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-20 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-20 · Review: pro Task
 Spec: docs/features/klein-nachlese-20.md (Roadmap R-1730, R-1731, R-1733, R-1735, R-1736, R-1746, R-1749)
 Heavy: none — Test-, Kommentar- und Doku-Nits; die Port-Prüfung greift beim Dienststart und ist per Unit-Test belegt
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,8 +44,10 @@ Review: approve (.ah-out/review/klein-nachlese-20/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_config_env.py tests/test_status_log.py tests/test_status_info.py tests/test_object_state.py tests/test_alerter.py tests/test_nul.py tests/test_alert_bundle.py tests/test_agent_report.py
 Doku: keine (Kommentare)
 
-### T5 — Doku: Hooks-Shutdown, Changelog-Form  [ ]
+### T5 — Doku: Hooks-Shutdown, Changelog-Form  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d/kern-server-13.md, changelog.d/klein-nachlese-20.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @785211839 2026-11-24T15:20:21+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Shutdown-Absatz DE+EN: 10 s Wartezeit auf nicht beendete Events, nicht gestartete verfallen, ein gestarteter Hook läuft bis zu seinem Timeout weiter. Fragment `kern-server-13.md` in die Form `- **Server: Titel:** Text`. Neues Fragment für T3 (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d
