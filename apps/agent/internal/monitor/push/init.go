@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package monitor
+package push
 
 import (
 	"context"
@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/monitor/send"
 )
 
-// InitParams groups monitor.Init's arguments (6 same-typed positionals before).
+// InitParams groups Init's arguments (6 same-typed positionals before).
 type InitParams struct {
 	URL      string
 	APIKey   string
@@ -129,8 +131,8 @@ func Init(p InitParams) error {
 	logger.Infof("Config geschrieben: %s", config.MonitorConfFile())
 
 	// Test push
-	report := BuildReport(config.SplitServices(services))
-	if err := PushReport(context.Background(), PushReportParams{
+	report := monitor.BuildReport(config.SplitServices(services))
+	if err := send.Report(context.Background(), send.Params{
 		URL:      url,
 		APIKey:   apiKey,
 		ServerID: serverID,
@@ -170,49 +172,4 @@ func fetchServerCertPEM(rawURL string) ([]byte, error) {
 		pemBytes = append(pemBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
 	}
 	return pemBytes, nil
-}
-
-// pushReserve is the time a run keeps for PushReport after the collection: one
-// request of at most 15 s, the retry delay of 10 s and the retry's 15 s
-// (report.go: pushRetryDelay, the client timeout), plus a margin.
-var pushReserve = 45 * time.Second
-
-// Push reads the config and sends a one-off report. The ctx aborts the push
-// retry backoff on shutdown so a stopping service is not blocked up to 10s.
-func Push(ctx context.Context) error {
-	cfg, err := config.LoadMonitorConfig()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("Config laden: %w", err)
-	}
-	if cfg.MonitorURL == "" || cfg.APIKey == "" || cfg.ServerID == "" {
-		return fmt.Errorf("Config unvollstaendig — bitte erneut mit init einrichten")
-	}
-
-	// With a deadline (a run of the agent), the collection ends pushReserve before it:
-	// a slow tool costs its part of the report, not the push. Without one (monitor push
-	// by hand) the collection runs as long as its tools do.
-	collectCtx := ctx
-	if deadline, ok := ctx.Deadline(); ok {
-		var cancel context.CancelFunc
-		collectCtx, cancel = context.WithDeadline(ctx, deadline.Add(-pushReserve))
-		defer cancel()
-	}
-	c := Collect(collectCtx, cfg)
-	if err := PushReport(ctx, PushReportParams{
-		URL:      cfg.MonitorURL,
-		APIKey:   cfg.APIKey,
-		ServerID: cfg.ServerID,
-		Report:   c.Report,
-		TLS:      config.TLSOpts{CACert: cfg.CACert, Insecure: cfg.Insecure},
-	}); err != nil {
-		logger.Errorf("Report senden fehlgeschlagen: %v", err)
-		c.Done(false)
-		return err
-	}
-	c.Done(true)
-	logger.Infof("Report gesendet")
-	return nil
 }

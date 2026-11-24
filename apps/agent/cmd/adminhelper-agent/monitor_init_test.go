@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/monitor/push"
 )
 
-// stubMonitorInit puts init in place of monitor.Init and a counter in place of
+// stubMonitorInit puts init in place of push.Init and a counter in place of
 // service.EnableTimer (systemctl on Linux) for one test; the timer stub returns timerErr.
-func stubMonitorInit(t *testing.T, init func(monitor.InitParams) error, timerErr error) *int {
+func stubMonitorInit(t *testing.T, init func(push.InitParams) error, timerErr error) *int {
 	t.Helper()
 	calls := 0
 	origInit, origTimer := monitorInit, enableTimer
@@ -40,8 +40,8 @@ func runMonitorInit() error {
 // timer that cannot be enabled is a warning, the setup stands.
 func TestMonitorInitEnablesTheTimerAfterTheSetup(t *testing.T) {
 	t.Run("setup done", func(t *testing.T) {
-		var got monitor.InitParams
-		calls := stubMonitorInit(t, func(p monitor.InitParams) error {
+		var got push.InitParams
+		calls := stubMonitorInit(t, func(p push.InitParams) error {
 			got = p
 			return nil
 		}, nil)
@@ -58,7 +58,7 @@ func TestMonitorInitEnablesTheTimerAfterTheSetup(t *testing.T) {
 	})
 	t.Run("setup refused", func(t *testing.T) {
 		refused := errors.New("--cacert cannot be combined with --insecure")
-		calls := stubMonitorInit(t, func(monitor.InitParams) error {
+		calls := stubMonitorInit(t, func(push.InitParams) error {
 			return refused
 		}, nil)
 
@@ -70,7 +70,7 @@ func TestMonitorInitEnablesTheTimerAfterTheSetup(t *testing.T) {
 		}
 	})
 	t.Run("timer cannot be enabled", func(t *testing.T) {
-		calls := stubMonitorInit(t, func(monitor.InitParams) error { return nil },
+		calls := stubMonitorInit(t, func(push.InitParams) error { return nil },
 			errors.New("systemctl enable --now adminhelper-agent.timer: exit status 1"))
 
 		if err := runMonitorInit(); err != nil {
@@ -96,8 +96,8 @@ func runMonitorInitArgs(stdin io.Reader, extra ...string) (out string, err error
 }
 
 func TestMonitorInitAPIKeyFromStdin(t *testing.T) {
-	var got monitor.InitParams
-	stubMonitorInit(t, func(p monitor.InitParams) error { got = p; return nil }, nil)
+	var got push.InitParams
+	stubMonitorInit(t, func(p push.InitParams) error { got = p; return nil }, nil)
 	if _, err := runMonitorInitArgs(strings.NewReader(" mon-key-zz9 \nsecond\n"), "--api-key-stdin"); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestMonitorInitAPIKeyStdinErrors(t *testing.T) {
 		"neither":     {"", nil, "api-key-stdin"},
 	} {
 		calls := 0
-		stubMonitorInit(t, func(monitor.InitParams) error { calls++; return nil }, nil)
+		stubMonitorInit(t, func(push.InitParams) error { calls++; return nil }, nil)
 		stdin := &untouchedStdin{}
 		var in io.Reader = stdin
 		if c.stdin != "" {
@@ -138,8 +138,8 @@ func TestMonitorInitAPIKeyStdinErrors(t *testing.T) {
 
 func TestMonitorInitAPIKeyTerminalPrompt(t *testing.T) {
 	fakeTerminal(t, []byte("mon-key"), nil)
-	var got monitor.InitParams
-	stubMonitorInit(t, func(p monitor.InitParams) error { got = p; return nil }, nil)
+	var got push.InitParams
+	stubMonitorInit(t, func(p push.InitParams) error { got = p; return nil }, nil)
 	out, err := runMonitorInitArgs(&untouchedStdin{}, "--api-key-stdin")
 	if err != nil {
 		t.Fatal(err)

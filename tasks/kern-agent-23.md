@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-agent-23/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T4
 
-### T3 — R-1728: Versand nach monitor/send, Init und Push nach monitor/push  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/init_test.go, apps/agent/internal/monitor/monitor_test.go, apps/agent/internal/monitor/send/send.go, apps/agent/internal/monitor/send/send_test.go, apps/agent/internal/monitor/push/push.go, apps/agent/internal/monitor/push/init.go, apps/agent/internal/monitor/push/push_test.go, apps/agent/internal/monitor/push/init_test.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/run.go, apps/agent/cmd/adminhelper-agent/monitor_init_test.go, apps/agent/internal/provision/provision.go
+### T3 — R-1728: Versand nach monitor/send, Init und Push nach monitor/push  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/init_test.go, apps/agent/internal/monitor/monitor_test.go, apps/agent/internal/monitor/send/send.go, apps/agent/internal/monitor/send/send_test.go, apps/agent/internal/monitor/push/push.go, apps/agent/internal/monitor/push/init.go, apps/agent/internal/monitor/push/push_test.go, apps/agent/internal/monitor/push/init_test.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/run.go, apps/agent/cmd/adminhelper-agent/monitor_init_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/monitor/export_test.go, apps/agent/internal/monitor/push_test.go, apps/agent/cmd/adminhelper-agent/run_test.go, apps/agent/internal/config/config.go, apps/agent/internal/config/paths_linux.go, apps/agent/internal/enroll/client.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c2bee3b2b 2026-11-24T20:41:10+01:00
+Review: approve (.ah-out/review/kern-agent-23/T3.verdict.json)
 Änderung: `PushReport` und `pushOnce` ziehen als `send.Report` in ein Blattpaket. `Init`, `InitParams`, `preserveServices`, `fetchServerCertPEM`, `Push` und `pushReserve` ziehen nach `push` (importiert `monitor` und `send`). Die Aufrufer in `cmd` und `provision` (Risikopfad, `security`) importieren `push`. Die Tests ziehen mit, ohne geänderte Zusicherungen. Neue Dateien mit SPDX-Header. Mehr als acht Dateien, weil Paketwechsel und Aufrufer zusammen kompilieren müssen.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T4
@@ -38,3 +40,4 @@ Task-Review: am Ende
 Abhängt von: T3
 
 ## Entscheidungen
+- T3: Die Ende-zu-Ende-Tests von `push` (TestPushBudgetKeepsThePushReserve, TestPushKeepsTheStateThroughALostPush, TestMonitorInitTrust*) liegen als `package monitor_test` in `internal/monitor/push_test.go` statt in `push/push_test.go`: Sie brauchen die Collector-Stubs von `monitor`, die nur dessen Tests sehen (`export_test.go`). Dafür sind `send.RetryDelay` und `push.Reserve` exportiert. `send.Params.Report` ist `any`, damit `send` ein Blatt bleibt. Testnamen und Zusicherungen sind unverändert.

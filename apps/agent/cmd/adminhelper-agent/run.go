@@ -19,7 +19,7 @@ import (
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/logging"
-	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/monitor/push"
 )
 
 const defaultInterval = 5 * time.Minute
@@ -39,7 +39,7 @@ var logger = logging.For("agent")
 // call of the sync, every tool of the report) exceeds 500 s, while systemd ends a
 // oneshot run after TimeoutStartSec=270 (systemd/adminhelper-agent.service): without a
 // budget a hanging renewal or sync costs the report. 240 s keeps 30 s below the unit;
-// renewal and sync get at most 60 s each, the push keeps its reserve (monitor.Push).
+// renewal and sync get at most 60 s each, the push keeps its reserve (push.Push).
 var (
 	runBudget   = 240 * time.Second
 	renewBudget = 60 * time.Second
@@ -56,7 +56,7 @@ var signalContext = func() (context.Context, context.CancelFunc) {
 var (
 	renewPhase = maybeRenewIdentity
 	syncPhase  = frpc.Sync
-	pushPhase  = monitor.Push
+	pushPhase  = push.Push
 )
 
 func runCmd() *cobra.Command {

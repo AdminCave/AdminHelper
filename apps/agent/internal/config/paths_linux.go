@@ -6,7 +6,7 @@
 
 package config
 
-// The ADMINHELPER_*_DIR overrides let the orchestration flows (frpc.Sync/Apply, monitor.Init/Push,
+// The ADMINHELPER_*_DIR overrides let the orchestration flows (frpc.Sync/Apply, push.Init/Push,
 // provision.Run) run against a t.TempDir() in unit tests; outside a test binary they are ignored
 // (override in paths.go).
 func FrpDir() string {

@@ -11,7 +11,7 @@
 //   - redeems the provision token via POST /api/servers/{id}/provision/activate,
 //   - writes the server API key to the FRP sync config (always: frpc.WriteSyncConfig,
 //     so a tunnel created later reaches the host with the next sync),
-//   - with an available monitor service: monitor.Init with the returned key,
+//   - with an available monitor service: push.Init with the returned key,
 //   - with an FRP config on the server: frpc.Apply with the returned bundle (without an
 //     active tunnel its text has no proxies and frpc stops); without an FRP config
 //     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning),
@@ -41,7 +41,7 @@ import (
 	"adminhelper-agent/internal/enroll"
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/httpclient"
-	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/monitor/push"
 	"adminhelper-agent/internal/service"
 )
 
@@ -171,7 +171,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" {
 		monitorURL := monitorBaseURL(adminHelperURL, resp.MonitorURL)
 		fmt.Println("→ Setting up the monitor agent...")
-		if err := monitor.Init(monitor.InitParams{
+		if err := push.Init(push.InitParams{
 			URL:      monitorURL,
 			APIKey:   *resp.MonitorAPIKey,
 			ServerID: serverID,
@@ -507,7 +507,7 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 }
 
 // writePinnedCert stores the captured server certificate chain in a temp file so
-// monitor.Init / frpc.Apply can copy it into the agent config as the pinned CA.
+// push.Init / frpc.Apply can copy it into the agent config as the pinned CA.
 func writePinnedCert(pemBytes []byte) (string, error) {
 	f, err := os.CreateTemp("", "adminhelper-server-ca-*.crt")
 	if err != nil {

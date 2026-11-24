@@ -5,21 +5,13 @@
 package monitor
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"maps"
-	"net/http"
 	"strings"
 	"time"
 
-	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/credentials"
 	"adminhelper-agent/internal/discovery"
-	"adminhelper-agent/internal/enroll"
-	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/probe"
 )
 
@@ -267,9 +259,6 @@ func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (*
 	return resources, cpuNow
 }
 
-// pushRetryDelay is a variable so tests can shorten the backoff.
-var pushRetryDelay = 10 * time.Second
-
 // pluginCollectors indirects the auto-detected plugin collectors so tests can stub the real
 // docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
 var pluginCollectors = struct {
@@ -284,76 +273,6 @@ var serviceHealthCollector = collectServiceHealth
 
 // systemStateCollector indirects the system state probe for the same reason (6.18).
 var systemStateCollector = collectSystemState
-
-// PushReportParams groups monitor.PushReport's arguments (7 positionals before).
-type PushReportParams struct {
-	URL      string
-	APIKey   string
-	ServerID string
-	Report   *Report
-	TLS      config.TLSOpts
-}
-
-// PushReport sends the report to the monitoring service. A lost push wastes a
-// full 5-minute slot, so a transient failure (server restart, network blip)
-// gets one retry after a short backoff. The backoff honors ctx so a shutdown
-// (e.g. the Windows SCM stop) aborts the wait instead of blocking up to 10s.
-func PushReport(ctx context.Context, p PushReportParams) error {
-	url := p.URL
-	apiKey := p.APIKey
-	serverID := p.ServerID
-	report := p.Report
-	cacert := p.TLS.CACert
-	insecure := p.TLS.Insecure
-
-	endpoint := fmt.Sprintf("%s/agent/%s/report", url, serverID)
-
-	data, err := json.Marshal(report)
-	if err != nil {
-		return fmt.Errorf("JSON-Encoding: %w", err)
-	}
-
-	// Present the enrolled mTLS client cert when available (custom-root-only);
-	// fall back to the legacy pinned-CA/insecure client until the agent enrolls.
-	client, err := enroll.ServerClient(config.AgentPkiDir(), cacert, insecure, 15*time.Second)
-	if err != nil {
-		return err
-	}
-	// Close the pool's idle keep-alive connections on return: a fresh client is built per cycle, so
-	// otherwise the discarded transport's idle conns linger up to ~90s (IdleConnTimeout) before GC.
-	// Harmless in oneshot mode, tidier in the long-running loop / Windows service (5.6).
-	defer client.CloseIdleConnections()
-
-	if err := pushOnce(ctx, client, endpoint, apiKey, data); err != nil {
-		// A permanent failure (rotated/revoked key, deleted server) won't heal on a
-		// retry — surface it at once so the oneshot exits non-zero (4.81).
-		if errors.Is(err, httpclient.ErrPermanent) {
-			return err
-		}
-		logger.Warnf("Push fehlgeschlagen (%v), Retry in %s...", err, pushRetryDelay)
-		select {
-		case <-time.After(pushRetryDelay):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-		return pushOnce(ctx, client, endpoint, apiKey, data)
-	}
-	return nil
-}
-
-func pushOnce(ctx context.Context, client *http.Client, endpoint, apiKey string, data []byte) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", apiKey)
-
-	if _, err := httpclient.Do(client, req); err != nil {
-		return fmt.Errorf("Push: %w", err)
-	}
-	return nil
-}
 
 // A report carries the error lines of at most maxLogUnits failed units, maxLogLines lines each; the
 // rest follow in the next report. The monitoring service keeps no more (MAX_LOG_UNITS,
