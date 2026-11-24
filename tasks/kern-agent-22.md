@@ -1,5 +1,5 @@
 # kern-agent-22 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-22 · Review: pro Task
+Status: erledigt · Branch: feature/kern-agent-22 · Review: pro Task
 Spec: docs/features/kern-agent-22.md (Roadmap R-1688, R-1700, R-1701, R-1693, R-1702, R-1704, R-1705)
 Heavy: linux-full — apps/agent (Sammler, Self-Update, Probe-Listener); Windows-Teil über die CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
