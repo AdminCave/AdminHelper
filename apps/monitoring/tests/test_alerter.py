@@ -46,18 +46,10 @@ _NOW = datetime(2026, 10, 20, 12, 0)
 _PUBLIC = "93.184.216.34"
 
 
-def _sqlite_session():
-    """A session on a fresh in-memory SQLite with the model schema."""
-    from sqlalchemy import create_engine
+def _session(engine):
+    """A session on `engine` (the db_engine fixture), empty with the model schema."""
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
-    from app.models import Base
-
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
 
 
@@ -140,9 +132,20 @@ class TestCooldownForEveryStoredValue:
     lost the alert of every rule and the bell's."""
 
     @pytest.fixture
-    def db(self, monkeypatch):
+    def db(self, monkeypatch, db_engine):
         monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
-        return _sqlite_session()
+        db = _session(db_engine)
+        # The rows make_check() and make_rule() stand for: Postgres checks the log's foreign keys.
+        # The rule is disabled, so process_alert below dispatches only the rules a test adds.
+        db.add(MonitorCheck(id="check-1", name="c", check_type="ping", config="{}"))
+        db.add(
+            MonitorAlertRule(
+                id="rule-1", name="r", channel="webhook", channel_config="{}", enabled=False
+            )
+        )
+        db.commit()
+        yield db
+        db.close()
 
     @pytest.mark.parametrize("minutes", [1_070_000_000, 2_147_483_647])
     def test_window_before_year_one_counts_every_earlier_send(self, db, minutes):
@@ -168,6 +171,8 @@ class TestCooldownForEveryStoredValue:
 
         db.add(_rule("rule-huge", 2_147_483_647))
         db.add(_rule("rule-30", 30))
+        # No ORM relationship orders the rules before their log row; Postgres checks the foreign key.
+        db.flush()
         db.add(_sent_log("rule-huge", timedelta(days=1)))
         db.commit()
         dispatched, posted = [], []
@@ -552,22 +557,18 @@ class TestRuleLoopIsolation:
         assert "smtp_port abc" in caplog.text
 
 
-def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
+def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch, db_engine):
     # 6.59: _CapturingDb.filter() is a no-op, so process_alert's enabled==True filter (alerter.py) is
     # never exercised by the fake-based tests. Against a real sqlite DB, of two otherwise-matching
     # rules only the enabled one dispatches — a regression dropping the filter would let disabled
     # rules fire webhooks/mails again, and every fake-based test would stay green.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
-    from app.models import Base, MonitorAlertRule
+    from app.models import MonitorAlertRule, MonitorCheck
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine)()
+    db = sessionmaker(bind=db_engine)()
+    # The check make_check() stands for: Postgres checks the alert log's foreign key.
+    db.add(MonitorCheck(id="check-1", name="c", check_type="ping", config="{}"))
 
     def _rule(rid, enabled):
         return MonitorAlertRule(
@@ -592,7 +593,10 @@ def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
         return True, None
 
     monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
-    process_alert(db, make_check(), old_status="ok", new_status="critical")
+    try:
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+    finally:
+        db.close()
 
     assert dispatched == ["enabled-rule"], f"only the enabled rule may dispatch, got {dispatched}"
 
@@ -908,11 +912,11 @@ class TestHostDownSuppression:
         # The server's agent_ping stands critical, and nothing else. Since R-0424
         # the answer depends on which kind of check stands critical (a heartbeat
         # mutes the other checks, but no heartbeat), so _host_is_down's query on
-        # the MonitorState.status column runs against a real SQLite holding just
+        # the MonitorState.status column runs against a real database holding just
         # that heartbeat; everything else stays fake.
-        def __init__(self, rules):
+        def __init__(self, rules, engine):
             super().__init__(rules)
-            self._real = _sqlite_session()
+            self._real = _session(engine)
             self._real.add(
                 MonitorCheck(
                     id="hb-1",
@@ -931,6 +935,18 @@ class TestHostDownSuppression:
                 return self._real.query(*args, **kwargs)
             return super().query(*args, **kwargs)
 
+    @pytest.fixture()
+    def host_down_db(self, db_engine):
+        made = []
+
+        def make(rules):
+            made.append(self._HostDownDb(rules, db_engine))
+            return made[-1]
+
+        yield make
+        for db in made:
+            db._real.close()
+
     def _spies(self, monkeypatch):
         dispatched = {"n": 0}
         emitted = {"n": 0}
@@ -946,17 +962,17 @@ class TestHostDownSuppression:
         )
         return dispatched, emitted
 
-    def test_other_check_is_suppressed_while_host_down(self, monkeypatch):
+    def test_other_check_is_suppressed_while_host_down(self, monkeypatch, host_down_db):
         dispatched, emitted = self._spies(monkeypatch)
-        db = self._HostDownDb([make_rule()])
+        db = host_down_db([make_rule()])
         process_alert(db, make_check(check_type="ping"), "ok", "critical")
         assert dispatched["n"] == 0
         assert emitted["n"] == 0
         assert db.added == []
 
-    def test_agent_ping_itself_still_alerts(self, monkeypatch):
+    def test_agent_ping_itself_still_alerts(self, monkeypatch, host_down_db):
         dispatched, emitted = self._spies(monkeypatch)
-        db = self._HostDownDb([make_rule()])
+        db = host_down_db([make_rule()])
         process_alert(db, make_check(check_type="agent_ping"), "ok", "critical")
         assert dispatched["n"] == 1
         assert emitted["n"] == 1
@@ -969,39 +985,33 @@ class TestHostDownSuppression:
         assert dispatched["n"] == 1
         assert emitted["n"] == 1
 
-    def test_check_without_server_is_unaffected(self, monkeypatch):
+    def test_check_without_server_is_unaffected(self, monkeypatch, host_down_db):
         # server_id None short-circuits before the DB query — a fleet-wide
         # check can never be muted by some server's heartbeat.
         dispatched, _emitted = self._spies(monkeypatch)
-        db = self._HostDownDb([make_rule()])
+        db = host_down_db([make_rule()])
         process_alert(db, make_check(check_type="ping", server_id=None), "ok", "critical")
         assert dispatched["n"] == 1
 
-    def test_recovery_of_other_check_is_also_suppressed(self, monkeypatch):
+    def test_recovery_of_other_check_is_also_suppressed(self, monkeypatch, host_down_db):
         # Spec-mandated and counterintuitive: while the host is down, even a
         # critical -> ok recovery of another check stays silent — one incident,
         # one notification stream.
         dispatched, emitted = self._spies(monkeypatch)
-        db = self._HostDownDb([make_rule()])
+        db = host_down_db([make_rule()])
         process_alert(db, make_check(check_type="ping"), "critical", "ok")
         assert dispatched["n"] == 0
         assert emitted["n"] == 0
 
 
-def test_host_is_down_query_semantics():
+def test_host_is_down_query_semantics(db_engine):
     """Real-session pin for _host_is_down (mock tests ignore filters): ANY
     enabled agent_ping in critical mutes; a disabled one never does."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine)()
+    db = sessionmaker(bind=db_engine)()
     try:
 
         def add_ping(cid, enabled, status):
@@ -1042,8 +1052,8 @@ class TestHostPingRankOrder:
     in the query."""
 
     @pytest.fixture()
-    def db(self):
-        db = _sqlite_session()
+    def db(self, db_engine):
+        db = _session(db_engine)
         yield db
         db.close()
 
@@ -1252,8 +1262,8 @@ class TestSilentModuleCheck:
     reports what it found meanwhile."""
 
     @pytest.fixture()
-    def db(self):
-        db = _sqlite_session()
+    def db(self, db_engine):
+        db = _session(db_engine)
         yield db
         db.close()
 

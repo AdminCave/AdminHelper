@@ -19,17 +19,9 @@ from app.models import MonitorCheck, MonitorMaintenance, MonitorState
 _NOW = datetime(2026, 10, 20, 12, 0)
 
 
-def _sqlite_session():
-    from sqlalchemy import create_engine
+def _session(engine):
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
-    from app.models import Base
-
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
 
 
@@ -147,8 +139,8 @@ _EXPECTED_AT_NOW = {
 
 
 @pytest.fixture()
-def db():
-    db = _sqlite_session()
+def db(db_engine):
+    db = _session(db_engine)
     yield db
     db.close()
 

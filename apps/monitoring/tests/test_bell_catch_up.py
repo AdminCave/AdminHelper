@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import alerter, bell_catch_up
@@ -25,19 +24,15 @@ _EARLIER = _NOW - timedelta(hours=1)
 
 
 @pytest.fixture()
-def bell_db(tmp_path, monkeypatch):
-    """A file SQLite with the model schema, wired into the job and dispatch_alert_bg."""
+def bell_db(pooled_engine, monkeypatch):
+    """`pooled_engine`, wired into the job and dispatch_alert_bg."""
     import app.core.database as database_mod
-    from app.models import Base
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'bell.db'}")
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=pooled_engine)
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
     monkeypatch.setattr(bell_catch_up, "utcnow_naive", lambda: _NOW)
     yield factory
-    engine.dispose()
 
 
 @pytest.fixture()

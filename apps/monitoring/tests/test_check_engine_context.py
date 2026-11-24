@@ -10,25 +10,19 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
 import app.core.database as database_mod
 from app.central.limits import SKIPPED_BUSY_MESSAGE, SKIPPED_SPACING_MESSAGE, RunSkipped
 from app.checkers import CheckContext, PartnerState
 from app.checkers.context import DiskRules
-from app.models import Base, MonitorCheck, MonitorState
+from app.models import MonitorCheck, MonitorState
 
 SEEN = datetime.datetime(2026, 11, 12, 6, 0, 0)
 
 
-def _factory():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+def _factory(engine):
     return sessionmaker(bind=engine)
 
 
@@ -94,8 +88,8 @@ def _seed_pair(factory, *, partner=None, partner_state=True, own_details=None):
         db.commit()
 
 
-def test_previous_details_and_partner_arrive(monkeypatch):
-    factory = _factory()
+def test_previous_details_and_partner_arrive(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_pair(factory, own_details=json.dumps({"public_since": "2026-11-01T00:00:00"}))
     checker = _ContextChecker(("warning", "renewed", {"_details": {"diagnosis": "x"}}))
     _wire(monkeypatch, factory, checker)
@@ -121,8 +115,8 @@ def test_previous_details_and_partner_arrive(monkeypatch):
         assert json.loads(st.details) == {"diagnosis": "x"}
 
 
-def test_a_partner_without_a_state_is_pending(monkeypatch):
-    factory = _factory()
+def test_a_partner_without_a_state_is_pending(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_pair(factory, partner_state=False)
     checker = _ContextChecker()
     _wire(monkeypatch, factory, checker)
@@ -143,8 +137,8 @@ def test_a_partner_without_a_state_is_pending(monkeypatch):
     ],
     ids=["other-server", "no-server", "not-probe", "disabled"],
 )
-def test_a_partner_that_does_not_qualify_is_none(monkeypatch, partner):
-    factory = _factory()
+def test_a_partner_that_does_not_qualify_is_none(monkeypatch, partner, db_engine):
+    factory = _factory(db_engine)
     _seed_pair(factory, partner=partner)
     checker = _ContextChecker()
     _wire(monkeypatch, factory, checker)
@@ -159,8 +153,8 @@ def test_a_partner_that_does_not_qualify_is_none(monkeypatch, partner):
     ["nope", "", 5, ["p1"], None],
     ids=["missing", "empty", "int", "list", "null"],
 )
-def test_a_missing_or_malformed_pair_id_means_no_partner(monkeypatch, pair_check_id):
-    factory = _factory()
+def test_a_missing_or_malformed_pair_id_means_no_partner(monkeypatch, pair_check_id, db_engine):
+    factory = _factory(db_engine)
     with factory() as db:
         _add_check(db, "c1", config={"sensor": "tls", "pair_check_id": pair_check_id})
         _add_check(db, "p1", check_type="probe", config={"sensor": "tls"})
@@ -174,9 +168,9 @@ def test_a_missing_or_malformed_pair_id_means_no_partner(monkeypatch, pair_check
     assert checker.contexts == [CheckContext()]
 
 
-def test_a_central_check_without_a_server_has_no_partner(monkeypatch):
+def test_a_central_check_without_a_server_has_no_partner(monkeypatch, db_engine):
     # Both without a server_id: None == None is no proof of the same server.
-    factory = _factory()
+    factory = _factory(db_engine)
     with factory() as db:
         _add_check(db, "c1", server_id=None, config={"pair_check_id": "p1"})
         _add_check(db, "p1", server_id=None, check_type="probe", config={"sensor": "tls"})
@@ -199,8 +193,10 @@ def test_a_central_check_without_a_server_has_no_partner(monkeypatch):
     ],
     ids=["broken-json", "not-an-object", "null-and-odd-sensor"],
 )
-def test_unreadable_stored_json_degrades_to_none(monkeypatch, own, partner_details, partner_config):
-    factory = _factory()
+def test_unreadable_stored_json_degrades_to_none(
+    monkeypatch, own, partner_details, partner_config, db_engine
+):
+    factory = _factory(db_engine)
     with factory() as db:
         _add_check(db, "c1", config={"pair_check_id": "p1"})
         _add_state(db, "c1", details=own)
@@ -221,9 +217,9 @@ def test_unreadable_stored_json_degrades_to_none(monkeypatch, own, partner_detai
 
 
 @pytest.mark.parametrize("wants_context", [False, None, "yes", 1])
-def test_other_checkers_get_no_context(monkeypatch, wants_context):
+def test_other_checkers_get_no_context(monkeypatch, wants_context, db_engine):
     # Only a literal True opts in: a checker that does not ask runs exactly as before.
-    factory = _factory()
+    factory = _factory(db_engine)
     _seed_pair(factory)
     calls = []
 
@@ -244,8 +240,8 @@ def test_other_checkers_get_no_context(monkeypatch, wants_context):
         assert db.get(MonitorState, "c1").message == "plain"
 
 
-def test_a_checker_without_the_attribute_runs_plain(monkeypatch):
-    factory = _factory()
+def test_a_checker_without_the_attribute_runs_plain(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_pair(factory)
     calls = []
     _wire(
@@ -259,8 +255,8 @@ def test_a_checker_without_the_attribute_runs_plain(monkeypatch):
     assert len(calls) == 1
 
 
-def test_a_failing_context_run_is_unknown(monkeypatch):
-    factory = _factory()
+def test_a_failing_context_run_is_unknown(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_pair(factory)
 
     class Boom(_ContextChecker):
@@ -279,24 +275,14 @@ def test_a_failing_context_run_is_unknown(monkeypatch):
 # --- R-0615: the context is read before the rollback, no connection during the run ---
 
 
-@pytest.fixture()
-def file_engine(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'monitor.db'}", connect_args={"check_same_thread": False}
-    )
-    Base.metadata.create_all(engine)
-    yield engine
-    engine.dispose()
-
-
-def test_run_with_context_holds_no_pooled_connection(monkeypatch, file_engine):
-    factory = sessionmaker(bind=file_engine)
+def test_run_with_context_holds_no_pooled_connection(monkeypatch, pooled_engine):
+    factory = sessionmaker(bind=pooled_engine)
     _seed_pair(factory, own_details=json.dumps({"k": 1}))
     held = []
 
     class Counting(_ContextChecker):
         def run_with_context(self, config, context):
-            held.append(file_engine.pool.checkedout())
+            held.append(pooled_engine.pool.checkedout())
             return super().run_with_context(config, context)
 
     checker = Counting()
@@ -318,8 +304,8 @@ class _Refusing(_ContextChecker):
 
 
 @pytest.mark.parametrize("stored", ["[1, 2]", "42", '"tls"', "null"])
-def test_a_config_that_is_no_mapping_is_an_invalid_configuration(monkeypatch, stored):
-    factory = _factory()
+def test_a_config_that_is_no_mapping_is_an_invalid_configuration(monkeypatch, stored, db_engine):
+    factory = _factory(db_engine)
     with factory() as db:
         _add_check(db, "c1", config=stored)
         db.commit()
@@ -369,8 +355,8 @@ def _skip(monkeypatch, factory, note):
     return written, alerted
 
 
-def test_a_skipped_run_only_notes_itself_behind_the_message(monkeypatch):
-    factory = _factory()
+def test_a_skipped_run_only_notes_itself_behind_the_message(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_skip(factory, "certificate due for renewal")
 
     written, alerted = _skip(monkeypatch, factory, SKIPPED_SPACING_MESSAGE)
@@ -383,8 +369,8 @@ def test_a_skipped_run_only_notes_itself_behind_the_message(monkeypatch):
         assert json.loads(st.details) == {"public_since": "2026-11-01T00:00:00Z"}
 
 
-def test_a_second_skip_replaces_the_note_instead_of_stacking(monkeypatch):
-    factory = _factory()
+def test_a_second_skip_replaces_the_note_instead_of_stacking(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_skip(factory, "certificate due for renewal (skipped: minimum spacing)")
 
     _skip(monkeypatch, factory, SKIPPED_BUSY_MESSAGE)
@@ -396,8 +382,8 @@ def test_a_second_skip_replaces_the_note_instead_of_stacking(monkeypatch):
 
 
 @pytest.mark.parametrize("message", [None, "", "skipped: minimum spacing"])
-def test_a_skip_without_a_result_message_is_the_note_alone(monkeypatch, message):
-    factory = _factory()
+def test_a_skip_without_a_result_message_is_the_note_alone(monkeypatch, message, db_engine):
+    factory = _factory(db_engine)
     _seed_skip(factory, message)
 
     _skip(monkeypatch, factory, SKIPPED_BUSY_MESSAGE)
@@ -406,8 +392,8 @@ def test_a_skip_without_a_result_message_is_the_note_alone(monkeypatch, message)
         assert db.get(MonitorState, "c1").message == SKIPPED_BUSY_MESSAGE
 
 
-def test_the_noted_message_stays_within_the_cap(monkeypatch):
-    factory = _factory()
+def test_the_noted_message_stays_within_the_cap(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_skip(factory, "x" * ce.MAX_MESSAGE)
 
     _skip(monkeypatch, factory, SKIPPED_SPACING_MESSAGE)
@@ -418,8 +404,8 @@ def test_the_noted_message_stays_within_the_cap(monkeypatch):
     assert message.endswith("… (skipped: minimum spacing)")
 
 
-def test_a_skip_before_the_first_result_leaves_no_state(monkeypatch):
-    factory = _factory()
+def test_a_skip_before_the_first_result_leaves_no_state(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_skip(factory, None, state=False)
 
     written, alerted = _skip(monkeypatch, factory, SKIPPED_SPACING_MESSAGE)
@@ -460,8 +446,8 @@ def _seed_forecast(factory, *, resources=True, enabled=True, server="s1"):
         db.commit()
 
 
-def test_disk_forecast_gets_the_disk_rules_of_its_host(monkeypatch):
-    factory = _factory()
+def test_disk_forecast_gets_the_disk_rules_of_its_host(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_forecast(factory)
     checker = _ContextChecker()
     _wire(monkeypatch, factory, checker)
@@ -478,9 +464,9 @@ def test_disk_forecast_gets_the_disk_rules_of_its_host(monkeypatch):
 
 @pytest.mark.parametrize("seed", [{"resources": False}, {"enabled": False}, {"server": "s2"}])
 def test_disk_forecast_without_an_enabled_resources_check_of_its_host_has_no_rules(
-    monkeypatch, seed
+    monkeypatch, seed, db_engine
 ):
-    factory = _factory()
+    factory = _factory(db_engine)
     _seed_forecast(factory, **seed)
     checker = _ContextChecker()
     _wire(monkeypatch, factory, checker)

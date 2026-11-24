@@ -134,6 +134,32 @@ def db_engine(_postgres_unit_engine):
 
 
 @pytest.fixture()
+def pooled_engine(db_engine, tmp_path):
+    """`db_engine` where a test needs a real connection pool: one connection per
+    session, and engine.pool.checkedout() counting them. On Postgres an engine of
+    its own on the same database, so a session another test left open does not
+    count; the SQLite fallback's StaticPool shares one connection and counts
+    nothing, so without Postgres a file SQLite with the default QueuePool stands in."""
+    if db_engine.dialect.name == "postgresql":
+        from ah_common.database import make_engine
+
+        engine = make_engine(
+            db_engine.url.render_as_string(hide_password=False), pool_size=5, max_overflow=10
+        )
+        yield engine
+        engine.dispose()
+        return
+    from app.models import Base
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'monitor.db'}", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture()
 def client_db(monkeypatch, db_engine):
     """Shared TestClient against the real app on `db_engine`: agent auth bypassed, VictoriaMetrics writes and
     the background-dispatch SessionLocal pointed at the test DB. Centralized here so new endpoint suites

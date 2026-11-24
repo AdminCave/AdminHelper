@@ -19,7 +19,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import alerter
@@ -764,19 +763,15 @@ class TestBellThroughProcessAlert:
 
 
 @pytest.fixture()
-def bell_db(tmp_path, monkeypatch):
-    """A file SQLite with the model schema, wired into dispatch_alert_bg: each
+def bell_db(pooled_engine, monkeypatch):
+    """`pooled_engine`, wired into dispatch_alert_bg: each
     dispatch runs in a session and on a connection of its own, as in production."""
     import app.core.database as database_mod
-    from app.models import Base
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'bell.db'}")
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=pooled_engine)
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
     yield factory
-    engine.dispose()
 
 
 class TestBellSlotAcrossDispatches:
