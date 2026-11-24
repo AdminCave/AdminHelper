@@ -15,21 +15,24 @@ corrupted by a stray log line.
 Format is human-readable on purpose (not JSON): operators read it directly via
 ``docker compose logs``. The ``[%(process)d]`` PID field disambiguates interleaved
 lines of several worker processes. The level is taken from ``LOG_LEVEL`` (default
-INFO); an unknown value falls back to INFO rather than crashing startup.
+INFO); an unknown value stops the start with a ``ConfigError`` (``ah_common.env``).
 """
 
 import logging.config
 import os
+
+from ah_common.env import ConfigError
 
 _LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(process)d] %(name)s %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def _resolve_level() -> str:
-    level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    raw = os.environ.get("LOG_LEVEL", "")
+    level = raw.strip().upper() or "INFO"
     # getLevelName returns an int for known names, the "Level X" string otherwise.
     if not isinstance(logging.getLevelName(level), int):
-        return "INFO"
+        raise ConfigError(f"LOG_LEVEL={raw!r} is not one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
     return level
 
 

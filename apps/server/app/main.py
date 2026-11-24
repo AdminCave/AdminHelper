@@ -222,12 +222,19 @@ def _run_startup_tasks():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from app.core.config import REDIS_URL
+    from app.core.config import MONITOR_API_KEY, REDIS_URL
     from app.core.events import shutdown_events
     from app.modules.monitoring_proxy import router as monitoring_proxy_mod
     from app.modules.notifications import stream_hub
 
     _run_startup_tasks()
+    if not MONITOR_API_KEY:
+        # Monitoring is optional for the server, so it keeps running; without the key every
+        # call through the monitoring proxy ends in 401 and nothing else would say why.
+        logger.error(
+            "MONITOR_API_KEY is empty: the monitoring proxy cannot authenticate; "
+            "run scripts/init-secrets.sh and restart"
+        )
     # Every worker keeps the policy of frps' plugin in step with the DB; the hooks of the
     # routers write it at once, this catches what they miss and a file changed on disk.
     policy_task = asyncio.create_task(frp_policy.keep_policy_current())
@@ -263,10 +270,16 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(shutdown_events)
 
 
+# Swagger UI and the OpenAPI schema map the whole API surface for anyone who reaches the
+# server; like the monitoring service and the CA issuer they stay off unless switched on.
+# Both must be gated: docs_url alone still serves /openapi.json.
+_DOCS_ENABLED = os.environ.get("SERVER_ENABLE_DOCS", "").lower() in ("1", "true", "yes")
+
 app = FastAPI(
     title="AdminHelper Server",
-    docs_url="/api/docs",
+    docs_url="/api/docs" if _DOCS_ENABLED else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
     lifespan=lifespan,
     dependencies=[Depends(reject_repeated_scalar_query)],
 )

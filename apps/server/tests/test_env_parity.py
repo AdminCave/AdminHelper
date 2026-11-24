@@ -57,6 +57,8 @@ _RUNTIME_VARIABLE = re.compile(r"^(PYTHON\w*|TZ|LANG|LC_\w+)$")
 
 _ENV_READ = re.compile(r'os\.environ(?:\.get)?\(?\[?\s*["\']([A-Z][A-Z0-9_]*)["\']')
 _ENV_READ_WITH_DEFAULT = re.compile(r'os\.environ\.get\(\s*["\']([A-Z][A-Z0-9_]*)["\']\s*,')
+# ah_common.env.env_int: always has a default, so it only counts as a read.
+_ENV_INT_READ = re.compile(r'\benv_int\(\s*["\']([A-Z][A-Z0-9_]*)["\']')
 _SUBSTITUTION = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
 # An .env.example key, whether active or commented out — a commented example is
 # still the place an operator looks the name up.
@@ -106,7 +108,9 @@ def _read_by(component: str) -> set[str]:
         trees.append(_ROOT / "apps" / "pycommon" / "ah_common")
     for tree in trees:
         for py in tree.rglob("*.py"):
-            names.update(_ENV_READ.findall(py.read_text(encoding="utf-8", errors="replace")))
+            text = py.read_text(encoding="utf-8", errors="replace")
+            names.update(_ENV_READ.findall(text))
+            names.update(_ENV_INT_READ.findall(text))
     entrypoint = _ROOT / "apps" / component / "docker-entrypoint.sh"
     if entrypoint.exists():
         text = entrypoint.read_text(encoding="utf-8")

@@ -17,6 +17,7 @@ import dns.name
 import dns.resolver
 import pytest
 
+from ah_common.env import ConfigError
 from app.central import resolve
 from app.central.resolve import AnswerStatus, Reach, ResolverAnswer, classify
 from app.core import config
@@ -247,20 +248,31 @@ def test_query_maps_outcomes(stub_resolve, outcome, status):
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected", "warns"),
+    ("raw", "expected"),
     [
-        ("", ("9.9.9.9", "1.1.1.1"), False),
-        ("  ", ("9.9.9.9", "1.1.1.1"), False),
-        ("9.9.9.9, 1.1.1.1 ,9.9.9.9", ("9.9.9.9", "1.1.1.1"), False),
-        ("2620:00fe::fe,2620:fe::fe", ("2620:fe::fe",), False),
-        ("resolver.example,1.1.1.1", ("1.1.1.1",), True),
-        ("resolver.example", ("9.9.9.9", "1.1.1.1"), True),
+        ("", ("9.9.9.9", "1.1.1.1")),
+        ("  ", ("9.9.9.9", "1.1.1.1")),
+        (" , ", ("9.9.9.9", "1.1.1.1")),
+        ("9.9.9.9, 1.1.1.1 ,9.9.9.9", ("9.9.9.9", "1.1.1.1")),
+        ("2620:00fe::fe,2620:fe::fe", ("2620:fe::fe",)),
     ],
 )
-def test_public_resolvers_setting(caplog, raw, expected, warns):
-    with caplog.at_level(logging.WARNING, logger="monitor.config"):
-        assert config._public_resolvers(raw) == expected
-    assert bool(caplog.records) is warns
+def test_public_resolvers_setting(raw, expected):
+    assert config._public_resolvers(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "entry"),
+    [("resolver.example,1.1.1.1", "resolver.example"), ("9.9.9.9,10.0.0", "10.0.0")],
+)
+def test_public_resolvers_entry_that_is_no_ip_stops_the_start(raw, entry):
+    # R-0699: a typo stops the start instead of silently shrinking the resolver list.
+    with pytest.raises(ConfigError) as exc:
+        config._public_resolvers(raw)
+    assert str(exc.value) == (
+        f"MONITOR_PUBLIC_RESOLVERS={raw!r} is not a comma-separated list of IP addresses "
+        f"({entry!r} is not one)"
+    )
 
 
 @pytest.mark.parametrize(

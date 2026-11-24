@@ -70,13 +70,15 @@ def test_no_bound_past_2_53_is_published_as_a_float():
 
 
 def test_the_bigint_bound_is_published_exactly():
-    from fastapi.testclient import TestClient
+    from fastapi.responses import JSONResponse
 
     from app.main import app
 
     exact = [p for p, v in _bounds(app.openapi()) if v == BIGINT_MAX and isinstance(v, int)]
     assert exact, "no bound in the schema is the BIGINT maximum"
-    text = TestClient(app).get(app.openapi_url).text
+    # /openapi.json is off without SERVER_ENABLE_DOCS (R-0699); the route renders
+    # app.openapi() through a JSONResponse, so render it the same way.
+    text = JSONResponse(app.openapi()).body.decode()
     assert "9223372036854775807" in text
     assert "9.223372036854776e+18" not in text
 
