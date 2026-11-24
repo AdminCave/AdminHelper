@@ -181,7 +181,7 @@
           <ol>
             <li>Set <code>WEB_CONCURRENCY</code> in <code>.env</code> to the desired worker count (rule of thumb <code>(2×cores)+1</code>, typically 4–12 — do <strong>not</strong> couple it to the number of concurrent clients). The entrypoint then runs <code>uvicorn --workers ${WEB_CONCURRENCY}</code>.</li>
             <li><code>REDIS_URL</code> must be set (already the case in the default compose) — otherwise the rate limit counts per worker instead of globally; the server warns at startup.</li>
-            <li>Mind the DB pool: <code>DB_POOL_SIZE</code>+<code>DB_MAX_OVERFLOW</code> (default 10+20) apply per worker. Lower them for many workers and check Postgres <code>max_connections</code>.</li>
+            <li>Mind the DB pool: <code>DB_POOL_SIZE</code>+<code>DB_MAX_OVERFLOW</code> (default 10+20) apply per worker of server and monitoring (Compose passes both values to both services). Lower them for many workers and check Postgres <code>max_connections</code>.</li>
           </ol>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>

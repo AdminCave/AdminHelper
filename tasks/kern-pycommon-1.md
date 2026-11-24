@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pycommon-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-pycommon-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-pycommon-1 · Review: pro Task
 Spec: docs/features/kern-pycommon-1.md (Roadmap R-0698)
 Heavy: linux-full — Build-Kontext und Dockerfiles von server und monitoring, `docker-compose.test.yml`; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -114,8 +114,10 @@ gleichem normalisiertem Rumpf (ohne Docstrings) schlagen an; eine kurze Ausnahme
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_no_python_copies.py
 Doku: → T11
 
-### T11 — Doku  [ ]
-Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, DEVELOPMENT.md, changelog.d/kern-pycommon-1.md
+### T11 — Doku  [x]
+Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, DEVELOPMENT.md, changelog.d/kern-pycommon-1.md, docs/developer/server.html, docs/en/developer/server.html, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4095a410a 2026-11-24T10:03:21+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `apps/pycommon` in der Architektur (DE+EN) und im Dev-Setup; `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` gelten auch
 fürs Monitoring; PID im Monitoring-Log; CHANGELOG `### Changed`. Pfade der Doku-Seiten in der Task frisch prüfen.
 Verify: bash scripts/dev/verify.sh scripts --strict

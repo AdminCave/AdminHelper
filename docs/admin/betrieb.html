@@ -228,7 +228,7 @@ docker compose up -d server</code></pre>
           <ol>
             <li><code>WEB_CONCURRENCY</code> in der <code>.env</code> auf die gewünschte Worker-Zahl setzen (Faustregel <code>(2×CPU-Kerne)+1</code>, üblich 4–12 — <strong>nicht</strong> an die Zahl gleichzeitiger Clients koppeln). Der Entrypoint startet dann <code>uvicorn --workers ${WEB_CONCURRENCY}</code>.</li>
             <li><code>REDIS_URL</code> muss gesetzt sein (im Standard-Compose bereits der Fall) — sonst zählt das Rate-Limit pro Worker statt global; der Server warnt beim Start.</li>
-            <li>Den DB-Pool im Auge behalten: pro Worker gilt <code>DB_POOL_SIZE</code>+<code>DB_MAX_OVERFLOW</code> (Default 10+20). Bei vielen Workern diese Werte senken und Postgres <code>max_connections</code> prüfen.</li>
+            <li>Den DB-Pool im Auge behalten: pro Worker von Server und Monitoring gilt <code>DB_POOL_SIZE</code>+<code>DB_MAX_OVERFLOW</code> (Default 10+20; Compose reicht beide Werte an beide Dienste durch). Bei vielen Workern diese Werte senken und Postgres <code>max_connections</code> prüfen.</li>
           </ol>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
