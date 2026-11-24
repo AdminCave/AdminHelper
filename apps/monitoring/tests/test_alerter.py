@@ -12,8 +12,9 @@ sent-state, and the alerts muted while the host is down or in a maintenance wind
 Most tests use a fake session (_CapturingDb, _FakeDb) and replace _dispatch; the
 webhook tests stub the resolver and the transport below the pinned connection, the
 mail test the SMTP server. Where the query itself is under test (cooldown window,
-enabled rules, host-down and Host Ping lookups), they run on an in-memory SQLite with
-the model schema.
+enabled rules, host-down and Host Ping lookups), they run on the test database (db_engine: Postgres where
+DATABASE_URL or AH_TEST_DB names one, else in-memory SQLite) with the model
+schema.
 """
 
 import email.policy
@@ -559,7 +560,7 @@ class TestRuleLoopIsolation:
 
 def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch, db_engine):
     # 6.59: _CapturingDb.filter() is a no-op, so process_alert's enabled==True filter (alerter.py) is
-    # never exercised by the fake-based tests. Against a real sqlite DB, of two otherwise-matching
+    # never exercised by the fake-based tests. Against a real database, of two otherwise-matching
     # rules only the enabled one dispatches — a regression dropping the filter would let disabled
     # rules fire webhooks/mails again, and every fake-based test would stay green.
     from sqlalchemy.orm import sessionmaker
@@ -1048,7 +1049,7 @@ class TestHostPingRankOrder:
     """R-0424: which critical check mutes which on one server. The Host Ping (the
     ping check of the template "Host Ping") mutes every other check, the heartbeat
     included; a critical heartbeat mutes the others but never the Host Ping, so the
-    two never silence each other when the host is gone. Real SQLite: the rank lives
+    two never silence each other when the host is gone. Real database: the rank lives
     in the query."""
 
     @pytest.fixture()

@@ -1368,8 +1368,8 @@ def _refusing_host_facts(factory):
     """An insert into monitor_host_facts fails its flush with an IntegrityError."""
     with factory() as db:
         if db.get_bind().dialect.name == "postgresql":
-            # The trigger outlives the test on the shared database; SQLSTATE 23000
-            # surfaces as the IntegrityError SQLite's RAISE(ABORT) gives.
+            # Dropped in the finally below, as the shared database keeps it otherwise; SQLSTATE
+            # 23000 surfaces as the IntegrityError SQLite's RAISE(ABORT) gives.
             db.execute(
                 text(
                     "CREATE FUNCTION refuse_host_facts() RETURNS trigger LANGUAGE plpgsql "

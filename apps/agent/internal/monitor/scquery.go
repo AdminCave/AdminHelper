@@ -48,6 +48,8 @@ func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error), 
 		sort.Strings(enabledInactive)
 		result.EnabledInactive = enabledInactive
 	}
+	// Output without a single service (not a real Windows host) leaves services nil: all_services is
+	// then omitted (omitzero), not sent as [] or null, and throttleInventory sends the report as is.
 	result.AllServices = services
 	result.Counts = serviceCounts(services)
 	for _, svc := range services {

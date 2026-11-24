@@ -913,7 +913,7 @@ func zfsUnavailable(err error) *ZFSBlock {
 }
 
 // parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health,frag` (tab-separated) into
-// pool maps, skipping lines with too few columns and stripping the % from the capacity column — the
+// ZPool values, skipping lines with too few columns and stripping the % from the capacity column — the
 // positional parsing, testable without running zpool (6.16). fragmentation_percent is left out where
 // zpool prints "-" (unknown, zpoolprops(7)) or something else than a percentage.
 func parseZpoolList(out []byte) []ZPool {
