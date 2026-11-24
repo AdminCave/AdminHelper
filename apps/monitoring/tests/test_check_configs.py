@@ -494,9 +494,9 @@ class TestValidationErrorAnswer:
 
     @staticmethod
     def _handlers():
-        from app.main import _validation_error
+        from app.main import app
 
-        return _validation_error, request_validation_exception_handler
+        return app.exception_handlers[RequestValidationError], request_validation_exception_handler
 
     def test_without_a_non_finite_number_or_a_lone_surrogate_it_is_fastapis_own(self):
         # Other non-ASCII text stays as FastAPI writes it, unescaped UTF-8.

@@ -18,7 +18,11 @@ import pytest
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 
-from app.main import _validation_error
+from app.main import app
+
+# The handler the app registered, not an import of its definition: the call sites below then
+# pin what the server answers.
+_validation_error = app.exception_handlers[RequestValidationError]
 
 _JSON = {"Content-Type": "application/json"}
 

@@ -76,8 +76,10 @@ Grenzen bleiben in den Dienst-Modulen.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T7 — Validierungsfehler-Handler in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/errors.py, apps/server/app/main.py, apps/monitoring/app/main.py
+### T7 — Validierungsfehler-Handler in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/errors.py, apps/server/app/main.py, apps/monitoring/app/main.py, apps/server/tests/test_validation_response.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @aa6806545 2026-11-24T07:54:49+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T7.verdict.json)
 Änderung: `_non_finite_as_null` und der `RequestValidationError`-Handler (`apps/server/app/main.py:279`,
 `apps/monitoring/app/main.py:138`) als eine Implementierung; beide Apps registrieren sie.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
