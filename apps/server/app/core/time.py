@@ -14,46 +14,18 @@ Two DateTime storage conventions coexist in the schema (audit F7):
 
 Comparing a naive with an aware datetime raises TypeError, so a call site must
 know which world a column belongs to. New tz-naive columns should use these helpers
-(``utcnow_naive()`` in Python, ``utc_now_sql()`` for a column server_default).
+(``utcnow_naive()`` in Python, ``utc_now_sql()`` for a column server_default); both and
+``iso_utc`` come from ``ah_common.time``, shared with the monitoring service.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Annotated
 
 from pydantic import PlainSerializer, WithJsonSchema
-from sqlalchemy import func
 
+from ah_common.time import iso_utc, utc_now_sql, utcnow_naive
 
-def utcnow_naive() -> datetime:
-    """Current UTC time as a tz-naive datetime — the storage convention of the
-    tz-naive DateTime columns (F7)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def utc_now_sql():
-    """SQL default for tz-naive UTC columns — the DB-side twin of utcnow_naive().
-
-    ``timezone('UTC', now())`` yields the UTC wall-clock as a *naive* timestamp
-    regardless of the database session's timezone. A bare ``func.now()`` coerces in
-    the session TZ, and the stack runs the postgres container with
-    ``TZ=Europe/Berlin`` — so ``server_default=func.now()`` stored Berlin local time
-    while the application writes UTC via ``utcnow_naive()`` (8.14). Since R-0209
-    every server session runs in UTC (``app.core.database``), but this explicit form
-    stays: it does not depend on the session, and the other services' engines do
-    not set it."""
-    return func.timezone("UTC", func.now())
-
-
-def iso_utc(dt: datetime | None) -> str | None:
-    """RFC 3339 in UTC with ``Z`` — what the API promises with ``format: date-time``
-    (R-0064). A naive value is UTC by the storage convention above; an aware one,
-    as a timestamptz column hands it out in the session's zone, is converted."""
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().removesuffix("+00:00") + "Z"
-
+__all__ = ["UtcDatetime", "iso_utc", "utc_now_sql", "utcnow_naive"]
 
 # A response field that is written with iso_utc(). The JSON schema stays
 # string/date-time: a bare PlainSerializer would turn it into a plain string.

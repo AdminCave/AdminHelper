@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 Test-Löschung: apps/server/tests/test_ssrf_parity.py::* — ersetzt durch die eine Implementierung in ah_common (und T10)
 
-### T3 — time in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/time.py, apps/server/app/core/time.py, apps/monitoring/app/core/time.py
+### T3 — time in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/time.py, apps/server/app/core/time.py, apps/monitoring/app/core/time.py, apps/server/tests/test_utc_timestamp_defaults.py, apps/monitoring/tests/test_core_time.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @fa0a9118e 2026-11-24T02:20:44+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T3.verdict.json)
 Änderung: `utcnow_naive`, `iso_z` und eine SQL-Vorgabe für naive UTC-Spalten in `ah_common/time.py`; die Dienst-Module
 bleiben Fassaden (98 Importeure) mit ihrem Eigenen (Server: Pydantic-Typ). Bestehende Alembic-Revisionen bleiben
 unberührt; T3 prüft, dass das erzeugte SQL beider Dienste gleich bleibt.
@@ -119,3 +121,8 @@ Task-Review: am Ende
 - T2: Der Hook-Worker (`script_runner.py`) bekommt neben `server/` das Verzeichnis, aus dem der Server `ah_common`
   geladen hat, in `PYTHONPATH` (im Image dasselbe `/app`); die Conftests geben `apps/pycommon` über `PYTHONPATH` an
   die Python-Subprozesse der Tests weiter.
+- T3: Die gemeinsame SQL-Vorgabe ist das `FunctionElement` des Monitorings (`@compiles`, SQLite `CURRENT_TIMESTAMP`),
+  nicht `func.timezone`: die DDL beider Dienste bleibt zeichengleich (vorher/nachher je `CreateTable` über die ganze
+  Metadata verglichen). In Statements (`onupdate`, `ON CONFLICT … SET`) rendert der Server `'UTC'` jetzt als Literal
+  statt als Bind-Parameter; ein Test fährt das gegen Postgres in einer Berlin-Session. Der Helfer heißt wie bisher
+  `iso_utc` (der Plan sagte `iso_z`).
