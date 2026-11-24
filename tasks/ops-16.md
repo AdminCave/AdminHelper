@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-16 — Betriebsskripte: Update, Install, Restore, Backup — Task-Ledger
-Status: bereit · Branch: feature/ops-16 · Review: pro Task
+Status: erledigt · Branch: feature/ops-16 · Review: pro Task
 Spec: docs/features/ops-16.md (Roadmap R-1703, R-1686, R-1692, R-1712, R-1713, R-1714, R-1727)
 Heavy: linux-full — scripts/install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (backup_restore und upgrade_path im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
