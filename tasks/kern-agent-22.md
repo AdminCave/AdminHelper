@@ -48,8 +48,10 @@ Review: approve (.ah-out/review/kern-agent-22/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (internes Verhalten)
 
-### T6 — R-1704: Hinweis „provision this host once more“ nur noch, wo er hilft  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go
+### T6 — R-1704: Hinweis „provision this host once more“ nur noch, wo er hilft  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/logging/logging.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e7d46af07 2026-11-24T17:49:33+01:00
+Review: approve (.ah-out/review/kern-agent-22/T6.verdict.json)
 Änderung: Fehlt `adminhelper.conf`, loggt `Sync` den Hinweis auf Info nur, wenn `monitor.conf` fehlt oder FRP-Reste da sind (frpc-Konfiguration oder -Dienst), sonst auf Debug. Test für beide Fälle. `security` prüft die Task (Risikopfad).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/
 Doku: keine (Log-Stufe)

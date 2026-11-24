@@ -57,8 +57,13 @@ func Sync(ctx context.Context) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Every provisioning writes it since R-0398; a host provisioned without a tunnel
-			// before has none and no API key to sync with.
-			logger.Infof("No sync config at %s, skipping. Provisioned without a tunnel before this agent version? "+
+			// before has none and no API key to sync with. A host with monitoring and no frpc
+			// config was provisioned without a tunnel on purpose: the hint each cycle would be noise.
+			log := logger.Infof
+			if !reprovisionHelps() {
+				log = logger.Debugf
+			}
+			log("No sync config at %s, skipping. Provisioned without a tunnel before this agent version? "+
 				"To get its tunnels, provision this host once more: %s", config.FrpAdminHelperConf(), enroll.ReprovisionHint)
 			return nil
 		}
@@ -593,4 +598,14 @@ func parseConfigHash(body []byte) (string, error) {
 // hashConfig computes the hex-encoded SHA256 hash of the config bytes.
 func hashConfig(data []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
+
+// reprovisionHelps says whether a host without a sync config may want its tunnels back: it has no
+// monitor.conf, so it was never provisioned whole, or it still has an frpc config.
+func reprovisionHelps() bool {
+	if _, err := os.Stat(config.MonitorConfFile()); errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	_, err := os.Stat(config.FrpConfigFile())
+	return err == nil
 }
