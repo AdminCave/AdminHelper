@@ -225,8 +225,9 @@ func Push(ctx context.Context) error {
 		// is away; a counting probe counts on from where the run of its kept result stopped. The
 		// self-throttle counts what the collectors cost, sent or not, a refused credential stays
 		// refused and a bound one stays bound. The load gate counts the runs it read, so a host under
-		// load is not measured in full while the service is away. The rest of the state stays as the
-		// last push left it.
+		// load is not measured in full while the service is away. The hourly update count and the
+		// backup index stay as read, or every run would read them again until a push goes through
+		// (R-1700). The rest of the state stays as the last push left it.
 		kept := prevReportState
 		kept.Probes = nextReportState.Probes
 		kept.Throttle = nextReportState.Throttle
@@ -234,6 +235,8 @@ func Push(ctx context.Context) error {
 		kept.Bindings = nextReportState.Bindings
 		kept.Cursors = nextReportState.Cursors
 		kept.LoadShed = nextReportState.LoadShed
+		kept.Updates = nextReportState.Updates
+		kept.ProxmoxBackups = nextReportState.ProxmoxBackups
 		if err := saveReportState(reportStatePath, kept); err != nil {
 			logger.Warnf("saving the probe results and the self-throttle failed: %v", err)
 		}

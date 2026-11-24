@@ -14,8 +14,10 @@ Beweis: main@4c8173e06 apps/agent/internal/monitor/loadgate.go:19,121 (100 - mem
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html (Schonung unter Last), docs/developer/agent.html, docs/en/developer/agent.html (Last-Tor), changelog.d/kern-agent-22.md
 
-### T2 — R-1700: Updates und ProxmoxBackups bleiben nach einem gescheiterten Push gedrosselt  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/reportstate_test.go
+### T2 — R-1700: Updates und ProxmoxBackups bleiben nach einem gescheiterten Push gedrosselt  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/reportstate_test.go, changelog.d/kern-agent-22.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @22541098f 2026-11-24T16:53:06+01:00
+Review: approve (.ah-out/review/kern-agent-22/T2.verdict.json)
 Beweis: main@4c8173e06 apps/agent/internal/monitor/monitor.go:230-236 (Fehlerzweig übernimmt Updates und ProxmoxBackups nicht) · Dedup-Key: aus der Zeile R-1700
 Änderung: Der Fehlerzweig übernimmt `Updates` und `ProxmoxBackups` aus dem neuen Stand wie die übrigen Zählungen; Kommentar dazu. Test erst rot: nach einem Push gegen 502 trägt der gespeicherte Stand die gerade gelesenen Updates und den Backup-Index, der nächste Lauf liest sie nicht erneut. `reportstate_test.go` (Schritt 3) erwartet das.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
