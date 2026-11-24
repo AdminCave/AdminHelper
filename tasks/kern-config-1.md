@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/kern-config-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_config_env.py tests/test_retention.py tests/test_central_resolve.py tests/test_logging_config.py tests/test_require_agent.py
 Doku: → T5
 
-### T4 — CA-Issuer: LOG_LEVEL und gemeinsames Log-Format  [ ]
+### T4 — CA-Issuer: LOG_LEVEL und gemeinsames Log-Format  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_logging.py (neu, SPDX), docker-compose.yml
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @dab86e6cb 2026-11-24T11:48:12+01:00
+Review: approve (.ah-out/review/kern-config-1/T4.verdict.json)
 Änderung: R-0699. Der CA-Issuer liest `LOG_LEVEL` (ein unbekannter Wert bricht mit Variable und Wert ab) und loggt im Format von `ah_common.logging_config` (`%(asctime)s %(levelname)-8s [%(process)d] %(name)s %(message)s`, nach stderr). `ah_common` kommt nicht ins Image. Compose reicht `LOG_LEVEL` an den CA-Issuer durch.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_logging.py
 Doku: → T5

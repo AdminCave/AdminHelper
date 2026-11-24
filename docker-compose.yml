@@ -349,6 +349,7 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
       - EXTRA_SANS=${EXTRA_SANS:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # Encrypts the cold Root key at rest (D7). Only the first boot needs it, to create
       # the hierarchy. Set via ./scripts/init-secrets.sh; keep it OUT of backups. It
       # arrives as a file (the secret ca_root_passphrase, top-level `secrets:` below),
