@@ -14,8 +14,10 @@ Beweis: main@4c8173e06 apps/agent/internal/monitor/collector.go:304-321 (disk.Us
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html DE+EN (Platten unter FreeBSD) · changelog.d/kern-agent-23.md
 
-### T2 — R-1728: Lauf als Collect + Done im Paket monitor  [ ]
+### T2 — R-1728: Lauf als Collect + Done im Paket monitor  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/cycle.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/plan_test.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a795e5bf4 2026-11-24T20:16:23+01:00
+Review: approve (.ah-out/review/kern-agent-23/T2.verdict.json)
 Änderung: Neu `Collect(ctx, cfg) *Cycle` (Plan, Credentials, Report-Zustand, Report, Inventory-Drossel) und `(*Cycle).Done(pushed bool)`, das den Zustand nach Versand oder Verlust schreibt (die heutige `kept`-Logik aus `Push`). `Push` nutzt beides und verhält sich gleich. Die Zustandstests nach einem verlorenen Versand fahren `Collect` + `Done(false)` statt eines HTTP-Push. Ihre Zusicherungen bleiben unverändert, nur der Einstieg wechselt. Neue Datei mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T4

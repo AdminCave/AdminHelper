@@ -6,8 +6,10 @@ package monitor
 
 import (
 	"context"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"reflect"
 	"sync/atomic"
@@ -393,6 +395,65 @@ func TestPushBudgetKeepsThePushReserve(t *testing.T) {
 		}
 	default:
 		t.Fatal("the server got no report")
+	}
+}
+
+// Push end to end: over TLS against the pinned CACERT of monitor.conf, a lost push leaves the CPU
+// window as the last push left it, and the next push that goes through moves it.
+func TestPushKeepsTheStateThroughALostPush(t *testing.T) {
+	stubReportHost(t)
+	shortenRetryDelay(t)
+	s := stubCPU(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	var status, posts atomic.Int32
+	status.Store(http.StatusOK)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		posts.Add(1)
+		w.WriteHeader(int(status.Load()))
+	}))
+	defer srv.Close()
+	caPath := config.MonitorCACert()
+	if err := os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+		{Key: "CACERT", Value: caPath},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statePath := config.MonitorReportStateFile()
+
+	s.times = cpuTimes(200, 800)
+	if err := Push(context.Background()); err != nil || posts.Load() != 1 {
+		t.Fatalf("first push: err %v after %d posts, want one report through the pinned CA", err, posts.Load())
+	}
+	if st := loadReportState(statePath).CPU; st == nil || st.Total != 1000 {
+		t.Fatalf("state cpu after the first push = %+v, want total 1000", st)
+	}
+
+	status.Store(http.StatusBadGateway)
+	s.times = cpuTimes(300, 1100)
+	if err := Push(context.Background()); err == nil {
+		t.Fatal("push against 502: want an error")
+	}
+	if st := loadReportState(statePath).CPU; st == nil || st.Total != 1000 {
+		t.Fatalf("state cpu after a lost push = %+v, want it as the first push left it", st)
+	}
+
+	status.Store(http.StatusOK)
+	s.times = cpuTimes(600, 1800)
+	if err := Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(statePath).CPU; st == nil || st.Total != 2400 {
+		t.Fatalf("state cpu after the next push = %+v, want total 2400", st)
 	}
 }
 
