@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI schneller — Task-Ledger
-Status: geplant · Branch: feature/ci-speed-1 · Review: am Ende
+Status: aktiv · Branch: feature/ci-speed-1 · Review: am Ende
 Spec: docs/features/ci-speed-1.md (Roadmap R-1743, R-1725)
 Heavy: none — CI-Workflow, Harness-Skript und Skill-Text; kein Stack-, Gateway-, PKI- oder Install-Pfad, die PR-CI und der Queue-Lauf fahren die neue Teilung selbst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
