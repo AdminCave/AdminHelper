@@ -14,8 +14,10 @@ Prüfung: `security` zusätzlich bei T2 (Risikopfade notifications, alerter) und
 
 ## Tasks
 
-### T1 — NUL-Middleware und query_params in ah_common (R-1740)  [ ]
+### T1 — NUL-Middleware und query_params in ah_common (R-1740)  [x]
 Komponente: server · Dateien: apps/pycommon/ah_common/middleware.py, apps/pycommon/ah_common/query_params.py, apps/server/app/core/middleware.py, apps/server/app/core/query_params.py, apps/monitoring/app/core/middleware.py, apps/monitoring/app/core/query_params.py, apps/server/app/main.py, apps/monitoring/app/main.py, apps/server/tests/test_no_python_copies.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @abd230453 2026-11-24T20:24:06+01:00
+Review: approve (.ah-out/review/kern-pycommon-2/T1.verdict.json)
 Änderung: `NulByteMiddleware` mit `_nul_rejected` und das Modul `query_params` liegen einmal in `ah_common` (neue Dateien
 mit SPDX); beide `main.py` importieren von dort, die Dienst-`query_params.py` entfallen, die Dienst-`middleware.py`
 behalten nur ihre eigenen Klassen. Die Wächter-Ausnahmen für middleware und query_params fallen weg. Neun Dateien:

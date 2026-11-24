@@ -15,15 +15,6 @@ _TREES = (_APPS / "server" / "app", _APPS / "monitoring" / "app")
 
 # Known copies, per pair of modules: the names that may stay doubled until their row is built.
 _KNOWN = {
-    ("monitoring/app/core/middleware.py", "server/app/core/middleware.py"): {
-        "_nul_rejected",
-        "dispatch",
-    },
-    ("monitoring/app/core/query_params.py", "server/app/core/query_params.py"): {
-        "_is_array",
-        "_scalar_query_params",
-        "reject_repeated_scalar_query",
-    },
     ("monitoring/app/mail_template.py", "server/app/modules/notifications/mail_template.py"): {
         "_fill",
         "_html_values",
