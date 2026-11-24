@@ -104,6 +104,32 @@ CA_AFTER=$(ca_fingerprint)
     && ok "CA chain identical after restore ($CA_AFTER) — agents stay trusted" \
     || bad "CA chain changed across restore: '$CA_BEFORE' -> '$CA_AFTER'"
 
+# ── Restore over a database migrated forward (R-1686) ────────────────────────
+# A failed update leaves the schema of the newer release: a table with a foreign key
+# into an older one made pg_restore --clean fail, one without stayed as an orphan.
+probe_sql() {
+    e2e_dc exec -T postgres sh -c "PGPASSWORD=\$POSTGRES_PASSWORD psql -h 127.0.0.1 -U adminhelper -d adminhelper -v ON_ERROR_STOP=1 -tAc \"$1\"" \
+        2>/dev/null | tr -d '[:space:]'
+}
+probe_sql "CREATE TABLE ah_probe_fk (v varchar(32) REFERENCES alembic_version(version_num)); CREATE TABLE ah_probe_orphan (id int)" >/dev/null
+[ "$(probe_sql "SELECT count(*) FROM pg_tables WHERE tablename LIKE 'ah_probe_%'")" = 2 ] \
+    && ok "two tables of a newer schema in place (one with a foreign key)" || bad "could not create the probe tables"
+if [ -n "$BK" ] && (cd "$E2E_REPO_ROOT" && ./scripts/restore.sh "$BK" --yes) >"$E2E_WORK/restore2.log" 2>&1; then
+    ok "restore.sh over a database migrated forward completed"
+else
+    bad "restore.sh over a database migrated forward failed"; tail -20 "$E2E_WORK/restore2.log" >&2
+fi
+[ "$(probe_sql "SELECT count(*) FROM pg_tables WHERE tablename LIKE 'ah_probe_%'")" = 0 ] \
+    && ok "no table of the newer schema is left" || bad "tables of the newer schema left after the restore"
+for _ in $(seq 1 60); do
+    code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "$E2E_SERVER_URL/" 2>/dev/null || echo 000)
+    [ "$code" != "000" ] && break
+    sleep 2
+done
+TOKEN3=$(e2e_admin_token)
+grep -q "dr-probe" <<<"$(curl -k -s -H "Authorization: Bearer $TOKEN3" "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo "")" \
+    && ok "the server record is back after the second restore" || bad "server record lost in the second restore"
+
 # ── Restore on an empty host, COMPOSE_PROJECT_NAME only in the .env (R-0665) ──
 # An install directory of its own named unlike the project: restore.sh must take the
 # project (the volume prefix) and the .env from the backup, with nothing exported but

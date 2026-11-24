@@ -242,7 +242,14 @@ mkdir -p "$WORK/reg/bin" "$WORK/reg/full" "$WORK/reg/mon" "$WORK/reg/a" "$WORK/r
 cat > "$WORK/reg/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
-  *ON_ERROR_STOP*) cat > "$STUB_DIR/register.sql" ;;
+  *ON_ERROR_STOP*)
+    # The register reopen and the emptying before each pg_restore (R-1686) both send
+    # their SQL on stdin; the log marks which one a call was.
+    sql=$(cat)
+    if grep -q certificate_register_state <<<"$sql"; then
+      printf '%s\n' "$sql" > "$STUB_DIR/register.sql"; echo "REOPEN $*" >> "$STUB_DIR/calls.log"; exit 0
+    fi
+    printf '%s\n' "$sql" >> "$STUB_DIR/clear.sql"; echo "CLEAR $*" >> "$STUB_DIR/calls.log"; exit 0 ;;
   *pg_restore*)    cat >/dev/null ;;
   "compose config")                   echo 'name: drproj' ;;
   "compose config --images postgres") echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
@@ -259,17 +266,27 @@ reg_restore() { ( cd "$WORK" && STUB_DIR="$1" PATH="$WORK/reg/bin:$PATH" bash "$
 
 out=$(reg_restore "$WORK/reg/a" "$WORK/reg/full.tar.gz"); rc=$?
 restored=$(grep -n 'pg_restore' "$WORK/reg/a/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
-reopened=$(grep -n 'ON_ERROR_STOP' "$WORK/reg/a/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
+reopened=$(grep -n '^REOPEN ' "$WORK/reg/a/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
+cleared=$(grep -n '^CLEAR .*-U ah_server -d adminhelper ' "$WORK/reg/a/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
 { [ $rc -eq 0 ] && grep -qF "$REOPEN" "$WORK/reg/a/register.sql" 2>/dev/null; } \
   && ok "restore.sh moves the install time of the register to now" \
   || bad "register not reopened: rc=$rc out=[$out] calls=[$(cat "$WORK/reg/a/calls.log" 2>/dev/null)]"
 { [ -n "$restored" ] && [ -n "$reopened" ] && [ "$restored" -lt "$reopened" ]; } \
   && ok "the register is reopened after the server DB is restored" \
   || bad "order: pg_restore at ${restored:-none}, reopen at ${reopened:-none}"
+# R-1686: before pg_restore the server DB is emptied as its role, tables, sequences
+# and types of public, so a database migrated forward keeps nothing the dump lacks.
+{ [ -n "$cleared" ] && [ -n "$restored" ] && [ "$cleared" -lt "$restored" ] \
+    && grep -q "DROP %s IF EXISTS public.%I CASCADE" "$WORK/reg/a/clear.sql" \
+    && grep -q "DROP SEQUENCE IF EXISTS" "$WORK/reg/a/clear.sql" && grep -q "DROP TYPE IF EXISTS" "$WORK/reg/a/clear.sql"; } \
+  && ok "the server DB is emptied as ah_server before its pg_restore" \
+  || bad "emptying: clear at ${cleared:-none}, pg_restore at ${restored:-none}"
 
 out=$(reg_restore "$WORK/reg/b" "$WORK/reg/mon.tar.gz"); rc=$?
 { [ $rc -eq 0 ] && grep -q 'pg_restore' "$WORK/reg/b/calls.log" 2>/dev/null \
-    && ! grep -q 'ON_ERROR_STOP' "$WORK/reg/b/calls.log"; } \
+    && ! grep -q '^REOPEN ' "$WORK/reg/b/calls.log" \
+    && grep -q '^CLEAR .*-U ah_monitor -d adminhelper_monitor ' "$WORK/reg/b/calls.log" \
+    && ! grep -q '^CLEAR .*-d adminhelper ' "$WORK/reg/b/calls.log"; } \
   && ok "without the server DB the register is left alone" \
   || bad "monitor-only restore: rc=$rc calls=[$(cat "$WORK/reg/b/calls.log" 2>/dev/null)]"
 

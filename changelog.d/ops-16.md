@@ -8,6 +8,9 @@
 - **Installation: Neustart nach Abbruch:** `install.sh` behaelt die Version des Release-Bundles, bis die
   Installation gelungen ist; ein Neustart aus dem Verzeichnis nach einem abgebrochenen Versuch installiert damit
   dieselbe gepinnte Version statt `:latest`.
+- **Restore ueber einem neueren Schema:** `restore.sh` leert jede Datenbank als ihre Dienst-Rolle, bevor es den
+  Dump einspielt; ein Restore nach einem gescheiterten Update scheitert nicht mehr an Tabellen der neueren Version
+  und laesst keine zurueck.
 
 ### Changed
 

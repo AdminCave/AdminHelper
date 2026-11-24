@@ -14,6 +14,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - 2026-11-24 Kevin: die Session merged ops-16 selbst (auch install/update/agent-install.sh).
 - 2026-11-24 Kevin (R-1713): pg-backup als Compose-Profil `backup`, eingeschaltet über `COMPOSE_PROFILES` in der `.env`; pg-restore.sh ins Bundle.
 - 2026-11-24 Kevin (R-1714): update.sh behält die letzten 3 runtime-prev-Archive.
+- 2026-11-24 T5 aufgeteilt: der Compose-Teil prüft mit Server-Tests (T5, server), Bundle und RUNTIME_FILES mit install_test (T7, scripts). pg-backup sichert weiter als Superuser wie backup.sh (nur im Opt-in-Profil); auf Rollen umstellen ist eine eigene Zeile.
 
 ### T1 — R-1703: agent-install.sh schreibt die Repo-Konfiguration nach dem Stand der Identitäts-CA  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-16.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
@@ -42,18 +43,20 @@ Beweis: main@6895f8eaf scripts/install.sh:164,192-199,645-649 · Dedup-Key: bug:
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
 Doku: docs/admin/installation.html DE+EN · changelog.d/ops-16.md
 
-### T4 — R-1686: restore.sh leert das Schema vor pg_restore  [ ]
+### T4 — R-1686: restore.sh leert das Schema vor pg_restore  [x]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/tests/backup_restore_test.sh, changelog.d/ops-16.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @37e78f8fb 2026-11-24T16:23:47+01:00
+Review: approve (.ah-out/review/ops-16/T4.verdict.json)
 Änderung: Vor `restore_db` werden in beiden DBs die Objekte entfernt (Schema `public` neu, Eigentümer die Service-Rolle wie nach db-init), danach `pg_restore` wie heute. Live-Fall in backup_restore_test.sh: nach dem Backup eine Tabelle mit Fremdschlüssel auf eine alte anlegen, restore → Exit 0, Tabelle weg, alembic_version wie im Backup. Der Live-Fall läuft zusätzlich einmal lokal (Docker), Summary in den Commit-Body; im Sammellauf als Schritt backup-restore.
 Beweis: main@6895f8eaf scripts/restore.sh:528-530,554-556; Gegenprobe pg_restore auf PostgreSQL 17 (mit FK Exit 1, ohne FK Waise) · Dedup-Key: bug:ops:restore.sh:pg-restore-over-migrated-schema
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: changelog.d/ops-16.md
 
-### T5 — R-1713: pg-backup als Compose-Profil, pg-restore.sh im Bundle  [ ]
-Komponente: scripts · Dateien: docker-compose.yml, .env.example, scripts/install.sh, .github/workflows/release.yml, scripts/tests/install_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-16.md
-Änderung: Der Dienst `pg-backup` wird regulär mit `profiles: [backup]` ausgeliefert; `.env.example` nennt `COMPOSE_PROFILES` (leer, Kommentar). `scripts/pg-restore.sh` kommt in `RUNTIME_FILES` und ins Release-Bundle. Doku DE+EN: Einschalten über `COMPOSE_PROFILES=backup`. Tests: `docker compose config` ohne Profil ohne pg-backup, mit Profil mit; RUNTIME_FILES und Bundle-Liste enthalten pg-restore.sh.
-Beweis: main@6895f8eaf docker-compose.yml:636-637, scripts/update.sh:886,893-899, .github/workflows/release.yml:421-423, scripts/install.sh:61 · Dedup-Key: bug:ops:docker-compose.yml:pg-backup-lost-on-update
-Verify: bash scripts/dev/verify.sh scripts --strict -- install_test image_pins_test
+### T5 — R-1713: pg-backup als Compose-Profil  [ ]
+Komponente: server · Dateien: docker-compose.yml, .env.example, apps/server/tests/test_compose_hardening.py, apps/server/tests/test_compose_healthchecks.py, apps/server/tests/test_env_parity.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-16.md
+Änderung: Der Dienst `pg-backup` wird regulär mit `profiles: [backup]` ausgeliefert; `.env.example` nennt `COMPOSE_PROFILES` (leer, Kommentar). Die Wächter-Tests nehmen ihn auf: Profil `backup` (ersetzt den Test des auskommentierten Blocks; seine Härtung prüfen jetzt die Tests aller Dienste), kein Healthcheck (öffnet keinen Port), als einzige Ausnahme Halter des Superuser-Passworts neben postgres/db-init (sichert wie backup.sh als Superuser, nur im Opt-in-Profil), `COMPOSE_PROFILES` als Compose-eigene Variable. Doku DE+EN: Einschalten über `COMPOSE_PROFILES=backup`.
+Beweis: main@6895f8eaf docker-compose.yml:636-637, scripts/update.sh:886,893-899 · Dedup-Key: bug:ops:docker-compose.yml:pg-backup-lost-on-update
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py tests/test_compose_healthchecks.py tests/test_env_parity.py
 Doku: docs/admin/betrieb.html DE + docs/en/admin/operations.html · changelog.d/ops-16.md
 
 ### T6 — R-1727: init-secrets.sh räumt auch bei einem Abbruch auf  [ ]
@@ -62,3 +65,9 @@ Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secr
 Beweis: Roadmap R-1727 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test
 Doku: changelog.d/ops-16.md (neutral)
+
+### T7 — R-1713: pg-restore.sh im Release-Bundle und in RUNTIME_FILES  [ ]
+Komponente: scripts · Dateien: scripts/install.sh, .github/workflows/release.yml, scripts/tests/install_test.sh, changelog.d/ops-16.md
+Änderung: `scripts/pg-restore.sh`, auf das die Betriebs-Doku verweist, kommt in `RUNTIME_FILES` (install.sh) und in die Bundle-Liste von release.yml. Test: RUNTIME_FILES und die Bundle-Liste von release.yml enthalten pg-restore.sh.
+Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
+Doku: changelog.d/ops-16.md

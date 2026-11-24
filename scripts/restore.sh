@@ -521,9 +521,45 @@ docker compose run --rm -T db-init
 
 # restore_db <db> <role> <password>: the password goes in through the environment of
 # docker compose (-e without a value), never through an argv.
+# It first empties the database as its role (R-1686): pg_restore --clean drops only
+# what the dump holds, so a database an update has already migrated forward keeps its
+# newer tables; one with a foreign key into an older table fails the restore, one
+# without stays behind and breaks the next migration. db-init has just handed every
+# object in public to the role, so the role may drop them; the schema, its grants and
+# the default privileges stay as db-init set them.
 restore_db() {
     db="$1"; role="$2"
     [ -f "$STAGE/$db.dump" ] || { echo "[restore] $db.dump nicht im Backup — überspringe"; return; }
+    echo "[restore] leere $db as $role"
+    PGPASSWORD="$3" docker compose exec -T -e PGPASSWORD postgres \
+        psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -q <<'SQL' \
+        || { echo "[restore] FEHLER: konnte $db nicht leeren — Abbruch; den Restore erneut starten." >&2; exit 1; }
+DO $$
+DECLARE r record;
+BEGIN
+    FOR r IN SELECT c.relname, c.relkind FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm')
+               AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                               WHERE d.objid = c.oid AND d.deptype = 'e')
+    LOOP
+        EXECUTE format('DROP %s IF EXISTS public.%I CASCADE',
+            CASE r.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'TABLE' END,
+            r.relname);
+    END LOOP;
+    FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relkind = 'S'
+    LOOP
+        EXECUTE format('DROP SEQUENCE IF EXISTS public.%I CASCADE', r.relname);
+    END LOOP;
+    FOR r IN SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typtype IN ('e', 'd')
+    LOOP
+        EXECUTE format('DROP TYPE IF EXISTS public.%I CASCADE', r.typname);
+    END LOOP;
+END
+$$;
+SQL
     echo "[restore] pg_restore $db as $role"
     PGPASSWORD="$3" docker compose exec -T -e PGPASSWORD postgres \
         pg_restore -h 127.0.0.1 -U "$role" --clean --if-exists --no-owner --no-privileges -d "$db" \
