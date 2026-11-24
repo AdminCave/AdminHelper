@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-config-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-config-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-config-1 · Review: pro Task
 Spec: docs/features/kern-config-1.md (Roadmap R-0699)
 Heavy: linux-full — `docker-compose.yml`, Server-API (`/api/docs`), `apps/ca-issuer`; kein Install- oder PKI-Datenpfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -60,8 +60,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T7 — Server-Tests: Schema ohne /openapi.json, Log-Zählung mit Schlüssel  [ ]
+### T7 — Server-Tests: Schema ohne /openapi.json, Log-Zählung mit Schlüssel  [x]
 Komponente: server · Dateien: apps/server/tests/test_bounds.py, apps/server/tests/test_log_hygiene.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9dda7d236 2026-11-24T12:41:33+01:00
+Review: approve (.ah-out/review/kern-config-1/T7.verdict.json)
 Änderung: R-0699, Fund der PR-CI (#649, Shard 2/4). `test_bounds` holte das Schema über `app.openapi_url`, das ohne `SERVER_ENABLE_DOCS` jetzt `None` ist; es rendert `app.openapi()` wie die Route über `JSONResponse`. `test_log_hygiene` zählt die WARNING+-Zeilen der `lifespan`, und ein leerer `MONITOR_API_KEY` loggt seit T2 einen eigenen ERROR; der Test setzt einen Schlüssel.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py tests/test_log_hygiene.py tests/test_server_docs.py
 Doku: keine (nur Tests)

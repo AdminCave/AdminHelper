@@ -16,10 +16,13 @@ from app.core.auth import hash_api_key
 def test_a_failed_sse_start_logs_only_the_error_type(monkeypatch, caplog):
     import app.core.events as events
     import app.main as m
+    from app.core import config
     from app.modules.notifications import stream_hub
 
     monkeypatch.setattr(m, "_run_startup_tasks", lambda: None)
     monkeypatch.setattr(events, "fire_event", lambda *a, **k: None)
+    # An empty key logs an ERROR of its own at start (R-0699); this test counts only the SSE one.
+    monkeypatch.setattr(config, "MONITOR_API_KEY", "monitor-test-key")
 
     async def boom(*_a, **_k):
         raise ConnectionError("redis://:s3cr3t-pw@redis.example:6379 unreachable")
