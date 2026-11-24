@@ -11,7 +11,7 @@
 -r requirements.in
 
 pytest>=9.2.0
-pytest-cov
+pytest-cov>=7.1.0
 
 # Generatoren (Harness 8b): schema-getriebene API-Tests gegen die eigene
 # OpenAPI, Property-based Tests und die vier eingebauten Alembic-Tests.

@@ -23,8 +23,10 @@ sie belegt ist.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py
 Doku: → T4
 
-### T2 — R-0701: Monitoring ohne greenlet, pytest-cov mit Untergrenze  [ ]
+### T2 — R-0701: Monitoring ohne greenlet, pytest-cov mit Untergrenze  [x]
 Komponente: monitoring · Dateien: apps/monitoring/requirements.in, apps/monitoring/requirements.txt, apps/monitoring/requirements-dev.txt
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1522140e1 2026-11-24T14:27:36+01:00
+Review: approve (.ah-out/review/kern-deps-7/T2.verdict.json)
 Änderung: `sqlalchemy[asyncio]` → `sqlalchemy`, Lock neu wie T1 (nur greenlet fällt heraus); `pytest-cov` bekommt
 die Untergrenze des Servers. greenlet im Worktree-Venv deinstallieren.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
