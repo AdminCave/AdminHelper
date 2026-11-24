@@ -85,18 +85,20 @@ echo "[stack] alembic upgrade head"
 # instance and must not count as up.
 wait_up() {
   local code
-  for _ in $(seq 1 40); do
+  for _ in $(seq 1 60); do
     code=$(curl -so /dev/null -w '%{http_code}' "http://127.0.0.1:$1/api/auth/me" 2>/dev/null) || true
     case "$code" in [1-4][0-9][0-9]) return 0 ;; esac
     sleep 0.5
   done
+  echo "FAIL: the instance on port $1 never answered below 500 within 30s (last: ${code:-none})" >&2
+  return 1
 }
 
 # Instance A first (it bootstraps the admin), then B, to avoid a startup race.
 "$PY/uvicorn" app.main:app --host 127.0.0.1 --port 8081 >/tmp/sse-e2e-a.log 2>&1 & PID_A=$!
-wait_up 8081
+wait_up 8081 || exit 1
 "$PY/uvicorn" app.main:app --host 127.0.0.1 --port 8082 >/tmp/sse-e2e-b.log 2>&1 & PID_B=$!
-wait_up 8082
+wait_up 8082 || exit 1
 echo "[stack] both instances up"
 
 "$PY/python" - <<'PYEOF'

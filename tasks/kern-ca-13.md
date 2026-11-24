@@ -1,5 +1,5 @@
 # kern-ca-13 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-13 · Review: am Ende
+Status: bereit · Branch: feature/kern-ca-13 · Review: am Ende
 Spec: docs/features/kern-ca-13.md (Roadmap R-1747)
 Heavy: linux-full — apps/ca-issuer (Start-Prüfung LOG_LEVEL); die Stack-Probe sse_push_e2e läuft in integration-stack und im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -24,8 +24,10 @@ Beweis: security kern-config-1 T2 2026-11-24 · scripts/tests/sse_push_e2e.sh:86
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
 
-### T3 — R-1747: sse_push_e2e scheitert laut, wenn eine Instanz nicht hochkommt  [ ]
+### T3 — R-1747: sse_push_e2e scheitert laut, wenn eine Instanz nicht hochkommt  [x]
 Komponente: scripts · Dateien: scripts/tests/sse_push_e2e.sh, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7181bd365 2026-11-24T20:45:58+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer branch kern-ca-13 2026-11-24 · scripts/tests/sse_push_e2e.sh:92 (`wait_up` endet nach 40 Versuchen mit dem Exit von `sleep`, also 0)
 Änderung: `wait_up` meldet nach Ablauf der Frist `FAIL` mit dem Port und gibt 1 zurück; der Aufruf bricht den Lauf ab wie die Postgres-Wartung darüber. Die Frist steigt auf 30 s (60 × 0,5 s, `testing.md` „Fristen“). Dazu nennt die Betriebsdoku DE+EN `CRITICAL` unter den Log-Leveln (Nit aus derselben Prüfung).
 Verify: bash scripts/dev/verify.sh scripts --strict
