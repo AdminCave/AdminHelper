@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/klein-nachlese-20/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Kommentare und Tests)
 
-### T2 — Server-Tests und Docstring (R-1731, R-1733, R-1735)  [ ]
+### T2 — Server-Tests und Docstring (R-1731, R-1733, R-1735)  [x]
 Komponente: server · Dateien: apps/server/tests/test_bootstrap.py, apps/server/tests/test_scheduler_schema_gate.py, apps/server/tests/test_cli.py, apps/server/tests/test_monitoring_client.py, apps/server/app/core/monitoring_client.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4f703fdb8 2026-11-24T15:05:59+01:00
+Review: approve (.ah-out/review/klein-nachlese-20/T2.verdict.json)
 Änderung: toten `fire_event`-Patch entfernen; `threading.Event`-Patch auf den Scheduler-Namensraum begrenzen; Test für `UsernameTaken` in `create_admin` (Vorabprüfung umgehen, Exit 1, kein Event); Docstring nennt die Proxy-Ausnahme; doppelte Notify-Barriere raus; Tag-Sync-Test prüft die URL ausdrücklich.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_scheduler_schema_gate.py tests/test_cli.py tests/test_monitoring_client.py
 Doku: keine (Tests, Docstring)

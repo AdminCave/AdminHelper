@@ -35,6 +35,7 @@ from app.core.identity import SCOPE_ACCESS
 from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
 from app.modules.notifications.models import NotificationSubscription
+from app.modules.users import service as users_service
 from app.modules.users.models import User
 from app.modules.users.schemas import LoginRequest
 from tests.token_claims import claims_for
@@ -313,6 +314,17 @@ def test_create_admin_fires_user_created(db_session, fired):
 )
 def test_refused_create_admin_fires_no_event(db_session, admin_user, fired, refused):
     assert refused(db_session) == 1
+    assert fired == []
+
+
+def test_create_admin_loses_the_race_for_the_username(db_session, fired, monkeypatch, capsys):
+    # The check before the insert passed, a concurrent create won the unique index.
+    def _taken(*_a, **_k):
+        raise users_service.UsernameTaken
+
+    monkeypatch.setattr(users_service, "create_user", _taken)
+    assert create_admin(db_session, "kevin", "supersecret") == 1
+    assert "'kevin' existiert bereits" in capsys.readouterr().err
     assert fired == []
 
 

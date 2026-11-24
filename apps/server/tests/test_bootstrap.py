@@ -285,12 +285,10 @@ def test_lifespan_survives_redis_outage_at_boot(monkeypatch):
     crash-loop, on an optional channel being briefly unavailable."""
     import asyncio
 
-    import app.core.events as events
     import app.main as m
     from app.modules.notifications import stream_hub
 
     monkeypatch.setattr(m, "_run_startup_tasks", lambda: None)
-    monkeypatch.setattr(events, "fire_event", lambda *a, **k: None)
 
     async def _boom(*_a, **_k):
         raise ConnectionError("redis down at boot")
