@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Merge Queue: frueh einreihen — Task-Ledger
-Status: geplant · Branch: feature/harness-early-enqueue · Review: am Ende
+Status: aktiv · Branch: feature/harness-early-enqueue · Review: am Ende
 Spec: Roadmap R-1751
 Heavy: none — Skill-Text, Harness-Test und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
