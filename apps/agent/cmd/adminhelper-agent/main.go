@@ -85,7 +85,7 @@ func envOr(key, def string) string {
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Zeigt die Version an",
+		Short: "Show the version",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("adminhelper-agent %s\n", version)
 		},
@@ -95,7 +95,7 @@ func versionCmd() *cobra.Command {
 func diagnosticsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "diagnostics",
-		Short: "Redaktierten Diagnose-Bericht fuer einen Bug-Report erstellen",
+		Short: "Create a redacted diagnostic report for a bug report",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return diagnostics.Run(version)
 		},
@@ -234,7 +234,7 @@ func frpcCmd() *cobra.Command {
 func frpcSyncCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sync",
-		Short: "Einmaliger Config-Sync",
+		Short: "Run one config sync",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return frpc.Sync(context.Background())
 		},
@@ -260,7 +260,7 @@ func monitorInitCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Ersteinrichtung des Monitor-Agents",
+		Short: "Set up the monitor agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if apiKeyStdin {
 				k, err := readStdinSecret(cmd.InOrStdin(), cmd.ErrOrStderr(), "API key")
@@ -278,12 +278,12 @@ func monitorInitCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Basis-URL: AdminHelper-Server + /api/monitoring (z.B. https://srm.example.com/api/monitoring) (erforderlich)")
+	cmd.Flags().StringVar(&url, "url", "", "monitoring base URL: AdminHelper server + /api/monitoring (e.g. https://srm.example.com/api/monitoring) (required)")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key (or --api-key-stdin)")
 	cmd.Flags().BoolVar(&apiKeyStdin, "api-key-stdin", false, "read the API key from stdin")
-	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
-	cmd.Flags().StringVar(&services, "services", "", "Kommagetrennte Service-Namen")
-	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat")
+	cmd.Flags().StringVar(&serverID, "server-id", "", "server ID (required)")
+	cmd.Flags().StringVar(&services, "services", "", "comma-separated service names")
+	cmd.Flags().StringVar(&cacert, "cacert", "", "CA certificate for a self-signed server")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
 	cmd.MarkFlagRequired("url")
 	cmd.MarkFlagsOneRequired("api-key", "api-key-stdin")
@@ -306,8 +306,8 @@ func initMonitor(p monitor.InitParams) error {
 		return err
 	}
 	if err := enableTimer(); err != nil {
-		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
-		logger.Warnf("Bitte manuell aktivieren")
+		logger.Warnf("The service could not be enabled: %v", err)
+		logger.Warnf("Enable it by hand")
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func initMonitor(p monitor.InitParams) error {
 func monitorPushCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "push",
-		Short: "Einmaliger Metriken-Push",
+		Short: "Run one metrics push",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return monitor.Push(context.Background())
 		},
@@ -385,7 +385,7 @@ func monitorCredentialCmd() *cobra.Command {
 func serviceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "service",
-		Short: "OS-Service verwalten",
+		Short: "Manage the OS service",
 	}
 	cmd.AddCommand(serviceInstallCmd())
 	cmd.AddCommand(serviceUninstallCmd())
@@ -395,7 +395,7 @@ func serviceCmd() *cobra.Command {
 func serviceInstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
-		Short: "Service registrieren und starten",
+		Short: "Register and start the service",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return service.Install()
 		},
@@ -413,7 +413,7 @@ func serviceUninstallCmd() *cobra.Command {
 	var purge bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Service deregistrieren",
+		Short: "Unregister the service",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if purge && !purgeSupported {
 				return errors.New("--purge is for Windows; on Linux and FreeBSD remove the package with its package manager")

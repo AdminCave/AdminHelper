@@ -1,5 +1,5 @@
 # kern-agent-22 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-22 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-22 · Review: pro Task
 Spec: docs/features/kern-agent-22.md (Roadmap R-1688, R-1700, R-1701, R-1693, R-1702, R-1704, R-1705)
 Heavy: linux-full — apps/agent (Sammler, Self-Update, Probe-Listener); Windows-Teil über die CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Review: approve (.ah-out/review/kern-agent-22/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/
 Doku: keine (Log-Stufe)
 
-### T7 — R-1705: CLI-Ausgaben von provision und cobra-Hilfen englisch  [ ]
-Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/cmd/adminhelper-agent/main.go, changelog.d/kern-agent-22.md
+### T7 — R-1705: CLI-Ausgaben von provision und cobra-Hilfen englisch  [x]
+Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/cmd/adminhelper-agent/main.go, changelog.d/kern-agent-22.md, apps/agent/cmd/adminhelper-agent/run.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fde0463f4 2026-11-24T18:03:53+01:00
+Review: approve (.ah-out/review/kern-agent-22/T7.verdict.json)
 Änderung: Die deutschen Ausgaben und Fehlertexte in `provision.go` und die deutschen cobra-Hilfen und Warnungen in `main.go` werden englisch; `provision_test.go` erwartet die neuen Texte. Vorher geprüft: kein Skript, keine Doku-Seite und kein E2E-Test greppt sie (nur `provision_test.go:1036`). `security` prüft die Task (Risikopfad).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/provision/ ./cmd/adminhelper-agent/
 Doku: changelog.d/kern-agent-22.md
@@ -66,3 +68,4 @@ Doku: changelog.d/kern-agent-22.md
 - 2026-11-24 Plan: R-1706 fährt nicht mit. Die Zeile verlangt zuerst einen Messwert von einer FreeBSD- oder OPNsense-Box, eine solche Box gibt es im Pool nicht. Sie wandert nach kern-agent-23, Kevin wird nach dem Wert gefragt.
 - 2026-11-24 Plan: R-1688 ändert nur das Last-Tor. Ob `memory_percent` den ARC auch als verfügbar zählt, ist sichtbares Verhalten und geht als eigene Zeile zu Kevin.
 - 2026-11-24 T3: verschoben in kern-agent-23. Der Review fand MNT_NOWAIT als eingefrorene Werte (Umbau auf statfs je Mount, Netz-Mounts mit Frist), dann FUSE-Subtypen und eine Testrace; nach zwei Runden ohne approve fährt R-1701 im nächsten Zug mit frischem Prüfer. Der Stand liegt bei der Session.
+- 2026-11-24 T7 (R-1705): `cmd/adminhelper-agent/run.go` traegt dieselben deutschen cobra-Hilfen und eine Startzeile; die Planung hatte nur `main.go` genannt. Mitgenommen, damit `--help` des Agents einheitlich englisch ist (Prueferfund T7).

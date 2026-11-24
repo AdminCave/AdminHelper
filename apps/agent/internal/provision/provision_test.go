@@ -1033,7 +1033,7 @@ func TestRunPrintsNoSuccessWhenFrpcDidNotFollow(t *testing.T) {
 			if runErr != nil {
 				t.Fatalf("Run: %v, want the provisioning to end", runErr)
 			}
-			for _, want := range []string{tc.want, "the next agent run tries again", "Provisioning abgeschlossen"} {
+			for _, want := range []string{tc.want, "the next agent run tries again", "provisioning complete"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("output %q is missing %q", out, want)
 				}
