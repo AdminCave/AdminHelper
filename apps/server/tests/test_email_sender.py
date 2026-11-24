@@ -51,8 +51,8 @@ def test_port_465_uses_implicit_tls_and_no_starttls(monkeypatch):
     _configure(monkeypatch, 465)
     ssl_mock = MagicMock()
     plain_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", ssl_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", ssl_mock)
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
 
     sender.send_email("to@example.com", "subj", "body")
 
@@ -69,8 +69,8 @@ def test_port_587_runs_starttls_before_login(monkeypatch):
     _configure(monkeypatch, 587)
     plain_mock = MagicMock()
     ssl_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", ssl_mock)
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", ssl_mock)
 
     sender.send_email("to@example.com", "subj", "body")
 
@@ -89,8 +89,8 @@ def test_every_port_but_465_runs_verifying_starttls_before_login(monkeypatch, po
     _configure(monkeypatch, port)
     plain_mock = MagicMock()
     ssl_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", ssl_mock)
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", ssl_mock)
 
     sender.send_email("to@example.com", "subj", "body")
 
@@ -115,8 +115,8 @@ def test_every_port_but_465_runs_verifying_starttls_before_login(monkeypatch, po
 def test_failed_starttls_raises_before_login_and_send(monkeypatch, error):
     _configure(monkeypatch, 25)
     plain_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", MagicMock())
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", MagicMock())
     server = plain_mock.return_value.__enter__.return_value
     server.starttls.side_effect = error
 
@@ -165,8 +165,8 @@ def _sent_context(monkeypatch, port):
     """The TLS context send_email hands to SMTP_SSL (465) or to starttls() (any other port)."""
     plain_mock = MagicMock()
     ssl_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", ssl_mock)
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", ssl_mock)
     sender.send_email("to@example.com", "subj", "body")
     if port == 465:
         plain_mock.assert_not_called()
@@ -181,13 +181,13 @@ def _sent_context(monkeypatch, port):
 def _spy_default_context(monkeypatch) -> list:
     """Every context ssl.create_default_context hands out while the test runs."""
     created = []
-    real_create = sender.ssl.create_default_context
+    real_create = ssl.create_default_context
 
     def spy(*args, **kwargs):
         created.append(real_create(*args, **kwargs))
         return created[-1]
 
-    monkeypatch.setattr(sender.ssl, "create_default_context", spy)
+    monkeypatch.setattr(ssl, "create_default_context", spy)
     return created
 
 
@@ -239,8 +239,8 @@ def test_unloadable_smtp_ca_file_raises_before_connecting(monkeypatch, tmp_path,
     monkeypatch.setattr(sender, "SMTP_CA_FILE", str(ca_file))
     plain_mock = MagicMock()
     ssl_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
-    monkeypatch.setattr(sender.smtplib, "SMTP_SSL", ssl_mock)
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", ssl_mock)
 
     with pytest.raises(RuntimeError) as raised:
         sender.send_email("to@example.com", "subj", "body")
@@ -258,7 +258,7 @@ def test_subject_is_one_line_like_the_monitoring_alerter(monkeypatch):
     # C1 and the line and paragraph separators become a space, one for one; the body stays.
     _configure(monkeypatch, 587)
     plain_mock = MagicMock()
-    monkeypatch.setattr(sender.smtplib, "SMTP", plain_mock)
+    monkeypatch.setattr(smtplib, "SMTP", plain_mock)
 
     sender.send_email("to@example.com", "a\r\nb\x85c\u2028d\x7fe\tf\u2029g", "line 1\nline 2")
 

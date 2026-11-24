@@ -29,6 +29,7 @@ import httpx
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from ah_common import smtp
 from ah_common.ssrf import UrlVerdict, check_target, pinned_client
 from app import mail_template, notify_config
 from app.core.bounds import storable
@@ -839,7 +840,7 @@ def _send_webhook(
         return False, _webhook_failure(exc)
 
 
-def _email_failure(exc: Exception, *, in_starttls: bool, loading_ca: bool) -> str:
+def _email_failure(exc: Exception) -> str:
     """The alert-log reason for a failed send: a fixed text per kind of error. The
     exception text (mail server replies, host names) goes to the service log only."""
     # Every smtplib error and ssl.SSLError is an OSError as well, so the order matters.
@@ -850,14 +851,10 @@ def _email_failure(exc: Exception, *, in_starttls: bool, loading_ca: bool) -> st
         (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused, smtplib.SMTPDataError),
     ):
         return "SMTP server refused the message"
-    # SMTPNotSupportedError means "no STARTTLS" only from starttls(); login() and the
-    # send raise it for a missing AUTH or SMTPUTF8 extension. An OSError while loading
+    # SMTPNotSupportedError means "no STARTTLS" only from starttls() (StartTlsNotSupported);
+    # login() and the send raise it for a missing AUTH or SMTPUTF8 extension. An unloadable
     # SMTP_CA_FILE (missing, unreadable) is a TLS setup failure, not a connection one.
-    if (
-        isinstance(exc, ssl.SSLError)
-        or (in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError))
-        or (loading_ca and isinstance(exc, OSError))
-    ):
+    if isinstance(exc, (ssl.SSLError, smtp.StartTlsNotSupported, smtp.CaFileError)):
         return "SMTP TLS failed"
     if isinstance(exc, TimeoutError):
         return "SMTP connection timed out"
@@ -960,39 +957,22 @@ def _send_email(
     message["From"] = sender
     message["To"] = ", ".join(recipients)
 
-    in_starttls = loading_ca = False
     try:
-        # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
-        # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
-        # verifying context (create_default_context checks cert + hostname), so a
-        # MITM cannot strip TLS and harvest the login credentials (3.24).
-        ctx = ssl.create_default_context()
-        if SMTP_CA_FILE:
-            # A relay with a private CA (any relay, a rule's own included): added to the system
-            # CAs, checks stay on. A file that cannot be loaded stops the send before connecting.
-            loading_ca = True
-            ctx.load_verify_locations(cafile=SMTP_CA_FILE)
-            loading_ca = False
-        if smtp_port == 465:
-            smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ctx)
-        else:
-            smtp_ctx = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-        with smtp_ctx as server:
-            if smtp_port != 465:
-                # STARTTLS on EVERY non-implicit-TLS port (not just 587): fails
-                # closed if the server offers no TLS, so smtp_user/smtp_password
-                # never go over a plaintext/unverified connection (25/2525/...).
-                in_starttls = True
-                server.starttls(context=ctx)
-                in_starttls = False
-            if smtp_user and smtp_pass:
-                server.login(smtp_user, smtp_pass)
-            server.send_message(message)
+        # Port 465 = implicit TLS, every other port STARTTLS, both with a verifying context, so
+        # a MITM cannot strip TLS and harvest the login credentials (3.24). SMTP_CA_FILE adds a
+        # relay's private CA (any relay, a rule's own included); checks stay on.
+        smtp.send(
+            message,
+            host=smtp_host,
+            port=smtp_port,
+            user=smtp_user,
+            password=smtp_pass,
+            ca_file=SMTP_CA_FILE,
+        )
         logger.info("E-Mail gesendet: %s -> %s", check.name, recipients)
         return True, None
     except Exception as exc:
-        # The stored message stays "SMTP TLS failed"; the log names the setting to fix, since
-        # the raw error of a broken PEM carries neither the variable nor the path.
-        detail = f"SMTP_CA_FILE {SMTP_CA_FILE} cannot be loaded: {exc}" if loading_ca else exc
-        logger.error("Email failed: %s: %s", check.name, detail)
-        return False, _email_failure(exc, in_starttls=in_starttls, loading_ca=loading_ca)
+        # The stored message is a fixed text; the log keeps the raw one (for an unloadable
+        # SMTP_CA_FILE it names the setting and the path).
+        logger.error("Email failed: %s: %s", check.name, exc)
+        return False, _email_failure(exc)

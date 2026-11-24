@@ -95,8 +95,10 @@ Kevin 2026-11-23). `review-risk.txt` nennt `apps/pycommon/ah_common/auth.py`.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T9 — SMTP-Verbindung in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/smtp.py, apps/server/app/modules/notifications/sender.py, apps/monitoring/app/alerter.py
+### T9 — SMTP-Verbindung in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/smtp.py, apps/server/app/modules/notifications/sender.py, apps/monitoring/app/alerter.py, apps/server/tests/test_email_sender.py, apps/server/tests/test_notify_channel_config.py, apps/server/tests/test_notify_mail_template.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @0bcae8481 2026-11-24T09:46:37+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T9.verdict.json)
 Änderung: TLS-Kontext mit `SMTP_CA_FILE`, SMTPS auf 465 oder STARTTLS sonst, Login und Senden als eine Funktion
 (`apps/server/app/modules/notifications/sender.py:88`, `apps/monitoring/app/alerter.py:977`); die Fehlerabbildung
 bleibt je Dienst.

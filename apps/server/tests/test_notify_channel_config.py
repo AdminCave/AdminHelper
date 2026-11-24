@@ -11,6 +11,7 @@ availability of the preferences and the test send all take the settings in effec
 
 import ipaddress
 import logging
+import smtplib
 
 import pytest
 from sqlalchemy import text
@@ -179,7 +180,7 @@ class TestUse:
             def send_message(self, message):
                 seen["from"] = message["From"]
 
-        monkeypatch.setattr(sender_mod.smtplib, "SMTP", Relay)
+        monkeypatch.setattr(smtplib, "SMTP", Relay)
         with channel_config.using(db_session):
             sender_mod.send_email("to@example.com", "s", "b")
         assert seen == {
@@ -211,7 +212,7 @@ class TestUse:
             def send_message(self, message):
                 pass
 
-        monkeypatch.setattr(sender_mod.smtplib, "SMTP", Relay)
+        monkeypatch.setattr(smtplib, "SMTP", Relay)
         with channel_config.using(db_session):
             sender_mod.send_email("to@example.com", "s", "b")
         assert logins == []

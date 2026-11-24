@@ -12,8 +12,6 @@ outbox drain turns that into a retry with backoff, a BlockedTarget into a failur
 
 import base64
 import json
-import smtplib
-import ssl
 import threading
 from datetime import datetime, timezone
 from email.mime.image import MIMEImage
@@ -23,6 +21,7 @@ from email.utils import formataddr
 
 import httpx
 
+from ah_common import smtp
 from ah_common.ssrf import UrlVerdict, check_target, pinned_client
 from app.core.config import SMTP_CA_FILE
 from app.core.time import iso_utc
@@ -67,33 +66,16 @@ def send_email(
     message["From"] = formataddr((name, relay.smtp_from)) if name else relay.smtp_from
     message["To"] = to
 
-    # Port 465 = implicit TLS (SMTPS): wrap from the start, otherwise login()
-    # would run in clear text. Every other port (25, 2525, 587, ...) upgrades via
-    # STARTTLS before login(). Both use a verifying context (certificate + hostname),
-    # so a relay without STARTTLS or with an untrusted certificate fails closed and
-    # never sees the credentials.
-    ctx = ssl.create_default_context()
-    if SMTP_CA_FILE:
-        # A relay with a private CA: added to the system CAs, checks stay on. A missing
-        # or broken file raises here, before any connection; the outbox retries. The raw
-        # error names neither the variable nor the path, and the outbox stores only
-        # str(exc) as last_error (no traceback), so the reason is spelled out here.
-        try:
-            ctx.load_verify_locations(cafile=SMTP_CA_FILE)
-        except (OSError, ssl.SSLError) as exc:
-            raise RuntimeError(
-                f"SMTP_CA_FILE {SMTP_CA_FILE} cannot be loaded: {type(exc).__name__}: {exc}"
-            ) from exc
-    if relay.smtp_port == 465:
-        smtp_ctx = smtplib.SMTP_SSL(relay.smtp_host, relay.smtp_port, timeout=10, context=ctx)
-    else:
-        smtp_ctx = smtplib.SMTP(relay.smtp_host, relay.smtp_port, timeout=10)
-    with smtp_ctx as server:
-        if relay.smtp_port != 465:
-            server.starttls(context=ctx)
-        if relay.smtp_user and relay.smtp_password:
-            server.login(relay.smtp_user, relay.smtp_password)
-        server.send_message(message)
+    # A missing or broken SMTP_CA_FILE raises ah_common.smtp.CaFileError (a RuntimeError)
+    # before any connection; the outbox stores only str(exc), which names variable and path.
+    smtp.send(
+        message,
+        host=relay.smtp_host,
+        port=relay.smtp_port,
+        user=relay.smtp_user,
+        password=relay.smtp_password,
+        ca_file=SMTP_CA_FILE,
+    )
 
 
 _IMAGE_SUBTYPE = {"image/png": "png", "image/jpeg": "jpeg"}
