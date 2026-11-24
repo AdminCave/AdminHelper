@@ -1,5 +1,5 @@
 # kern-agent-21 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-21 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-21 · Review: am Ende
 Spec: docs/features/kern-agent-21.md (Roadmap R-0703)
 Heavy: linux-full — apps/agent (Monitor-Collectoren); Windows-Dateien prüft der PR-Job agent-windows, FreeBSD nur quer gebaut
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -17,8 +17,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (internes Refactoring)
 
-### T2 — R-0703: System, Journal und FreeBSD-Pakete auf `command`  [ ]
+### T2 — R-0703: System, Journal und FreeBSD-Pakete auf `command`  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/servicelogs_linux.go, apps/agent/internal/monitor/pkgaudit.go, apps/agent/internal/monitor/updates_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/pkgaudit_test.go, apps/agent/internal/monitor/system_freebsd_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @60e121da1 2026-11-24T15:07:12+01:00
+Review: am Ende (Branch-Review)
 Änderung: `systemCLI` bettet `command` ein (dazu `now`), `journalCLI` und `freebsdCalls` werden `command`; die Aufrufer geben den Timeout (`pluginTimeout` bzw. den bisherigen) selbst an. Tests stubben die neue Form.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (internes Refactoring)

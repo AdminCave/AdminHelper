@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // The FreeBSD system state tools, by their full paths: freebsd-version is part of the base system;
@@ -25,10 +24,7 @@ const (
 // freebsdCalls indirects the lookup and the calls of the FreeBSD system state tools so tests can
 // drive every path without them, on any system (same reason as systemCLI). run runs one call under
 // timeout and ctx. The clock of the hourly count is updatesCalls.now, as on Linux.
-var freebsdCalls = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error)
-}{exec.LookPath, runTimed}
+var freebsdCalls = newCommand()
 
 // reFreeBSDVersion is one line of freebsd-version: the characters its pattern for the kernel's
 // version takes (KERNEL_RE in bin/freebsd-version/freebsd-version.sh.in), as in "15.0-RELEASE-p3".
@@ -75,7 +71,7 @@ func readFreeBSDVersions(ctx context.Context, jailed bool) (freebsdVersions, str
 	if jailed {
 		flags, lines = "-u", 1
 	}
-	out, err := freebsdCalls.run(ctx, pluginTimeout, freebsdVersionPath, flags)
+	out, err := freebsdCalls.run(ctx, pluginTimeout, nil, freebsdVersionPath, flags)
 	if err != nil {
 		return freebsdVersions{}, "freebsd-version " + flags + " failed: " +
 			commandFailure("freebsd-version", pluginTimeout, err)
@@ -160,7 +156,7 @@ func freebsdPkgName(prefix, release string) string {
 // one (pkg src/audit.c). So exit 1 with lines counts, exit 1 without fails. Its exit status is not
 // documented (pkg-audit(8)).
 func pkgAudit(ctx context.Context, what string, args ...string) (int, []string, bool) {
-	out, err := freebsdCalls.run(ctx, updatesTimeout, pkgPath, append([]string{"audit", "-q"}, args...)...)
+	out, err := freebsdCalls.run(ctx, updatesTimeout, nil, pkgPath, append([]string{"audit", "-q"}, args...)...)
 	var exitErr *exec.ExitError
 	found := errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && len(bytes.TrimSpace(out)) > 0
 	if err != nil && !found {

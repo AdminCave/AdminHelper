@@ -78,7 +78,10 @@ func stubSystemCLI(t *testing.T, replies map[string]dockerReply) *[][]string {
 		}
 		return "", exec.ErrNotFound
 	}
-	systemCLI.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	systemCLI.run = func(_ context.Context, timeout time.Duration, _ []string, name string, args ...string) ([]byte, error) {
+		if timeout != pluginTimeout {
+			t.Errorf("%s call: timeout %v, want %v", name, timeout, pluginTimeout)
+		}
 		calls = append(calls, append([]string{name}, args...))
 		checkAllowed(t, name, args)
 		reply, ok := replies[name]

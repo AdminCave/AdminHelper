@@ -35,14 +35,13 @@ var rebootRequiredPkgsPath = "/var/run/reboot-required.pkgs"
 
 // systemCLI indirects the lookups and calls of the system state tools (needs-restarting,
 // timedatectl, journalctl) and the clock of the OOM window so tests can drive every path without them
-// (same reason as dockerCLI). run runs one call under pluginTimeout and ctx. apt-get and dnf are looked
+// (same reason as dockerCLI). Each call runs under pluginTimeout and ctx. apt-get and dnf are looked
 // up here as well, so the package family is told apart in one place; their update counts run through
 // updatesCalls.
 var systemCLI = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, name string, args ...string) ([]byte, error)
-	now      func() time.Time
-}{exec.LookPath, runWithTimeout, time.Now}
+	command
+	now func() time.Time
+}{newCommand(), time.Now}
 
 // maxOOMProcesses caps the processes of oom_processes, maxOOMWindow the seconds of journal they are
 // read from: a push lost while the server was away widens the window, the cap bounds what one call
@@ -168,7 +167,7 @@ func oomProcesses(ctx context.Context, seconds int64) []oomProcess {
 		logger.Warnf("system state: journalctl not found, oom_processes left out")
 		return nil
 	}
-	out, err := systemCLI.run(ctx, "journalctl", "--no-pager", "--quiet", "--dmesg", "--output=cat",
+	out, err := systemCLI.run(ctx, pluginTimeout, nil, "journalctl", "--no-pager", "--quiet", "--dmesg", "--output=cat",
 		"--priority=3", "--since=-"+strconv.FormatInt(seconds, 10)+"s")
 	if err != nil {
 		logger.Warnf("system state: journalctl --dmesg failed: %s, oom_processes left out",
@@ -218,7 +217,7 @@ func rebootRequired(ctx context.Context) (required bool, packages []string, ok b
 	if _, err := systemCLI.lookPath("needs-restarting"); err != nil {
 		return false, nil, false
 	}
-	out, err := systemCLI.run(ctx, "needs-restarting", "-r")
+	out, err := systemCLI.run(ctx, pluginTimeout, nil, "needs-restarting", "-r")
 	if err == nil {
 		return false, nil, true
 	}
@@ -269,7 +268,7 @@ func timeSynchronized(ctx context.Context) (synced, ok bool) {
 		logger.Warnf("system state: timedatectl not found, time_synchronized left out")
 		return false, false
 	}
-	out, err := systemCLI.run(ctx, "timedatectl", "show")
+	out, err := systemCLI.run(ctx, pluginTimeout, nil, "timedatectl", "show")
 	if err != nil {
 		logger.Warnf("system state: timedatectl show failed: %s, time_synchronized left out",
 			commandFailure("timedatectl", pluginTimeout, err))

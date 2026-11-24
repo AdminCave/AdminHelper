@@ -8,7 +8,6 @@ package monitor
 
 import (
 	"context"
-	"os/exec"
 )
 
 // serviceLogsSupported: the error lines come from the journal.
@@ -29,11 +28,8 @@ func newServiceLogReader() func(context.Context, string) ([]string, bool) {
 }
 
 // journalCLI indirects the journalctl lookup and call of readServiceLog so tests can drive it without
-// a journal (same reason as systemCLI). run runs one call under pluginTimeout and ctx.
-var journalCLI = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, name string, args ...string) ([]byte, error)
-}{exec.LookPath, runWithTimeout}
+// a journal (same reason as systemCLI). The call runs under pluginTimeout and ctx.
+var journalCLI = newCommand()
 
 // readServiceLog reads the last maxLogLines journal entries of unit, every priority, each bare
 // message (journalctl(1): --unit, --lines, --output=cat), through serviceLogLines. ok is false for a
@@ -47,7 +43,7 @@ func readServiceLog(ctx context.Context, unit string) ([]string, bool) {
 		logger.Warnf("service logs: journalctl not found, no error lines")
 		return nil, false
 	}
-	out, err := journalCLI.run(ctx, "journalctl", "--no-pager", "--quiet", "--output=cat",
+	out, err := journalCLI.run(ctx, pluginTimeout, nil, "journalctl", "--no-pager", "--quiet", "--output=cat",
 		"--unit="+unit, "--lines=10")
 	if err != nil {
 		logger.Warnf("service logs: journalctl --unit=%s failed: %s", unit,

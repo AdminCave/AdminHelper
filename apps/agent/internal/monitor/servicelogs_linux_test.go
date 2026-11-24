@@ -310,7 +310,10 @@ func TestReadServiceLogAsksTheJournalForTheUnitsLastTenEntries(t *testing.T) {
 	journalCLI.lookPath = func(string) (string, error) { return "/usr/bin/journalctl", nil }
 	var calls [][]string
 	out := "first\n\nsecond\tline password=hunter2\n"
-	journalCLI.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	journalCLI.run = func(_ context.Context, timeout time.Duration, _ []string, name string, args ...string) ([]byte, error) {
+		if timeout != pluginTimeout {
+			t.Errorf("%s call: timeout %v, want %v", name, timeout, pluginTimeout)
+		}
 		calls = append(calls, append([]string{name}, args...))
 		return []byte(out), nil
 	}
@@ -334,7 +337,9 @@ func TestReadServiceLogAsksTheJournalForTheUnitsLastTenEntries(t *testing.T) {
 	}
 
 	// A failed call and a missing journalctl read nothing.
-	journalCLI.run = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("exit status 1") }
+	journalCLI.run = func(context.Context, time.Duration, []string, string, ...string) ([]byte, error) {
+		return nil, errors.New("exit status 1")
+	}
 	if _, ok := readServiceLog(context.Background(), "nginx.service"); ok {
 		t.Error("a failed call read lines")
 	}
