@@ -63,10 +63,7 @@ type SmartDisk struct {
 
 // smartctlCLI indirects collectSmart's smartctl lookup and calls so tests can drive every path without
 // smartctl (same reason as dockerCLI).
-var smartctlCLI = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error)
-}{exec.LookPath, runTimed}
+var smartctlCLI = newCommand()
 
 // collectSmart collects SMART data of all detected devices via smartctl. Without a single disk it
 // returns why instead, which the report sends as smart_absent, so a host without smartctl does not
@@ -81,7 +78,7 @@ func collectSmart(ctx context.Context) ([]SmartDisk, string) {
 	}
 
 	// Scan all SMART-capable devices (with a timeout in case the controller hangs)
-	scanOut, err := smartctlCLI.run(ctx, 15*time.Second, smartctl, "--scan", "--json=c")
+	scanOut, err := smartctlCLI.run(ctx, 15*time.Second, nil, smartctl, "--scan", "--json=c")
 	if err != nil {
 		return nil, "scan_failed"
 	}
@@ -169,7 +166,7 @@ func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol s
 	if devType != "" && devType != "scsi" {
 		args = append(args, "-d", devType)
 	}
-	out, err := smartctlCLI.run(ctx, 30*time.Second, smartctl, append(args, device)...)
+	out, err := smartctlCLI.run(ctx, 30*time.Second, nil, smartctl, append(args, device)...)
 
 	// smartctl uses bit flags in the exit code. We keep the full code
 	// so the server can evaluate bit 0x10 (prefail) as critical.

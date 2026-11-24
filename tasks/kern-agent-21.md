@@ -9,8 +9,10 @@ Gilt für T1–T2: die Dateien unter `apps/agent/internal/monitor/testdata/repor
 zusätzlich quer `GOOS=windows go vet ./...` und `GOOS=freebsd go vet ./...` in `apps/agent` und nennt das Ergebnis
 im Commit-Body.
 
-### T1 — R-0703: Seam-Typ `command`, Docker, Proxmox, ZFS und SMART  [ ]
+### T1 — R-0703: Seam-Typ `command`, Docker, Proxmox, ZFS und SMART  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist.go, apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/report_golden_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d7401b6ca 2026-11-24T15:01:50+01:00
+Review: am Ende (Branch-Review)
 Änderung: Typ `command` (`lookPath`, `run func(ctx, timeout, env, name, args…)`, Standard `exec.LookPath` und `runTimedEnv`) in `allowlist.go`. `dockerCLI`, `zpoolCLI` und `smartctlCLI` werden `command`, `pveshCLI` bettet ihn ein; die Aufrufer geben Name und Timeout selbst an, `runDocker`, `runPvesh` und `runZpool` entfallen. Tests stubben die neue Form; keine Erwartung wird gelockert.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (internes Refactoring)

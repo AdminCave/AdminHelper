@@ -221,7 +221,7 @@ func stubSmartctl(t *testing.T, scan dockerReply, devices map[string]dockerReply
 		calls []smartctlCall
 	)
 	smartctlCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
-	smartctlCLI.run = func(_ context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	smartctlCLI.run = func(_ context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
 		mu.Lock()
 		calls = append(calls, smartctlCall{timeout, args})
 		mu.Unlock()
@@ -387,11 +387,11 @@ func TestCollectSmartPassesItsContextToEveryCall(t *testing.T) {
 	fake := smartctlCLI.run
 	var mu sync.Mutex
 	got := map[string]bool{}
-	smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	smartctlCLI.run = func(c context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
 		mu.Lock()
 		got[args[len(args)-1]] = c.Value(ctxKey{}) == t.Name()
 		mu.Unlock()
-		return fake(c, timeout, name, args...)
+		return fake(c, timeout, env, name, args...)
 	}
 	collectSmart(context.WithValue(context.Background(), ctxKey{}, t.Name()))
 	if len(got) != 3 {
@@ -420,8 +420,8 @@ func TestCollectSmartStopsAtTheEndOfTheContext(t *testing.T) {
 			"/dev/nvme0": {out: nvmeFixture}, "/dev/sda": {out: ataFixture}, "/dev/sdb": {out: ataFixture},
 		})
 		fake := smartctlCLI.run
-		smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
-			out, err := fake(c, timeout, name, args...)
+		smartctlCLI.run = func(c context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
+			out, err := fake(c, timeout, env, name, args...)
 			if args[0] == "--scan" {
 				cancel() // the scan still answers, but no device query may start after it
 			}
@@ -442,8 +442,8 @@ func TestCollectSmartStopsAtTheEndOfTheContext(t *testing.T) {
 		})
 		fake := smartctlCLI.run
 		hanging := make(chan string, 2)
-		smartctlCLI.run = func(c context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
-			out, err := fake(c, timeout, name, args...)
+		smartctlCLI.run = func(c context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
+			out, err := fake(c, timeout, env, name, args...)
 			if dev := args[len(args)-1]; dev != "/dev/nvme0" && args[0] != "--scan" {
 				// A hanging disk: its query ends only with its context, as runTimed's does.
 				hanging <- dev

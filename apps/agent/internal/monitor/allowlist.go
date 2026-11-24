@@ -6,6 +6,7 @@ package monitor
 
 import (
 	"context"
+	"os/exec"
 	"time"
 
 	"adminhelper-agent/internal/allowlist"
@@ -42,6 +43,19 @@ func runTimed(ctx context.Context, timeout time.Duration, name string, args ...s
 // later entry of the same key wins (os/exec), so the agent's own LC_ALL is overridden.
 func runTimedEnv(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
 	return allowlist.RunEnv(ctx, timeout, env, name, args...)
+}
+
+// command is the test seam of one external command a collector runs: lookPath finds the binary, run
+// starts one call. Collectors name the command, its timeout and env at the call, so every seam has the
+// same form and a test stubs it the same way.
+type command struct {
+	lookPath func(file string) (string, error)
+	run      func(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error)
+}
+
+// newCommand is the production command seam: exec.LookPath and runTimedEnv.
+func newCommand() command {
+	return command{exec.LookPath, runTimedEnv}
 }
 
 // execTimed runs a command without the allowlist check, through execx.RunEnv (its errors there; a
