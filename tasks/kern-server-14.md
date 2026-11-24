@@ -1,5 +1,5 @@
 # kern-server-14 — Task-Ledger
-Status: bereit · Branch: feature/kern-server-14 · Review: pro Task
+Status: erledigt · Branch: feature/kern-server-14 · Review: pro Task
 Spec: docs/features/kern-server-14.md (Roadmap R-1694, R-1695, R-1697, R-1698, R-1699, R-1734, R-1737, R-1744, R-1715)
 Heavy: linux-full — Server-API (neue Route), docker-compose.yml (Healthcheck), Monitoring-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
