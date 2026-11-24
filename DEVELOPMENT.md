@@ -883,7 +883,7 @@ die gleich in beiden Diensten steht.
 
 Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface; die API-Docs unter `/api/docs` (Swagger UI) bzw. `/openapi.json` liefert er nur mit `SERVER_ENABLE_DOCS=1` aus.
 
-**Erstanmeldung:** Es gibt keinen Default-Login mehr. Den Token aus `data/.bootstrap_setup` lesen (das Log nennt nur den Pfad), dann mit ihm einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
+**Erstanmeldung:** Es gibt keinen Default-Login mehr. Den Token aus `.bootstrap_setup` im `DATA_DIR` lesen (das Log nennt nur den Pfad), dann mit ihm einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
 
 Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden (siehe `.env.example`); uvicorn liest sie nur mit `--env-file ../../.env`, der Server selbst liest keine `.env`.
 

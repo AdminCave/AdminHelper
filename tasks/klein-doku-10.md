@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-doku-10 — Erstkontakt-Doku in Einklang mit dem Code — Task-Ledger
-Status: aktiv · Branch: feature/klein-doku-10 · Review: am Ende
+Status: bereit · Branch: feature/klein-doku-10 · Review: am Ende
 Spec: docs/features/klein-doku-10.md (Roadmap R-1716)
 Heavy: none — reine Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,9 @@ Dedup-Key: ref:docs:README.md:first-contact-drift-security
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 
-### T4 — Funde der Abschlussprüfung: Signatur-Satz, API-Referenz, Pfad  [ ]
+### T4 — Funde der Abschlussprüfung: Signatur-Satz, API-Referenz, Pfad  [x]
 Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a770604bd 2026-11-24T21:38:33+01:00
 Review: am Ende (Branch-Review)
 Task-Review: am Ende
 Beweis: Branch-Review 2026-11-24 · scripts/update.sh (`MINISIGN_PUBKEY` gesetzt, bricht ohne minisign ab), apps/server/app/main.py:184-192 (Token nach `.bootstrap_setup`, Log nennt nur Pfad)
