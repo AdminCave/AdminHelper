@@ -23,7 +23,7 @@ Beweis: main@4c8173e06 apps/agent/internal/monitor/monitor.go:230-236 (Fehlerzwe
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: changelog.d/kern-agent-22.md
 
-### T3 — R-1701: FreeBSD liest die Platten ohne Mount-Zugriff (MNT_NOWAIT)  [ ]
+### T3 — R-1701: FreeBSD liest die Platten ohne Mount-Zugriff (MNT_NOWAIT)  [~] (verschoben in kern-agent-23: nach zwei Korrekturrunden ohne approve (Testrace), Stand gesichert)
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/disks_freebsd.go, apps/agent/internal/monitor/disks_other.go, apps/agent/internal/monitor/disks_test.go
 Beweis: main@4c8173e06 apps/agent/internal/monitor/collector.go:304-321 (disk.Usage je Mount), gopsutil v4.26.10 disk/disk_freebsd.go:27,33 (Getfsstat MNT_WAIT) · Dedup-Key: aus der Zeile R-1701
 Änderung: Unter FreeBSD baut `collectDisks` die Liste aus einem `unix.Getfsstat(MNT_NOWAIT)` (Belegung aus dem Kernel-Cache, kein statfs je Mount); die Umrechnung `Statfs_t` → `DiskInfo` ist eine reine Funktion ohne Build-Tag und wird auf Linux getestet (Skip-Regeln, Rundung, Free = Bavail). Andere Systeme unverändert. Nicht auf FreeBSD gefahren (keine Box im Pool), Cross-Build in der Verify. Neue Dateien mit SPDX-Header.
@@ -58,3 +58,4 @@ Doku: changelog.d/kern-agent-22.md
 ## Entscheidungen
 - 2026-11-24 Plan: R-1706 fährt nicht mit. Die Zeile verlangt zuerst einen Messwert von einer FreeBSD- oder OPNsense-Box, eine solche Box gibt es im Pool nicht. Sie wandert nach kern-agent-23, Kevin wird nach dem Wert gefragt.
 - 2026-11-24 Plan: R-1688 ändert nur das Last-Tor. Ob `memory_percent` den ARC auch als verfügbar zählt, ist sichtbares Verhalten und geht als eigene Zeile zu Kevin.
+- 2026-11-24 T3: verschoben in kern-agent-23. Der Review fand MNT_NOWAIT als eingefrorene Werte (Umbau auf statfs je Mount, Netz-Mounts mit Frist), dann FUSE-Subtypen und eine Testrace; nach zwei Runden ohne approve fährt R-1701 im nächsten Zug mit frischem Prüfer. Der Stand liegt bei der Session.
