@@ -1,5 +1,5 @@
 # kern-server-14 — Task-Ledger
-Status: erledigt · Branch: feature/kern-server-14 · Review: pro Task
+Status: aktiv · Branch: feature/kern-server-14 · Review: pro Task
 Spec: docs/features/kern-server-14.md (Roadmap R-1694, R-1695, R-1697, R-1698, R-1699, R-1734, R-1737, R-1744, R-1715)
 Heavy: linux-full — Server-API (neue Route), docker-compose.yml (Healthcheck), Monitoring-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -79,8 +79,16 @@ Beweis: feature/kern-server-14@27c1119e9 app/modules/hooks/script_runner.py:403-
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: keine (Fehlerpfad)
 
+### T10 — R-1744: Health-Route des Servers ist keine Kopie der Monitoring-Route  [ ]
+Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/openapi.snapshot.json
+Beweis: PR #656 CI-Lauf 45430917300, Server shard 3/4: tests/test_no_python_copies.py::test_no_function_is_copied_between_server_and_monitoring rot ({('monitoring/app/main.py', 'server/app/main.py'): ['health']}); der Wächter kam mit kern-pycommon-1 auf main
+Änderung: Die Server-Funktion heißt `api_health` statt `health`, Route und Antwort bleiben; der OpenAPI-Snapshot nimmt die neue operationId auf. Erst rot nach dem Merge von origin/main.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_no_python_copies.py tests/test_health.py tests/test_openapi_snapshot.py tests/test_route_auth_gate.py
+Doku: keine (Funktionsname)
+
 ## Entscheidungen
 - 2026-11-24: R-1694 als Glocken-Notiz, keine Migration (Kevin). R-1744/R-1715 als Route `/api/health` ohne DB (Kevin).
 - 2026-11-24 T3: Die bekannten Server-IDs werden vor dem Holen des Inventars gelesen. Der Hub legt einen Server an, bevor das Monitoring Daten zu ihm bekommt, so kann ein gerade angelegter Server nicht als Waise gelten. `test_assignment_of_a_server_missing_from_the_inventory_stays` sicherte das alte Verhalten ab, das R-1697 absichtlich ändert. Er ist ersetzt durch `test_server_missing_from_the_inventory_is_cleaned_up`, dazu kommen Tests für leeres und gescheitertes Inventar.
 - 2026-11-24 T6: Prüfpunkt aus der Nachlese bestätigt sich nicht, kein Fix. Ein `create-admin` per `docker compose exec` läuft als root und hinterlässt die Policy-Datei root-eigen (0644, für frps lesbar). Der Server-Prozess ersetzt sie trotzdem: `_replace_atomically` schreibt eine Temp-Datei und benennt sie per `os.replace` um, dafür reicht Schreibrecht auf das Verzeichnis, und das gehört nach `chown -R` im Entrypoint `app`. Aus Code und rename-Semantik gelesen, nicht im Container gefahren.
 - 2026-11-24 T7: Der Compose-Healthcheck des Servers wertet jede HTTP-Antwort als gesund, auch ein 403. `IPFilterMiddleware` sieht beim Check im Container `127.0.0.1`; ist `ALLOWED_IPS` gesetzt und enthält Loopback nicht, antwortet der Server 403, und ein Check, der nur 2xx gelten ließe, machte den Dienst `unhealthy` (dann rollte `update.sh` mit `up --wait` zurück). `/api/health` vom IP-Filter auszunehmen hätte das Sicherheitsverhalten geändert. Ungesund heißt so: keine Antwort binnen 2 s, wie bei einem hängenden Prozess.
+- 2026-11-24 T10: origin/main in den Branch gemergt (ohne Konflikt), weil der rote Wächter `test_no_python_copies.py` erst dort liegt und der Fix lokal nur mit ihm zu belegen ist. Umbenennen statt `ah_common`: ein Route-Handler aus zwei Zeilen ist keine gemeinsame Hilfsfunktion, und `_KNOWN` ist nur für Kopien, die eine Zeile abbaut.
