@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-doku-10 — Erstkontakt-Doku in Einklang mit dem Code — Task-Ledger
-Status: aktiv · Branch: feature/klein-doku-10 · Review: am Ende
+Status: bereit · Branch: feature/klein-doku-10 · Review: am Ende
 Spec: docs/features/klein-doku-10.md (Roadmap R-1716)
 Heavy: none — reine Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,12 +34,14 @@ Dedup-Key: ref:docs:README.md:first-contact-drift-token
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 
-### T3 — SECURITY.md: frps-Capabilities und Image-Pinning (R-1716 e)  [ ]
+### T3 — SECURITY.md: frps-Capabilities und Image-Pinning (R-1716 e)  [x]
 Komponente: scripts · Dateien: SECURITY.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c439c8d2f 2026-11-24T21:28:59+01:00
+Review: am Ende (Branch-Review)
 Beweis: Umschau 2026-11-23 · docker-compose.yml (frps: `cap_drop: [ALL]`, `cap_add: [DAC_OVERRIDE, SETUID, SETGID, KILL]`), alle `FROM` der Dockerfiles `@sha256`, alle `uses:` der Workflows auf Commit-SHA
 Semantik: docker-compose.yml, Kommentar am frps-Block (Capabilities mit Begründung)
 Dedup-Key: ref:docs:README.md:first-contact-drift-security
-Änderung: Der Eintrag „frps container capability hardening — attempted and reverted“ wird zur Beschreibung des heutigen Stands (cap_drop ALL, vier Capabilities mit Grund); „Base-image / GitHub-Action tag pinning“ verliert den Pinning-Teil (Basis-Images per Digest, Actions per SHA) und behält SMART-Sanitisierung und `MONITOR_API_KEY`.
+Änderung: Der Eintrag „frps container capability hardening — attempted and reverted“ fällt aus „Accepted“ (frps läuft mit `cap_drop: [ALL]` und vier Capabilities, kein Restrisiko mehr); „Base-image / GitHub-Action tag pinning“ verliert den Pinning-Teil (Basis-Images per Digest, Actions per Commit-SHA) und behält SMART-Sanitisierung und `MONITOR_API_KEY`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 

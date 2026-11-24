@@ -77,11 +77,6 @@ behaviour is the correct trade-off.
 
 ### Accepted (deliberate, with rationale)
 
-- **frps container capability hardening** — attempted and reverted: `cap_drop`
-  breaks the image's `su-exec` privilege drop and its read of the intentionally
-  `0600` root-owned `frps.toml` on the `:ro` volume (verified locally — the
-  container crash-loops). Needs a coordinated volume-permission change without
-  weakening the `0600` protection of the token + dashboard password.
 - **List endpoints without pagination** — admin-only, small tables; pagination
   would be a breaking API change for existing clients.
 - **Token-validity watermark sub-second precision** — intentional (see the
@@ -92,6 +87,5 @@ behaviour is the correct trade-off.
   constraint and needs a sub-second race with the operator-only one-time token.
 - **`style-src 'unsafe-inline'`** — required by Svelte inline styles; `script-src`
   stays strict `'self'`.
-- **Base-image / GitHub-Action tag pinning, SMART device-id sanitization,
-  `MONITOR_API_KEY` divergence** — defense-in-depth / marginal; Actions and base
-  images are kept current via the agent-driven dependency updates.
+- **SMART device-id sanitization, `MONITOR_API_KEY` divergence** —
+  defense-in-depth / marginal.
