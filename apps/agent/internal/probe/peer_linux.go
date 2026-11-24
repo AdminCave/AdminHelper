@@ -45,35 +45,53 @@ const (
 	inetDiagNoCookie = ^uint32(0)
 )
 
-// osPeerSocket asks sock_diag for the one TCP socket of this host whose local end is server and
-// whose remote end is client. An exact lookup that finds no such socket answers the listener on
-// server's port, if there is one, or nothing.
-func osPeerSocket(server, client netip.AddrPort) (peerState, error) {
+// diagOpen opens a sock_diag netlink socket whose reads give up after a second.
+func diagOpen() (int, error) {
 	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, unix.NETLINK_SOCK_DIAG)
 	if err != nil {
-		return peerNone, fmt.Errorf("sock_diag: %w", err)
+		return -1, fmt.Errorf("sock_diag: %w", err)
 	}
-	defer unix.Close(fd)
 	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 1}); err != nil {
-		return peerNone, fmt.Errorf("sock_diag: %w", err)
+		unix.Close(fd)
+		return -1, fmt.Errorf("sock_diag: %w", err)
 	}
+	return fd, nil
+}
 
-	req := inetDiagReqV2{family: unix.AF_INET, protocol: unix.IPPROTO_TCP, states: ^uint32(0)}
-	if server.Addr().Is6() {
-		req.family = unix.AF_INET6
-	}
-	req.id = sockID(server, client)
+// diagSend sends req to the kernel as one SOCK_DIAG_BY_FAMILY message with the netlink flags.
+func diagSend(fd int, req inetDiagReqV2, flags uint16) error {
 	hdr := unix.NlMsghdr{
 		Len:   uint32(unix.SizeofNlMsghdr + unsafe.Sizeof(req)),
 		Type:  unix.SOCK_DIAG_BY_FAMILY,
-		Flags: unix.NLM_F_REQUEST,
+		Flags: flags,
 		Seq:   1,
 	}
 	msg := make([]byte, hdr.Len)
 	*(*unix.NlMsghdr)(unsafe.Pointer(&msg[0])) = hdr
 	*(*inetDiagReqV2)(unsafe.Pointer(&msg[unix.SizeofNlMsghdr])) = req
 	if err := unix.Sendto(fd, msg, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
-		return peerNone, fmt.Errorf("sock_diag: %w", err)
+		return fmt.Errorf("sock_diag: %w", err)
+	}
+	return nil
+}
+
+// osPeerSocket asks sock_diag for the one TCP socket of this host whose local end is server and
+// whose remote end is client. An exact lookup that finds no such socket answers the listener on
+// server's port, if there is one, or nothing.
+func osPeerSocket(server, client netip.AddrPort) (peerState, error) {
+	fd, err := diagOpen()
+	if err != nil {
+		return peerNone, err
+	}
+	defer unix.Close(fd)
+
+	req := inetDiagReqV2{family: unix.AF_INET, protocol: unix.IPPROTO_TCP, states: ^uint32(0)}
+	if server.Addr().Is6() {
+		req.family = unix.AF_INET6
+	}
+	req.id = sockID(server, client)
+	if err := diagSend(fd, req, unix.NLM_F_REQUEST); err != nil {
+		return peerNone, err
 	}
 
 	buf := make([]byte, 8192)
@@ -189,27 +207,15 @@ func diagListeners() ([]listener, error) {
 
 // diagDump returns the TCP sockets of family in states (a bit per TCP state) from a sock_diag dump.
 func diagDump(family uint8, states uint32) ([]inetDiagMsg, error) {
-	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, unix.NETLINK_SOCK_DIAG)
+	fd, err := diagOpen()
 	if err != nil {
-		return nil, fmt.Errorf("sock_diag: %w", err)
+		return nil, err
 	}
 	defer unix.Close(fd)
-	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 1}); err != nil {
-		return nil, fmt.Errorf("sock_diag: %w", err)
-	}
 	req := inetDiagReqV2{family: family, protocol: unix.IPPROTO_TCP, states: states}
 	req.id.cookie = [2]uint32{inetDiagNoCookie, inetDiagNoCookie}
-	hdr := unix.NlMsghdr{
-		Len:   uint32(unix.SizeofNlMsghdr + unsafe.Sizeof(req)),
-		Type:  unix.SOCK_DIAG_BY_FAMILY,
-		Flags: unix.NLM_F_REQUEST | unix.NLM_F_DUMP,
-		Seq:   1,
-	}
-	msg := make([]byte, hdr.Len)
-	*(*unix.NlMsghdr)(unsafe.Pointer(&msg[0])) = hdr
-	*(*inetDiagReqV2)(unsafe.Pointer(&msg[unix.SizeofNlMsghdr])) = req
-	if err := unix.Sendto(fd, msg, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
-		return nil, fmt.Errorf("sock_diag: %w", err)
+	if err := diagSend(fd, req, unix.NLM_F_REQUEST|unix.NLM_F_DUMP); err != nil {
+		return nil, err
 	}
 
 	var out []inetDiagMsg
