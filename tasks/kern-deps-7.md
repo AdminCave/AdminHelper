@@ -32,8 +32,10 @@ die Untergrenze des Servers. greenlet im Worktree-Venv deinstallieren.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: → T4
 
-### T3 — R-0701: CA-Issuer-Test-Deps mit Untergrenze  [ ]
+### T3 — R-0701: CA-Issuer-Test-Deps mit Untergrenze  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/requirements-dev.txt
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @645c348ef 2026-11-24T14:28:29+01:00
+Review: approve (.ah-out/review/kern-deps-7/T3.verdict.json)
 Änderung: `pytest` und `httpx` bekommen die Untergrenzen des Servers (`pytest>=9.2.0`, `httpx>=0.28.1`); der Lock
 bleibt (Dev-Deps stehen nicht darin).
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_db_token_store.py
