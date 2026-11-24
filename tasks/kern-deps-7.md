@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-7 — Task-Ledger
-Status: geplant · Branch: feature/kern-deps-7 · Review: pro Task
+Status: aktiv · Branch: feature/kern-deps-7 · Review: pro Task
 Spec: docs/features/kern-deps-7.md (Roadmap R-0701)
 Heavy: linux-full — Laufzeit-Locks von Server und Monitoring ändern das Image; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
