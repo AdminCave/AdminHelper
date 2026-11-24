@@ -130,7 +130,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
           </ul>
           <p>Der Monitoring-Container loggt unter dem Präfix <code>monitor.*</code> (z.&nbsp;B. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Beide Container schreiben Plain-Text-Zeilen nach stderr, kein JSON.</p>
 
-          <p><strong>Log-Level:</strong> Server, Monitoring und CA-Issuer lesen die Ausführlichkeit aus der Env-Variable <code>LOG_LEVEL</code> (<code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code>, Default <code>INFO</code>; ein anderer Wert bricht den Start ab). Für eine tiefere Diagnose <code>LOG_LEVEL=DEBUG</code> in der <code>.env</code> setzen und <code>docker compose up -d</code>.</p>
+          <p><strong>Log-Level:</strong> Server, Monitoring und CA-Issuer lesen die Ausführlichkeit aus der Env-Variable <code>LOG_LEVEL</code> (<code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code>/<code>CRITICAL</code>, Default <code>INFO</code>; ein anderer Wert bricht den Start ab). Für eine tiefere Diagnose <code>LOG_LEVEL=DEBUG</code> in der <code>.env</code> setzen und <code>docker compose up -d</code>.</p>
           <p><strong>Rotation:</strong> Die Container-Logs sind über den Docker-<code>json-file</code>-Treiber begrenzt (<code>max-size: 10m</code>, <code>max-file: 5</code> → max.&nbsp;50&nbsp;MB pro Service), damit sie nicht unbegrenzt wachsen. Konfiguriert über den <code>x-logging</code>-Anker in der <code>docker-compose.yml</code>.</p>
 
           <h2>Audit-Log</h2>

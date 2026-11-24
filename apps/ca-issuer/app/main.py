@@ -38,8 +38,8 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 def _log_level() -> str:
     raw = os.environ.get("LOG_LEVEL", "")
     level = raw.strip().upper() or "INFO"
-    # getLevelName returns an int for known names, the "Level X" string otherwise.
-    if not isinstance(logging.getLevelName(level), int):
+    # A fixed list, not getLevelName: uvicorn registers TRACE, and any package may add a name.
+    if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         raise ValueError(f"LOG_LEVEL={raw!r} is not one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
     return level
 
