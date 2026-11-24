@@ -424,8 +424,20 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	}
 
 	// 3) A lost push (both attempts fail) leaves the state as it was, but for the self-throttle: that
-	// counts the run all the same (here the third clean one, which resets the count).
+	// counts the run all the same (here the third clean one, which resets the count). The hourly
+	// update count and the backup index read in this run are kept too (R-1700): read again in every
+	// run while the service is away, they would cost their full price each five minutes.
 	saved := loadReportState(statePath)
+	security := 3
+	readUpdates := &updatesCheck{CheckedUnix: 1700000000, Security: &security}
+	readBackups := &backupIndexCheck{CheckedUnix: 1700000000, Node: "pve1", Index: map[int]int64{100: 1699990000}}
+	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) {
+		st.Updates = readUpdates
+		return nil, st
+	}
+	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck) {
+		return nil, readBackups
+	}
 	status.Store(http.StatusBadGateway)
 	if _, err := push(900, 1500); err == nil {
 		t.Fatal("push against 502: want an error")
@@ -434,7 +446,15 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	if th := after.Throttle[probesCollector]; th != (throttle{Factor: 1}) || saved.Throttle[probesCollector].Clean != 2 {
 		t.Errorf("probes throttle after a failed push = %+v (before %+v), want the third clean run counted", th, saved.Throttle[probesCollector])
 	}
+	if !reflect.DeepEqual(after.Updates, readUpdates) {
+		t.Errorf("updates after a failed push = %+v, want the count read in that run %+v", after.Updates, readUpdates)
+	}
+	if !reflect.DeepEqual(after.ProxmoxBackups, readBackups) {
+		t.Errorf("backup index after a failed push = %+v, want the one read in that run %+v", after.ProxmoxBackups, readBackups)
+	}
 	after.Throttle, saved.Throttle = nil, nil
+	after.Updates, saved.Updates = nil, nil
+	after.ProxmoxBackups, saved.ProxmoxBackups = nil, nil
 	if !reflect.DeepEqual(after, saved) {
 		t.Fatalf("state after a failed push = %+v, want it unchanged %+v", after, saved)
 	}

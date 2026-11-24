@@ -129,6 +129,9 @@ func (l *Logger) tagged() *slog.Logger {
 	return slog.Default().With("component", l.component)
 }
 
+// Debugf logs at DEBUG with printf-style formatting.
+func (l *Logger) Debugf(format string, args ...any) { l.tagged().Debug(fmt.Sprintf(format, args...)) }
+
 // Infof logs at INFO with printf-style formatting.
 func (l *Logger) Infof(format string, args ...any) { l.tagged().Info(fmt.Sprintf(format, args...)) }
 

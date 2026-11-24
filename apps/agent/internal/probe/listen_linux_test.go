@@ -183,3 +183,81 @@ func TestTakerOwnersNameTheListenersOfThePort(t *testing.T) {
 		_ = ln.Close()
 	}
 }
+
+// TestDiagListenersListsTheListenersAlone: sock_diag answers a listener of this process on 127.0.0.1
+// and on ::1 with its owner and its socket, and no end of an established connection (R-1702).
+func TestDiagListenersListsTheListenersAlone(t *testing.T) {
+	var wanted []netip.AddrPort
+	var conns []netip.AddrPort
+	for _, c := range []struct{ network, address string }{{"tcp4", "127.0.0.1:0"}, {"tcp6", "[::1]:0"}} {
+		ln, err := net.Listen(c.network, c.address)
+		if err != nil {
+			t.Fatalf("listen %s: %v", c.address, err)
+		}
+		defer ln.Close()
+		conn, err := net.Dial(c.network, ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		wanted = append(wanted, ln.Addr().(*net.TCPAddr).AddrPort())
+		conns = append(conns, conn.LocalAddr().(*net.TCPAddr).AddrPort())
+	}
+
+	list, err := diagListeners()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range wanted {
+		var hits []listener
+		for _, l := range list {
+			if l.addr == w.Addr() && l.port == w.Port() {
+				hits = append(hits, l)
+			}
+		}
+		if len(hits) != 1 || !hits[0].hasUID || hits[0].uid != uint32(os.Geteuid()) || hits[0].sock == "" || hits[0].sock == "0" {
+			t.Errorf("listener %s: got %+v, want one with uid %d and an inode", w, hits, os.Geteuid())
+		}
+	}
+	for _, c := range conns {
+		for _, l := range list {
+			if l.addr == c.Addr() && l.port == c.Port() {
+				t.Errorf("the client end %s of a connection is listed as a listener", c)
+			}
+		}
+	}
+}
+
+// BenchmarkDiagListeners reads the listeners with 5000 established connections open: the table
+// holds 10000 sockets that sock_diag filters out in the kernel.
+func BenchmarkDiagListeners(b *testing.B) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- c
+		}
+	}()
+	for range 5000 {
+		c, err := net.Dial("tcp4", ln.Addr().String())
+		if err != nil {
+			b.Fatal(err)
+		}
+		s := <-accepted
+		defer c.Close()
+		defer s.Close()
+	}
+	for b.Loop() {
+		if _, err := diagListeners(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

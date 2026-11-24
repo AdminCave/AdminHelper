@@ -91,7 +91,7 @@ var enableTimer = service.EnableTimer
 func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP string) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 	if adminHelperURL == "" || token == "" || serverID == "" {
-		return fmt.Errorf("--url, --token und --server-id sind erforderlich")
+		return fmt.Errorf("--url, --token and --server-id are required")
 	}
 	if err := config.RequireHTTPS(adminHelperURL); err != nil {
 		return err
@@ -129,10 +129,10 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		return err
 	}
 	if resp.APIKey == "" {
-		return fmt.Errorf("kein API-Key in der Antwort erhalten")
+		return fmt.Errorf("no API key in the response")
 	}
 
-	fmt.Printf("Provisioning fuer Server %q gestartet.\n", resp.ServerName)
+	fmt.Printf("Provisioning for server %q started.\n", resp.ServerName)
 
 	var effectiveCacert string
 	var effectiveInsecure bool
@@ -155,9 +155,9 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 	// is then persisted as the permanent pinned root.
 	if resp.Enrollment != nil && resp.Enrollment.Token != "" {
 		if err := runEnrollment(adminHelperURL, resp.Enrollment, effectiveCacert, effectiveInsecure); err != nil {
-			fmt.Printf("→ Enrollment uebersprungen (%v) — Agent nutzt vorerst nur den API-Key.\n", err)
+			fmt.Printf("→ Enrollment skipped (%v) — the agent uses the API key alone for now.\n", err)
 		} else {
-			fmt.Println("→ mTLS-Client-Zertifikat enrollt und gepinnt.")
+			fmt.Println("→ mTLS client certificate enrolled and pinned.")
 		}
 	}
 
@@ -170,17 +170,17 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 	// well-known path.
 	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" {
 		monitorURL := monitorBaseURL(adminHelperURL, resp.MonitorURL)
-		fmt.Println("→ Monitor-Agent wird eingerichtet...")
+		fmt.Println("→ Setting up the monitor agent...")
 		if err := monitor.Init(monitor.InitParams{
 			URL:      monitorURL,
 			APIKey:   *resp.MonitorAPIKey,
 			ServerID: serverID,
 			TLS:      config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
 		}); err != nil {
-			return fmt.Errorf("Monitor-Init fehlgeschlagen: %w", err)
+			return fmt.Errorf("monitor init failed: %w", err)
 		}
 	} else {
-		fmt.Println("→ Monitor-Service nicht konfiguriert oder nicht erreichbar — Monitor wird uebersprungen.")
+		fmt.Println("→ Monitoring service not configured or not reachable — skipping the monitor.")
 	}
 
 	// 2. The sync config always (Apply writes it along with frpc's config): without it the
@@ -200,7 +200,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
 		})
 		if err != nil && !errors.Is(err, frpc.ErrServiceDeferred) {
-			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
+			return fmt.Errorf("FRP apply failed: %w", err)
 		}
 		tunnels, deferred = n, err
 	} else {
@@ -243,7 +243,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fmt.Printf("→ Agent timer not enabled (%v) — enable it by hand; until then no run syncs or pushes.\n", err)
 	}
 
-	fmt.Println("OK: Provisioning abgeschlossen.")
+	fmt.Println("OK: provisioning complete.")
 	return nil
 }
 
@@ -291,9 +291,9 @@ func pinIfBlindInsecure(cacert string, insecure bool, serverCertPEM []byte) (str
 	}
 	pinnedPath, err := writePinnedCert(serverCertPEM)
 	if err != nil {
-		return "", false, func() {}, fmt.Errorf("Server-Zertifikat pinnen: %w", err)
+		return "", false, func() {}, fmt.Errorf("pin the server certificate: %w", err)
 	}
-	fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+	fmt.Println("→ Server certificate pinned (TOFU) — --insecure applies to this call only.")
 	// Print the pinned cert's fingerprint so the operator can verify it out-of-band
 	// against the server's own cert hash: with --insecure at first contact, an on-path
 	// attacker could otherwise pin its own cert as the permanent trust anchor (3.45).
@@ -344,11 +344,11 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	}
 	endpoint, err := enrollEndpoint(adminHelperURL, port)
 	if err != nil {
-		return fmt.Errorf("Enroll-URL bilden: %w", err)
+		return fmt.Errorf("build the enroll URL: %w", err)
 	}
 	client, err := httpclient.New(cacert, insecure, 30*time.Second)
 	if err != nil {
-		return fmt.Errorf("HTTP-Client: %w", err)
+		return fmt.Errorf("HTTP client: %w", err)
 	}
 	key, err := enroll.GenerateKey()
 	if err != nil {
@@ -409,7 +409,7 @@ func enrollEndpoint(adminHelperURL string, port int) (string, error) {
 	}
 	host := u.Hostname()
 	if host == "" {
-		return "", fmt.Errorf("kein Host in %q", adminHelperURL)
+		return "", fmt.Errorf("no host in %q", adminHelperURL)
 	}
 	u.Host = net.JoinHostPort(host, strconv.Itoa(port))
 	u.Path = "/enroll"
@@ -428,7 +428,7 @@ func activateEndpoint(adminHelperURL string, port int, serverID string) (string,
 	}
 	host := u.Hostname()
 	if host == "" {
-		return "", fmt.Errorf("kein Host in %q", adminHelperURL)
+		return "", fmt.Errorf("no host in %q", adminHelperURL)
 	}
 	u.Host = net.JoinHostPort(host, strconv.Itoa(port))
 	u.Path = fmt.Sprintf("/api/servers/%s/provision/activate", serverID)
@@ -451,7 +451,7 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 		var err error
 		client, err = httpclient.New(cacert, insecure, 30*time.Second)
 		if err != nil {
-			return nil, nil, fmt.Errorf("HTTP-Client: %w", err)
+			return nil, nil, fmt.Errorf("HTTP client: %w", err)
 		}
 	}
 
@@ -460,7 +460,7 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 	// yet, and :443 rejects certless connections under MTLS_ENFORCE=true (A8).
 	endpoint, err := activateEndpoint(adminHelperURL, enrollPort, serverID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Activate-URL bilden: %w", err)
+		return nil, nil, fmt.Errorf("build the activate URL: %w", err)
 	}
 	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
@@ -473,7 +473,7 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 	// *http.Response's TLS.PeerCertificates, which the []byte helper doesn't expose.
 	httpResp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Activate-Aufruf fehlgeschlagen: %w", err)
+		return nil, nil, fmt.Errorf("activate call failed: %w", err)
 	}
 	defer httpResp.Body.Close()
 
@@ -482,15 +482,15 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 		return nil, nil, err
 	}
 	if int64(len(body)) > httpclient.MaxResponseBytes {
-		return nil, nil, fmt.Errorf("Activate-Antwort ueberschreitet %d Bytes", httpclient.MaxResponseBytes)
+		return nil, nil, fmt.Errorf("activate response exceeds %d bytes", httpclient.MaxResponseBytes)
 	}
 	if httpResp.StatusCode >= 300 {
-		return nil, nil, fmt.Errorf("Activate fehlgeschlagen (HTTP %d): %s", httpResp.StatusCode, string(body))
+		return nil, nil, fmt.Errorf("activate failed (HTTP %d): %s", httpResp.StatusCode, string(body))
 	}
 
 	var resp activateResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, nil, fmt.Errorf("JSON-Antwort parsen: %w", err)
+		return nil, nil, fmt.Errorf("parse the JSON response: %w", err)
 	}
 
 	// Capture the certificate chain the server presented, so a blind --insecure

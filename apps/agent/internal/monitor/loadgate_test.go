@@ -391,3 +391,45 @@ func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 		t.Errorf("load_shed.active sent = %v, want true", got)
 	}
 }
+
+// R-1688: the ZFS ARC above c_min is memory the kernel gives back, so a ZFS host whose memory_percent
+// is high from the cache alone is not short of memory.
+func TestLoadReadingOfCountsTheReclaimableARCAsAvailable(t *testing.T) {
+	stubReportHost(t)
+	s := stubResources(t, "linux")
+	resources := &Resources{MemoryUsage: &MemoryUsage{MemoryPercent: 95, MemoryTotalMB: 64 * 1024}}
+
+	s.arc = 24 * 1024 * mib // 37.5 % of 64 GiB
+	r := loadReadingOf(resources, nil, nil)
+	if r.MemAvailable == nil || *r.MemAvailable != 42.5 {
+		t.Fatalf("available with 24 GiB reclaimable ARC = %v, want 42.5", wireValue(t, r))
+	}
+	if over := r.over(); len(over) != 0 {
+		t.Fatalf("over = %v, want none", over)
+	}
+
+	s.arc = 0
+	if r := loadReadingOf(resources, nil, nil); *r.MemAvailable != 5 || !reflect.DeepEqual(r.over(), []string{"memory"}) {
+		t.Fatalf("without ARC: %v, over %v; want 5 and memory", wireValue(t, r), r.over())
+	}
+
+	s.arc = 80 * 1024 * mib // more than the host has: never over 100
+	if r := loadReadingOf(resources, nil, nil); *r.MemAvailable != 100 {
+		t.Fatalf("available = %v, want 100 at most", wireValue(t, r))
+	}
+
+	// In an LXC on a ZFS host arcstats is the host's ARC, the total the container's limit.
+	stubVirtualization(t, "lxc", "guest")
+	s.arc = 24 * 1024 * mib
+	if r := loadReadingOf(resources, nil, nil); *r.MemAvailable != 5 || !reflect.DeepEqual(r.over(), []string{"memory"}) {
+		t.Fatalf("in a container: %v, over %v; want 5 and memory", wireValue(t, r), r.over())
+	}
+}
+
+func TestArcAbove(t *testing.T) {
+	for _, c := range []struct{ size, cMin, want uint64 }{{6, 1, 5}, {1, 1, 0}, {1, 6, 0}, {0, 0, 0}} {
+		if got := arcAbove(c.size, c.cMin); got != c.want {
+			t.Errorf("arcAbove(%d, %d) = %d, want %d", c.size, c.cMin, got, c.want)
+		}
+	}
+}

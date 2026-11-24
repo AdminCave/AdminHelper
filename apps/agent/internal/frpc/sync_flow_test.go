@@ -511,23 +511,54 @@ func TestSyncErrorsOnConfigEndpoint500LeavesOldConfig(t *testing.T) {
 }
 
 // R-0398: a host provisioned without a tunnel before this version has no sync config and
-// never gets a tunnel created later. The sync stays green and tells how to get one.
+// never gets a tunnel created later. The sync stays green and tells how to get one. R-1704: a host
+// with monitoring and no frpc config was provisioned without a tunnel on purpose and hears the hint
+// on debug only.
 func TestSyncWithoutSyncConfigNamesReprovisioning(t *testing.T) {
-	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
-	var buf bytes.Buffer
-	prev, prevOut, prevFlags := slog.Default(), log.Writer(), log.Flags()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-	// SetDefault also redirects the log package, which restoring the slog default does not undo.
-	t.Cleanup(func() { slog.SetDefault(prev); log.SetOutput(prevOut); log.SetFlags(prevFlags) })
+	for _, c := range []struct {
+		name               string
+		monitorConf, frpcT bool
+		level              string
+	}{
+		{"never provisioned whole", false, false, "level=INFO"},
+		{"frpc config left", true, true, "level=INFO"},
+		{"monitoring without a tunnel", true, false, "level=DEBUG"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+			t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+			if c.monitorConf {
+				writeTestFile(t, config.MonitorConfFile(), "x")
+			}
+			if c.frpcT {
+				writeTestFile(t, config.FrpConfigFile(), "x")
+			}
+			var buf bytes.Buffer
+			prev, prevOut, prevFlags := slog.Default(), log.Writer(), log.Flags()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+			// SetDefault also redirects the log package, which restoring the slog default does not undo.
+			t.Cleanup(func() { slog.SetDefault(prev); log.SetOutput(prevOut); log.SetFlags(prevFlags) })
 
-	if err := Sync(context.Background()); err != nil {
-		t.Fatalf("Sync without a sync config: %v", err)
+			if err := Sync(context.Background()); err != nil {
+				t.Fatalf("Sync without a sync config: %v", err)
+			}
+			var line string
+			for l := range strings.SplitSeq(buf.String(), "\n") {
+				if strings.Contains(l, "adminhelper-agent provision") {
+					line = l
+				}
+			}
+			if !strings.Contains(line, c.level) {
+				t.Errorf("hint line %q, want it at %s (log %q)", line, c.level, buf.String())
+			}
+		})
 	}
-	out := buf.String()
-	for _, want := range []string{"level=INFO", "adminhelper-agent provision"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("log %q is missing %q", out, want)
-		}
+}
+
+func writeTestFile(t *testing.T, path, data string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

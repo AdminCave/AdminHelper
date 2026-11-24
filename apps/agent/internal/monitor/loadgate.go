@@ -83,6 +83,14 @@ type loadReading struct {
 	MemAvailable *float64 `json:"mem_available_percent,omitempty"`
 }
 
+// arcAbove is the ARC above its minimum, the part the kernel gives back under pressure; 0 below it.
+func arcAbove(size, cMin uint64) uint64 {
+	if size <= cMin {
+		return 0
+	}
+	return size - cMin
+}
+
 // over names the readings over their limit, in a fixed order; empty, never nil, for none.
 func (r loadReading) over() []string {
 	over := []string{}
@@ -104,8 +112,11 @@ var readLoad = loadReadingOf
 // loadReadingOf reads the load gate's values from this run's resources block and the CPU counters of
 // the last and this run. The load per CPU is left out in a container, where load_1m is the host's and
 // cpu_count may be the container's (as the monitoring service rates agent_resources), and where there
-// is no load or CPU count (Windows). The available memory is 100 - memory_percent: gopsutil counts
-// the available memory as unused on Linux, FreeBSD and Windows.
+// is no load or CPU count (Windows). The available memory is 100 - memory_percent plus the ZFS ARC
+// above its minimum: gopsutil counts the available memory as unused on Linux, FreeBSD and Windows, but
+// the ARC as used, though the kernel shrinks it to c_min under pressure (R-1688). Not in a container:
+// arcstats there is the host's ARC, the total the container's limit. memory_percent in the report
+// stays as gopsutil reads it.
 func loadReadingOf(resources *Resources, prevCPU, curCPU *cpuSample) loadReading {
 	var r loadReading
 	if resources == nil {
@@ -117,7 +128,11 @@ func loadReadingOf(resources *Resources, prevCPU, curCPU *cpuSample) loadReading
 		r.LoadPerCPU = &v
 	}
 	if resources.MemoryUsage != nil {
-		v := round1(100 - resources.MemoryPercent)
+		avail := 100 - resources.MemoryPercent
+		if total := resources.MemoryTotalMB; total > 0 && !inContainer() {
+			avail += float64(resourceCalls.arc()) / (float64(total) * 1024 * 1024) * 100
+		}
+		v := round1(math.Min(100, avail))
 		r.MemAvailable = &v
 	}
 	r.Iowait = iowaitPercentSince(prevCPU, curCPU)

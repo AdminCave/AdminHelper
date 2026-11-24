@@ -64,8 +64,8 @@ func runCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "run",
-		Short: "FRPC-Sync + Monitor-Push ausfuehren",
-		Long:  "Ohne --once: Dauerbetrieb (alle 5 Minuten). Mit --once: einmaliger Durchlauf (fuer systemd-Timer).",
+		Short: "Run the FRPC sync and the monitor push",
+		Long:  "Without --once: runs continuously (every 5 minutes). With --once: a single run (for systemd timers).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if once {
 				ctx, stop := signalContext()
@@ -84,12 +84,12 @@ func runCmd() *cobra.Command {
 			return runLoop()
 		},
 	}
-	cmd.Flags().BoolVar(&once, "once", false, "Einmaliger Durchlauf (fuer systemd-Timer / Task Scheduler)")
+	cmd.Flags().BoolVar(&once, "once", false, "a single run (for systemd timers / Task Scheduler)")
 	return cmd
 }
 
 func runLoop() error {
-	logger.Infof("Starte Dauerbetrieb (Intervall: %s)", defaultInterval)
+	logger.Infof("Starting continuous operation (interval: %s)", defaultInterval)
 
 	// SIGINT/SIGTERM end ctx at once, and with it the cycle in flight.
 	ctx, stop := signalContext()
