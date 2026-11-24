@@ -197,7 +197,10 @@ fetch_bundle_into() {
         PINNED_IMAGES=$(image_pins "$TARGET_DIR/IMAGES" "${REF#v}") \
             || { echo "ERROR: the IMAGES file of the bundle is invalid; aborted before the first start." >&2; rm -rf "$tmp"; exit 1; }
     fi
-    rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256" "$TARGET_DIR/IMAGES"
+    # VERSION and IMAGES stay until the install has succeeded (removed at its end): a
+    # restart after an aborted attempt runs from the directory without --ref and takes
+    # its version and pins from them (R-1712).
+    rm -f "$TARGET_DIR/MANIFEST.sha256"
     rm -rf "$tmp"
 }
 
@@ -259,6 +262,20 @@ if [ ! -f docker-compose.yml ]; then
 fi
 
 die() { echo "FEHLER: $*" >&2; exit 1; }
+
+# A restart after an aborted attempt (from the directory, without --ref) installs the
+# version the bundle brought, not compose's :latest (R-1712). The classes are spelled
+# out: under de_DE.UTF-8 a range in =~ matches more than ASCII digits.
+if [ -z "$REF" ] && [ -f VERSION ]; then
+    REF=$(cat VERSION)
+    [[ "$REF" =~ ^v[0123456789]+\.[0123456789]+\.[0123456789]+$ ]] \
+        || die "VERSION in $(pwd) is not a release tag; start over with --ref vX.Y.Z."
+    if [ -z "$PINNED_IMAGES" ] && [ -f IMAGES ]; then
+        PINNED_IMAGES=$(image_pins IMAGES "${REF#v}") \
+            || die "the IMAGES file in $(pwd) is invalid; start over with --ref vX.Y.Z."
+    fi
+    echo "[install] version of the aborted attempt: ${REF}" >&2
+fi
 
 # A .env written ahead of the install is taken over; compose quotes a line it cannot
 # read, a value included. So .env is checked as update.sh checks it, before the
@@ -753,6 +770,9 @@ printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec -T server python -m app.cl
     --username "$ADMIN_USER" --password-stdin
 ENROLL_TOKEN=$(docker compose exec -T server python -m app.cli mint-enroll-token \
     --username "$ADMIN_USER" --ttl-minutes "$ENROLL_TTL" </dev/null | tr -d '\r')
+
+# The install succeeded: the bundle's markers have done their job (R-1712).
+rm -f VERSION IMAGES
 
 # --- Zusammenfassung --------------------------------------------------------
 cat <<EOF

@@ -224,6 +224,44 @@ done <<< "$(images_for 0.36.0)"
   || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
 [ ! -e "$INST/IMAGES" ] && ok "install leaves no IMAGES in the install directory" \
   || bad "install left IMAGES in the install directory"
+
+# ── 3c. restart after an aborted attempt keeps the release's pins (R-1712) ────
+# The first attempt dies at compose up; the restart from the directory has no --ref
+# and must still pin the bundle's version and digests, not fall to :latest.
+INST="$WORK/inst3c"
+out=$(AH_TEST_UP_FAIL=1 run_install --ref v0.36.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && [ -f "$INST/VERSION" ] && [ -f "$INST/IMAGES" ]; } \
+  && ok "an aborted attempt leaves VERSION and IMAGES for the restart" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "aborted attempt: rc=$rc, VERSION/IMAGES missing"; }
+sed -i '/_IMAGE=/d' "$INST/.env"
+# The release bundle carries install.sh (release.yml); this fixture's sources do not.
+cp "$INSTALL" "$INST/scripts/install.sh"
+out=$( (cd "$INST" && bash ./scripts/install.sh --domain t --admin-password sikrit123 --yes) 2>&1); rc=$?
+n=0
+while IFS= read -r want; do
+  [ "$(LC_ALL=C grep -a -c -x -F "$want" "$INST/.env" 2>/dev/null)" = 1 ] && n=$((n + 1))
+done <<< "$(images_for 0.36.0)"
+{ [ $rc -eq 0 ] && [ "$n" = 5 ]; } \
+  && ok "the restart from the directory pins tag and digest of the aborted release" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "restart pins: rc=$rc, $n of 5 lines"; }
+{ [ ! -e "$INST/VERSION" ] && [ ! -e "$INST/IMAGES" ]; } \
+  && ok "the successful restart removes VERSION and IMAGES" || bad "VERSION/IMAGES left after success"
+# A VERSION that is no release tag, or an IMAGES that fails the bundle's check, stops
+# the restart before .env changes; it never falls back to :latest or to the tag alone.
+for defect in version images; do
+  INST="$WORK/inst3c-$defect"
+  out=$(AH_TEST_UP_FAIL=1 run_install --ref v0.36.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1)
+  cp "$INSTALL" "$INST/scripts/install.sh"
+  case $defect in
+    version) printf 'latest\n' > "$INST/VERSION"; want='VERSION in .* is not a release tag' ;;
+    images)  sed -i '1d' "$INST/IMAGES"; want='IMAGES file in .* is invalid' ;;
+  esac
+  before=$(sha256sum < "$INST/.env")
+  out=$( (cd "$INST" && bash ./scripts/install.sh --domain t --admin-password sikrit123 --yes) 2>&1); rc=$?
+  { [ $rc -ne 0 ] && grep -qE "$want" <<<"$out" && [ "$(sha256sum < "$INST/.env")" = "$before" ]; } \
+    && ok "restart with a bad $defect file stops before .env changes" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "bad $defect on restart: rc=$rc"; }
+done
 # A present file applies: each defect aborts before .env, never falls back to the tag.
 good=$(images_for 0.36.0)
 bad_images() {

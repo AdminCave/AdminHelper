@@ -5,6 +5,9 @@
   Bindung an die interne CA.
 - **Update: neue .env-Schluessel:** `update.sh` ergaenzt ein fehlendes Zeilenende der `.env`, bevor es neue
   Schluessel anhaengt; bisher klebte der erste neue Schluessel an der letzten Zeile.
+- **Installation: Neustart nach Abbruch:** `install.sh` behaelt die Version des Release-Bundles, bis die
+  Installation gelungen ist; ein Neustart aus dem Verzeichnis nach einem abgebrochenen Versuch installiert damit
+  dieselbe gepinnte Version statt `:latest`.
 
 ### Changed
 

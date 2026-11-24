@@ -33,12 +33,14 @@ Beweis: main@6895f8eaf scripts/update.sh:954-973 (Stub-Lauf: KEY=wertNEUER_KEY=)
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: docs/admin/betrieb.html DE + docs/en/admin/operations.html (Aufräumen von backups/) · changelog.d/ops-16.md
 
-### T3 — R-1712: install.sh behält VERSION und nimmt sie beim Neustart als Version  [ ]
-Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/ops-16.md
+### T3 — R-1712: install.sh behält VERSION und nimmt sie beim Neustart als Version  [x]
+Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/ops-16.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2716dbf84 2026-11-24T16:13:16+01:00
+Review: approve (.ah-out/review/ops-16/T3.verdict.json)
 Änderung: `VERSION` wird nach dem Entpacken nicht mehr entfernt; im Checkout-Modus ohne `--ref` liest install.sh sie als Default für `REF`, sodass die Image-Pins geschrieben werden. Test: abgebrochener Erstversuch, Neustart mit `--reset` aus dem Verzeichnis → gepinnte Version (roter Fall zuerst).
 Beweis: main@6895f8eaf scripts/install.sh:164,192-199,645-649 · Dedup-Key: bug:ops:install.sh:retry-after-abort-unpinned-latest
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
-Doku: changelog.d/ops-16.md
+Doku: docs/admin/installation.html DE+EN · changelog.d/ops-16.md
 
 ### T4 — R-1686: restore.sh leert das Schema vor pg_restore  [ ]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/tests/backup_restore_test.sh, changelog.d/ops-16.md
