@@ -23,8 +23,10 @@ Dedup-Key: ref:docs:README.md:first-contact-drift-prereq
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 
-### T2 — Bootstrap-Token, .env.example, Besucher-Ports (R-1716 c, d)  [ ]
+### T2 — Bootstrap-Token, .env.example, Besucher-Ports (R-1716 c, d)  [x]
 Komponente: scripts · Dateien: README.md, .env.example, DEVELOPMENT.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @46ede35b6 2026-11-24T21:24:32+01:00
+Review: am Ende (Branch-Review)
 Beweis: Umschau 2026-11-23 · apps/server/app/main.py (`write_private_file(BOOTSTRAP_SETUP_FILE, token)`, Log nennt nur Pfad und Befehl), apps/server/app/core/config.py:168-171,187-188, docker-compose.yml (kein `VISITOR_PORT_*` im Server-Block)
 Semantik: docs/en/admin/installation.html: `docker compose exec server cat /app/data/.bootstrap_setup`
 Dedup-Key: ref:docs:README.md:first-contact-drift-token
