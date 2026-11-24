@@ -868,6 +868,17 @@ SNAP_FILES=(docker-compose.yml .env.example scripts)
 tar czf "$SNAP" "${SNAP_FILES[@]}" || die "Laufzeit-Snapshot fehlgeschlagen — Abbruch (noch nichts veraendert)."
 chmod 600 "$SNAP" 2>/dev/null || true
 log "Laufzeit-Snapshot: ${SNAP}"
+# Keep this run's snapshot and the two newest others (Kevin 2026-11-24, R-1714): the
+# names carry a UTC timestamp, so the glob's order is their age. $SNAP is the rollback's
+# only basis and never goes, even when a clock set back left newer names behind. Full
+# backups stay, backup.sh owns them.
+OTHERS=()
+for old in backups/runtime-prev-*.tar.gz; do
+    [ "$old" = "$SNAP" ] || [ ! -e "$old" ] || OTHERS+=("$old")
+done
+if [ "${#OTHERS[@]}" -gt 2 ]; then
+    for old in "${OTHERS[@]:0:${#OTHERS[@]}-2}"; do rm -f -- "$old" || log "WARNING: could not delete ${old}"; done
+fi
 # .env as it was, for both rollbacks below: all of it goes back while no container
 # has been touched, only its image pins once containers may have started. Kept in $TMP
 # (0700, removed on exit), not in the snapshot, which both restore in whole.
@@ -1007,6 +1018,9 @@ NO_ROLLBACK_STAYS=""
 # comment is missing to compose, and the example's keys are the ones it needs.
 migrate_env() {
     local line key rc
+    # A .env that ends without a newline would glue the first appended key onto its
+    # last line, so that value silently grows and the new key is missing (R-1692).
+    if [ -s .env ] && [ -n "$(tail -c1 .env)" ]; then printf '\n' >> .env || return 1; fi
     if [ -f .env.example ]; then
         while IFS= read -r line; do
             case "$line" in
@@ -1131,4 +1145,5 @@ if [ "$PG_MIGRATE" = 1 ]; then
     pg18_migrate || rollback_after_deploy "the move to PostgreSQL 18 failed (dump or restore, see above)"
 fi
 stack_up || rollback_after_deploy "stack start or health check failed (docker compose up --wait)"
+log "backups/ holds $(du -sh backups 2>/dev/null | cut -f1) (delete older adminhelper-backup-* by hand)."
 log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"

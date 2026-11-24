@@ -24,8 +24,10 @@ Beweis: Roadmap R-1703 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: docs/admin/agent-deployment.html DE+EN · changelog.d/ops-16.md (neutral)
 
-### T2 — R-1692, R-1714: update.sh: Zeilenende vor neuen .env-Schlüsseln, runtime-prev auf 3 begrenzt  [ ]
+### T2 — R-1692, R-1714: update.sh: Zeilenende vor neuen .env-Schlüsseln, runtime-prev auf 3 begrenzt  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-16.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @39b47025a 2026-11-24T15:56:48+01:00
+Review: approve (.ah-out/review/ops-16/T2.verdict.json)
 Änderung: `migrate_env` ergänzt ein fehlendes Zeilenende der `.env` vor dem ersten Anhängen. Nach dem Anlegen von `runtime-prev-<ts>.tar.gz` bleiben die neuesten 3, ältere werden einzeln mit vollem Pfad gelöscht; am Ende eine Log-Zeile mit der Größe von `backups/`. Tests: `.env` ohne Zeilenende (roter Fall zuerst), vier vorhandene runtime-prev → drei bleiben, die neuesten.
 Beweis: main@6895f8eaf scripts/update.sh:954-973 (Stub-Lauf: KEY=wertNEUER_KEY=); scripts/update.sh:787,808-817 · Dedup-Key: bug:ops:update.sh:migrate-env-no-trailing-newline, ref:ops:update.sh:backups-grow-unbounded
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
