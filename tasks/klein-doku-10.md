@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-doku-10 — Erstkontakt-Doku in Einklang mit dem Code — Task-Ledger
-Status: bereit · Branch: feature/klein-doku-10 · Review: am Ende
+Status: aktiv · Branch: feature/klein-doku-10 · Review: am Ende
 Spec: docs/features/klein-doku-10.md (Roadmap R-1716)
 Heavy: none — reine Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -42,6 +42,17 @@ Beweis: Umschau 2026-11-23 · docker-compose.yml (frps: `cap_drop: [ALL]`, `cap_
 Semantik: docker-compose.yml, Kommentar am frps-Block (Capabilities mit Begründung)
 Dedup-Key: ref:docs:README.md:first-contact-drift-security
 Änderung: Der Eintrag „frps container capability hardening — attempted and reverted“ fällt aus „Accepted“ (frps läuft mit `cap_drop: [ALL]` und vier Capabilities, kein Restrisiko mehr); „Base-image / GitHub-Action tag pinning“ verliert den Pinning-Teil (Basis-Images per Digest, Actions per Commit-SHA) und behält SMART-Sanitisierung und `MONITOR_API_KEY`.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die Änderung selbst
+
+### T4 — Funde der Abschlussprüfung: Signatur-Satz, API-Referenz, Pfad  [ ]
+Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, DEVELOPMENT.md
+Review: am Ende (Branch-Review)
+Task-Review: am Ende
+Beweis: Branch-Review 2026-11-24 · scripts/update.sh (`MINISIGN_PUBKEY` gesetzt, bricht ohne minisign ab), apps/server/app/main.py:184-192 (Token nach `.bootstrap_setup`, Log nennt nur Pfad)
+Semantik: docs/en/admin/installation.html: `docker compose exec server cat /app/data/.bootstrap_setup`
+Dedup-Key: ref:docs:README.md:first-contact-drift-review
+Änderung: „Ist die Release-Signatur scharf geschaltet“ (DE) / „When release signing is armed“ (EN) fällt: `update.sh` prüft die Signatur immer und bricht auch ohne `minisign` ab. Die API-Referenz (DE+EN) sagt, der Setup-Token stehe im WARNING-Log; er steht in `DATA_DIR/.bootstrap_setup`, das Log nennt nur den Pfad. `DEVELOPMENT.md`: der Pfad im lokalen Lauf ist `.bootstrap_setup` im `DATA_DIR`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 
