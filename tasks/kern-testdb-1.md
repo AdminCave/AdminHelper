@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-testdb-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-testdb-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-testdb-1 · Review: pro Task
 Spec: docs/features/kern-testdb-1.md (Roadmap R-0700)
 Heavy: none — nur Testdateien und DEVELOPMENT.md; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,10 @@ Review: approve (.ah-out/review/kern-testdb-1/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_db_token_store.py tests/test_inventory.py tests/test_enroll_renew.py tests/test_cli.py
 Doku: → T6
 
-### T6 — Doku: welche Suite auf welcher Datenbank läuft  [ ]
-Komponente: scripts · Dateien: DEVELOPMENT.md
+### T6 — Doku: welche Suite auf welcher Datenbank läuft  [x]
+Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4fd86443d 2026-11-24T13:56:52+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: R-0700. Der Abschnitt „Postgres-gegattert“ und die lokalen Python-Tests nennen: Monitoring und CA-Issuer laufen auf Postgres, sobald `DATABASE_URL` oder `AH_TEST_DB` auf eines zeigt (eigene abgeleitete Datenbank), sonst auf SQLite.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task

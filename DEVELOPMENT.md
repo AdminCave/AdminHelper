@@ -156,6 +156,8 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   SQLite-URL macht `FOR UPDATE` zum No-op, der Test liefe dann grün, ohne je ein
   Lock geprüft zu haben. `run.sh` kennt diese Skips und gattert sie auf dasselbe
   Merkmal: zeigt `DATABASE_URL` auf ein Postgres, ist ein Skip dort ein Fehler.
+  Die übrigen Datenbank-Tests von Monitoring und CA-Issuer skippen nicht: Ohne
+  Postgres laufen sie auf SQLite (Abschnitt „Python-Tests lokal (ohne Docker)“).
 
 **Dependency-Updates laufen agent-getrieben** (kein Dependabot mehr): Versionen
 in der `.in` anheben bzw. `pip-compile --upgrade` fahren, Lock regenerieren,
@@ -193,7 +195,13 @@ mkdir -p ~/.local/bin && ln -s ~/.cache/ah-venv/bin/ruff ~/.local/bin/ruff
 
 ### Python-Tests lokal (ohne Docker)
 
-`monitoring` und `ca-issuer` sind reine Logik-Suiten und brauchen **kein** Postgres.
+`monitoring` und `ca-issuer` laufen ohne Postgres durch: Ihre Datenbank-Tests nehmen dann ein
+SQLite im Speicher. Zeigt `DATABASE_URL` (CI) oder `AH_TEST_DB` (nach `source .devenv.sh`) auf ein
+Postgres, laufen sie dort, in einer eigenen, aus der URL abgeleiteten Datenbank (`<db>_mon_unit`
+bzw. `<db>_ca_unit`; Fixture `db_engine` in der jeweiligen `tests/conftest.py`). Der Fixture legt
+sie beim ersten Lauf an, die Rolle braucht dafür `CREATEDB`; vor jedem Test leert er alle Tabellen.
+Erst Postgres prüft Fremdschlüssel, Sperren und Trigger wie im Betrieb, `verify.sh` und die CI
+fahren die Suiten deshalb dort.
 Ihre Test-Deps stehen in der jeweiligen `requirements-dev.txt` — bei `ca-issuer` auch
 `httpx`, das nur der starlette-`TestClient` der Tests braucht, nicht die App selbst
 (deshalb steht es dort und nicht in `requirements.in`). Der `TestClient` bevorzugt seit starlette 1.10 `httpx2`
