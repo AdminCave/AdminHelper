@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pycommon-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-pycommon-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-pycommon-1 · Review: pro Task
 Spec: docs/features/kern-pycommon-1.md (Roadmap R-0698)
 Heavy: linux-full — Build-Kontext und Dockerfiles von server und monitoring, `docker-compose.test.yml`; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
