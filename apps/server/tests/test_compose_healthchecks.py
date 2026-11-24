@@ -33,6 +33,7 @@ _COMPOSE = Path(__file__).resolve().parents[3] / "docker-compose.yml"
 _NO_HEALTHCHECK = {
     "scheduler": "opens no port; it only runs jobs against postgres and redis",
     "db-init": "one-shot: sets up the database roles and exits; dependents wait for service_completed_successfully",
+    "pg-backup": "opens no port; a loop that dumps once a day and sleeps, nothing depends on it",
 }
 
 

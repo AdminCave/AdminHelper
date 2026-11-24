@@ -180,6 +180,8 @@ grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.34.0' "$INST/.env" \
   && ok "frps image pinned to ref" || bad "frps image not pinned to ref"
 [ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = sikrit123 ] \
   && ok "admin password reached create-admin on stdin" || bad "create-admin got no password on stdin"
+[ "$(stat -c %a "$INST/backups" 2>/dev/null)" = 700 ] \
+  && ok "install creates backups/ owner-only (0700)" || bad "backups/: mode $(stat -c %a "$INST/backups" 2>/dev/null || echo missing)"
 # The summary names the desktop button by its German label, folded to ae/oe/ue like
 # the rest of install.sh's output. The label comes from the desktop's dictionary, so
 # a rename there turns this red instead of the two drifting apart (R-0242).
@@ -188,6 +190,16 @@ label=$(grep -m1 "'login.enroll.switch'" "$REPO_ROOT/apps/desktop/ui/src/lib/i18
 [ -n "$label" ] && ok "desktop button label read: $label" || bad "no login.enroll.switch label in dictionaries.ts"
 { [ -n "$label" ] && grep -qF "\"$label\"" <<<"$out"; } \
   && ok "summary names the desktop button" || bad "summary does not name the desktop button \"$label\""
+
+# ── 1b. the bundle and RUNTIME_FILES carry the same ops scripts (R-1713) ─────
+# The ops docs point to scripts/pg-restore.sh; a script missing from the bundle never
+# reaches a host, one missing from RUNTIME_FILES not a pre-bundle install.
+bundle=$(sed -n '/^ *cp scripts\/install.sh/,/stage\/scripts\//p' "$REPO_ROOT/.github/workflows/release.yml" \
+  | grep -oE 'scripts/[a-z0-9-]+\.sh' | grep -vx 'scripts/install.sh' | sort | tr '\n' ' ')
+runtime=$(sed -n 's/^RUNTIME_FILES="\(.*\)"$/\1/p' "$INSTALL" | tr ' ' '\n' | grep '^scripts/' | sort | tr '\n' ' ')
+{ [ -n "$bundle" ] && [ "$bundle" = "$runtime" ] && grep -q 'scripts/pg-restore.sh' <<<"$bundle"; } \
+  && ok "release bundle and RUNTIME_FILES ship the same ops scripts, pg-restore.sh included" \
+  || bad "bundle [$bundle] vs RUNTIME_FILES [$runtime]"
 
 # ── 2. fail-closed: a release tag with no bundle asset must abort, not raw-fetch
 INST="$WORK/inst2"
@@ -224,6 +236,44 @@ done <<< "$(images_for 0.36.0)"
   || { echo "$out" | sed 's/^/    │ /'; bad "IMAGES pins: rc=$rc, $n of 5 lines"; }
 [ ! -e "$INST/IMAGES" ] && ok "install leaves no IMAGES in the install directory" \
   || bad "install left IMAGES in the install directory"
+
+# ── 3c. restart after an aborted attempt keeps the release's pins (R-1712) ────
+# The first attempt dies at compose up; the restart from the directory has no --ref
+# and must still pin the bundle's version and digests, not fall to :latest.
+INST="$WORK/inst3c"
+out=$(AH_TEST_UP_FAIL=1 run_install --ref v0.36.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && [ -f "$INST/VERSION" ] && [ -f "$INST/IMAGES" ]; } \
+  && ok "an aborted attempt leaves VERSION and IMAGES for the restart" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "aborted attempt: rc=$rc, VERSION/IMAGES missing"; }
+sed -i '/_IMAGE=/d' "$INST/.env"
+# The release bundle carries install.sh (release.yml); this fixture's sources do not.
+cp "$INSTALL" "$INST/scripts/install.sh"
+out=$( (cd "$INST" && bash ./scripts/install.sh --domain t --admin-password sikrit123 --yes) 2>&1); rc=$?
+n=0
+while IFS= read -r want; do
+  [ "$(LC_ALL=C grep -a -c -x -F "$want" "$INST/.env" 2>/dev/null)" = 1 ] && n=$((n + 1))
+done <<< "$(images_for 0.36.0)"
+{ [ $rc -eq 0 ] && [ "$n" = 5 ]; } \
+  && ok "the restart from the directory pins tag and digest of the aborted release" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "restart pins: rc=$rc, $n of 5 lines"; }
+{ [ ! -e "$INST/VERSION" ] && [ ! -e "$INST/IMAGES" ]; } \
+  && ok "the successful restart removes VERSION and IMAGES" || bad "VERSION/IMAGES left after success"
+# A VERSION that is no release tag, or an IMAGES that fails the bundle's check, stops
+# the restart before .env changes; it never falls back to :latest or to the tag alone.
+for defect in version images; do
+  INST="$WORK/inst3c-$defect"
+  out=$(AH_TEST_UP_FAIL=1 run_install --ref v0.36.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1)
+  cp "$INSTALL" "$INST/scripts/install.sh"
+  case $defect in
+    version) printf 'latest\n' > "$INST/VERSION"; want='VERSION in .* is not a release tag' ;;
+    images)  sed -i '1d' "$INST/IMAGES"; want='IMAGES file in .* is invalid' ;;
+  esac
+  before=$(sha256sum < "$INST/.env")
+  out=$( (cd "$INST" && bash ./scripts/install.sh --domain t --admin-password sikrit123 --yes) 2>&1); rc=$?
+  { [ $rc -ne 0 ] && grep -qE "$want" <<<"$out" && [ "$(sha256sum < "$INST/.env")" = "$before" ]; } \
+    && ok "restart with a bad $defect file stops before .env changes" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "bad $defect on restart: rc=$rc"; }
+done
 # A present file applies: each defect aborts before .env, never falls back to the tag.
 good=$(images_for 0.36.0)
 bad_images() {

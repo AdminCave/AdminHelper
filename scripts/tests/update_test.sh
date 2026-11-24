@@ -499,6 +499,40 @@ for pre in '# NEW_FEATURE_FLAG=off' '#NEW_FEATURE_FLAG=off' '  NEW_FEATURE_FLAG=
     && ok "[$pre] in .env: the migration appends NEW_FEATURE_FLAG=on $want time(s)" || bad "[$pre]: rc=$rc $(grep NEW_FEATURE "$INST/.env") $out"
 done
 
+# A .env that ends without a newline: the new key gets a line of its own and the
+# last line keeps its value (R-1692).
+INST="$WORK/inst7-noeol"; make_install 0.33.0 "$SRC_OLD" "$INST"
+printf 'LAST_KEY=wert' >> "$INST/.env"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -qx 'LAST_KEY=wert' "$INST/.env" && grep -qx 'NEW_FEATURE_FLAG=on' "$INST/.env"; } \
+  && ok ".env without a final newline: the new key on its own line, the last value intact" \
+  || bad ".env without newline: rc=$rc $(grep -E 'LAST_KEY|NEW_FEATURE' "$INST/.env")"
+
+# ── 7b. runtime snapshots: the newest three stay (R-1714) ─────────────────────
+INST="$WORK/inst7b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"
+for n in 1 2 3 4; do : > "$INST/backups/runtime-prev-2020010${n}T000000Z.tar.gz"; done
+: > "$INST/backups/adminhelper-backup-20200101T000000Z.tar.gz"
+out=$(run_update "$INST" 2>&1); rc=$?
+left=$(cd "$INST/backups" && find . -maxdepth 1 -name 'runtime-prev-*' -printf '%f\n' | sort | tr '\n' ' ')
+{ [ $rc -eq 0 ] && [ "$(wc -w <<<"$left")" = 3 ] \
+  && grep -q 'runtime-prev-20200103T000000Z' <<<"$left" && grep -q 'runtime-prev-20200104T000000Z' <<<"$left" \
+  && ! grep -q '2020010[12]' <<<"$left"; } \
+  && ok "three runtime snapshots stay: the new one and the two newest old ones" || bad "snapshots left: rc=$rc $left"
+[ -e "$INST/backups/adminhelper-backup-20200101T000000Z.tar.gz" ] \
+  && ok "full backups are not pruned" || bad "a full backup was deleted"
+grep -q 'backups/ holds' <<<"$out" && ok "the update names the size of backups/" || bad "no size line"
+# A clock set back between updates leaves older snapshots with newer names: this
+# run's snapshot, the rollback's only basis, stays all the same.
+INST="$WORK/inst7c"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"
+for n in 1 2 3; do : > "$INST/backups/runtime-prev-2099010${n}T000000Z.tar.gz"; done
+out=$(run_update "$INST" 2>&1); rc=$?
+left=$(cd "$INST/backups" && find . -maxdepth 1 -name 'runtime-prev-*' -printf '%f\n' | sort | tr '\n' ' ')
+{ [ $rc -eq 0 ] && [ "$(wc -w <<<"$left")" = 3 ] && grep -q 'runtime-prev-20990102T' <<<"$left" \
+  && grep -q 'runtime-prev-20990103T' <<<"$left" && grep -qv 'runtime-prev-2099' <<<"$(tr ' ' '\n' <<<"$left")"; } \
+  && ok "this run's snapshot stays even when older ones carry newer names" || bad "future-dated snapshots: rc=$rc $left"
+
 # ── 8. self-update: on-disk update.sh differs → re-exec into the release's one ─
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"
 printf '\n# stale local marker — forces a self-update hand-off\n' >> "$INST/scripts/update.sh"

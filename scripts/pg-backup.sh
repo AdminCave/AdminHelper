@@ -10,6 +10,10 @@
 
 set -e
 
+# Owner-only dumps and partial files, as backup.sh writes its archives, whoever
+# created the directory they land in.
+umask 077
+
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 TS=$(date +%Y-%m-%d_%H-%M)

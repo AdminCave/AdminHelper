@@ -63,6 +63,8 @@ mkdir -p "$BIN"
 cat > "$BIN/apt-get" <<EOF
 #!/usr/bin/env bash
 echo "\$@" >> "$WORK/apt-get.calls"
+# The repo TLS stance apt meets at index time (before any provisioning).
+[ "\$1" = update ] && cat "\$AH_APT_CONF_DIR/99adminhelper-ca" >> "$WORK/apt-conf-at-update" 2>/dev/null
 # AH_STUB_SMART_FAIL=1: the smartmontools install fails (the warn-only path).
 [ -n "\${AH_STUB_SMART_FAIL:-}" ] && [[ " \$* " == *" smartmontools "* ]] && exit 100
 exit 0
@@ -132,7 +134,7 @@ fresh_env() {
     export AH_RPM_KEY_DIR="$ROOT/rpm-gpg"
     export AH_IDENTITY_CA="$ROOT/identity/ca.crt"
     export AH_REPO_CA="$ROOT/apt/adminhelper-ca.crt"
-    rm -f "$WORK/provision.args" "$WORK/provision.stdin" "$WORK/apt-get.calls" "$WORK/dnf.calls"
+    rm -f "$WORK/provision.args" "$WORK/provision.stdin" "$WORK/apt-get.calls" "$WORK/dnf.calls" "$WORK/apt-conf-at-update"
     unset AH_STUB_NO_CAFP AH_STUB_NO_TOKEN_STDIN AH_STUB_ENROLL AH_STUB_VIRT AH_STUB_SMART_FAIL 2>/dev/null || true
 }
 
@@ -271,6 +273,41 @@ fresh_env; export AH_PKG_MGR=apt
 out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
 [ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc"
 [ ! -e "$WORK/provision.args" ] && ok "provision not called" || bad "provision ran without --server-id"
+
+echo "── re-run without --server-id on an enrolled host keeps the pinned repo TLS ──"
+fresh_env; export AH_PKG_MGR=apt
+mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo test-ca > "$AH_IDENTITY_CA"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q "CAInfo \"$AH_REPO_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
+    && ! grep -q "Verify-Peer" "$AH_APT_CONF_DIR/99adminhelper-ca" \
+    && [ "$(cat "$AH_REPO_CA" 2>/dev/null)" = test-ca ] \
+    && ok "apt, enrolled: CAInfo on the CA copy, no Verify-Peer" \
+    || bad "apt enrolled: rc=$rc conf=$(cat "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null)"
+fresh_env; export AH_PKG_MGR=dnf
+mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo test-ca > "$AH_IDENTITY_CA"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q "sslcacert=$AH_IDENTITY_CA" "$AH_YUM_REPO_DIR/adminhelper.repo" 2>/dev/null \
+    && ! grep -q "sslverify=0" "$AH_YUM_REPO_DIR/adminhelper.repo" \
+    && ok "dnf, enrolled: sslcacert, no sslverify=0" \
+    || bad "dnf enrolled: rc=$rc repo=$(grep ssl "$AH_YUM_REPO_DIR/adminhelper.repo" 2>/dev/null)"
+# A provisioning run on a host that holds a CA (maybe of another server's PKI) fetches
+# the index in the bootstrap stance and pins only after enrolling.
+fresh_env; export AH_PKG_MGR=apt
+mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo old-ca > "$AH_IDENTITY_CA"
+out=$(run_script --server https://srm.example.com --token t --server-id s --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q 'Verify-Peer "false"' "$WORK/apt-conf-at-update" 2>/dev/null \
+    && ! grep -q CAInfo "$WORK/apt-conf-at-update" \
+    && grep -q "CAInfo \"$AH_REPO_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" && [ "$(cat "$AH_REPO_CA")" = test-ca ] \
+    && ok "apt, --server-id with an old CA: bootstrap before enrolling, the new CA pinned after" \
+    || bad "apt provisioning with old CA: rc=$rc at-update=$(cat "$WORK/apt-conf-at-update" 2>/dev/null)"
+fresh_env; export AH_PKG_MGR=apt
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q 'Verify-Peer "false"' "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null && [ ! -e "$AH_REPO_CA" ] \
+    && ok "apt, not enrolled: bootstrap stance, no CA copy" || bad "apt not enrolled: rc=$rc"
+fresh_env; export AH_PKG_MGR=dnf
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q "sslverify=0" "$AH_YUM_REPO_DIR/adminhelper.repo" 2>/dev/null \
+    && ok "dnf, not enrolled: bootstrap stance" || bad "dnf not enrolled: rc=$rc"
 
 # case_keyring apt|rpm FILE... — this case's repo tree serves the FILEs,
 # concatenated in this order, as its apt keyring or rpm key.
