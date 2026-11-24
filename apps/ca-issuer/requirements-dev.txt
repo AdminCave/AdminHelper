@@ -13,8 +13,8 @@
 
 -r requirements.in
 
-pytest
-httpx
+pytest>=9.2.0
+httpx>=0.28.1
 
 # Generatoren (Harness 8b): schema-getriebene API-Tests gegen die eigene OpenAPI.
 hypothesis==6.170.14
