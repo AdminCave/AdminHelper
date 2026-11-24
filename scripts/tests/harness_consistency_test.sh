@@ -165,9 +165,10 @@ grep -q 'Einsatzart `task`' "$FB" && grep -q 'Einsatzart `branch`' "$FB" && grep
   && ok "/feature-build runs the reviewer in both modes and review.sh final" || bad "/feature-build lacks a mode or the final check"
 # main requires a merge queue (R-1344): /feature-build enqueues and waits with
 # queue-wait.sh, bound to the checked head (R-1725); the hand-built queue (merge main in,
-# one merge per CI cycle) is gone.
+# one merge per CI cycle) is gone. Every PR check is required since 2026-11-24 (R-1751), so
+# it enqueues without waiting for the PR CI.
 grep -q 'queue-wait.sh' "$FB" && grep -q 'gh pr merge <n> --match-head-commit' "$FB" && ! grep -q 'Merge je CI-Zyklus' "$FB" \
-  && ! grep -q 'gh pr merge <n> --merge' "$FB" && [ -f "$ROOT/scripts/dev/queue-wait.sh" ] \
+  && ! grep -q 'gh pr merge <n> --merge' "$FB" && ! grep -q 'gh pr checks <n> --watch' "$FB" && [ -f "$ROOT/scripts/dev/queue-wait.sh" ] \
   && ok "/feature-build enqueues into the merge queue and waits with queue-wait.sh" \
   || bad "/feature-build still merges by hand or does not wait with queue-wait.sh"
 # The path-bound rules do not load for worktree paths; whoever works there reads them.
