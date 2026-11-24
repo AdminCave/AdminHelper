@@ -68,6 +68,18 @@ q "OPEN - QUEUED -" "OPEN - - -" "OPEN - - -" "MERGED never - -"
 q "OPEN - - -" "OPEN - QUEUED -" "OPEN - - -" "MERGED aaa - -"
 [ $rc -eq 0 ] && [ "$OUT" = "merged aaa" ] && ok "a single read without entry is not yet out" || bad "gap: rc=$rc [$OUT]"
 
+# Enqueued early (/feature-build 4.7): auto-merge waits for the pull request's checks.
+q "OPEN - - auto PENDING" "OPEN - - auto FAILURE" "MERGED never - -"
+[ $rc -eq 1 ] && grep -q '^checks red: #42 .*FAILURE.*--disable-auto' <<<"$OUT" && [ "$READS" = 2 ] \
+  && ok "auto-merge waiting on red checks -> 1 at once, with the way out" || bad "red checks: rc=$rc reads=$READS [$OUT]"
+grep -q "statusCheckRollup" "$WORK/args" && ok "it asks for the check state of the last commit" || bad "args: no statusCheckRollup"
+q "OPEN - - auto ERROR"; [ $rc -eq 1 ] && grep -q 'ERROR' <<<"$OUT" && ok "ERROR counts as red" || bad "error: rc=$rc [$OUT]"
+# Counter-checks: pending checks keep waiting; in the queue the PR's own checks no longer decide.
+q "OPEN - - auto PENDING" "OPEN - AWAITING_CHECKS - SUCCESS" "MERGED ddd - -"
+[ $rc -eq 0 ] && [ "$OUT" = "merged ddd" ] && ok "pending checks wait, then the queue merges" || bad "pending: rc=$rc [$OUT]"
+q "OPEN - QUEUED - FAILURE" "MERGED eee - -"
+[ $rc -eq 0 ] && [ "$OUT" = "merged eee" ] && ok "red checks while queued are the queue's business" || bad "queued red: rc=$rc [$OUT]"
+
 q "CLOSED - - -"; [ $rc -eq 1 ] && grep -q 'closed' <<<"$OUT" && ok "closed -> 1" || bad "closed: rc=$rc [$OUT]"
 q "WEIRD - - -"; [ $rc -eq 2 ] && grep -q 'unexpected' <<<"$OUT" && ok "an unknown state -> 2" || bad "weird: rc=$rc [$OUT]"
 

@@ -16,9 +16,12 @@ erst dann ein (`/feature-build` §4.7). Kevin hat 2026-11-24 diktiert: beides um
 - Server-`pytest` in vier Shards je Leg (`server` und `python-lock-server`): `pytest` je Shard von ~12 auf
   ~6 min; die größte Testdatei wiegt 282 s von 1121 s (`apps/server/tests/shard_weights.toml`), bei vier Shards
   also kein Shard über ~25 % der Suite.
-- Die Session reiht gleich nach `gh pr create` und den Prüfungen ein (`gh pr merge <n>` schaltet bei laufender CI
-  Auto-Merge ein; die Queue übernimmt bei grüner PR-CI), gebunden an den geprüften HEAD (`--match-head-commit`,
-  R-1725 a). `queue-wait.sh` erkennt rote PR-Checks bei wartendem Auto-Merge (Exit 1 statt Timeout, R-1725 b).
+- Die Session reiht gebunden an den geprüften HEAD ein (`--match-head-commit`, R-1725 a). `queue-wait.sh` erkennt
+  rote PR-Checks bei wartendem Auto-Merge (Exit 1 statt Timeout, R-1725 b).
+- Verworfen beim Bau (2026-11-24): früh, vor dem Ende der PR-CI einreihen. Auto-Merge wartet nur auf die 21
+  Pflicht-Checks des Rulesets; 14 Checks eines PRs sind keine, darunter `Public repo guard (review.sh sec)`, die
+  image-lock-Suiten, der From-outside-Stack und Schema-Fuzzing. Früh eingereiht ginge ein PR durch, während einer von
+  ihnen noch läuft oder rot ist. Möglich erst, wenn Kevin diese Checks im Ruleset zur Pflicht macht.
 - Nicht-Ziel: Queue-Gruppengröße (Ruleset, Kevin), weniger Tests im Queue-Lauf.
 
 ## Betroffene Komponenten & Dateien
@@ -35,8 +38,7 @@ GitHub-GraphQL: `PullRequest.commits(last:1).nodes.commit.statusCheckRollup.stat
 ## Trade-offs & Alternativen
 - Vier Shards (empfohlen) gegen sechs: über vier bremst die größte Datei (282 s), und jeder Shard kostet einen Runner
   mehr. Im öffentlichen Repo kosten Runner-Minuten nichts; parallel laufen bis zu 12 Server-Jobs je Lauf.
-- Früh einreihen: eine rote PR-CI hält den PR dann mit wartendem Auto-Merge; `queue-wait.sh` meldet das, die Session
-  schaltet Auto-Merge ab (`gh pr merge <n> --disable-auto`), bevor sie korrigiert.
+- Früh einreihen: verworfen, siehe Ziel (Pflicht-Checks).
 
 ## Risiken & Rollback
 Ein Shard ohne Testdatei oder eine ungleiche Sammlung fängt der vorhandene Manifest-Abgleich (`SHARDS` muss zur

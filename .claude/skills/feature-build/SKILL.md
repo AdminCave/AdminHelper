@@ -126,13 +126,16 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
 7. `gh pr checks <n> --watch --fail-fast`. Einreihen (CLAUDE.md §2): CI im ersten Anlauf grün, die Läufe aus 3
    grün, `review.sh final` Exit 0 auf dem PR-Stand, `security` `approve` wo nötig, keine Ersatzprüfung im Branch
    (auch nicht in einem Task-Commit), keine Sperre durch den neuesten Sammellauf (§5) → `bash WT/scripts/dev/review.sh
-   final WT/tasks/<slug>.md > <Scratchpad>/final.md && gh pr merge <n>` reiht in die Merge Queue ein (ohne
-   Merge-Methode, die setzt die Queue; nie `--admin`, das umginge sie; ohne `--delete-branch`: gh entfernt sonst den
-   Worktree). Dann `bash WT/scripts/dev/queue-wait.sh <n>` aus `WT` als Hintergrund-Wächter; die Session baut
-   solange ein anderes Vorhaben (CLAUDE.md §2). Exit 0 → die Zeile `merged <sha>` gibt den Merge-Commit für 8, den
+   final WT/tasks/<slug>.md > <Scratchpad>/final.md && gh pr merge <n> --match-head-commit "$(git -C WT rev-parse
+   HEAD)"` reiht in die Merge Queue ein, gebunden an den geprüften Stand (ohne Merge-Methode, die setzt die Queue; nie
+   `--admin`, das umginge sie; ohne `--delete-branch`: gh entfernt sonst den Worktree). Nicht vor dem Ende der PR-CI
+   einreihen: Auto-Merge wartet nur auf die Pflicht-Checks des Rulesets, nicht auf jeden Check. Dann `bash
+   WT/scripts/dev/queue-wait.sh <n>` aus `WT` als Hintergrund-Wächter; die Session baut solange ein anderes Vorhaben
+   (CLAUDE.md §2). Exit 0 → die Zeile `merged <sha>` gibt den Merge-Commit für 8, den
    Remote-Branch danach mit `git push origin --delete feature/<slug>` löschen. Exit 1 (aus der Queue gefallen) → den
    roten `merge_group`-Lauf lesen (`gh run list --workflow ci.yml --event merge_group -L 5`): Konflikt → 6, dann
    erneut 7; flaky → einmal neu einreihen plus Roadmap-Zeile; echt rot → Task ins Ledger wie 4.4 oder Übergabe.
+   Exit 1 mit `checks red` (Auto-Merge wartet auf rote Checks) → `gh pr merge <n> --disable-auto`, dann wie rote CI.
    Exit 2 oder 3 → melden (Infrastruktur oder hängende Queue), nicht von Hand mergen. Ist die wartende Session
    weg, meldet der Merge-Wächter (`scripts/dev/merge-watch.sh`, eine `WARN:`-Zeile im AH-STATUS) denselben Rauswurf:
    die Session des Vorhabens reagiert wie auf Exit 1, auf „main ist rot“ wie in 8. Sonst → Übergabe an Kevin:
