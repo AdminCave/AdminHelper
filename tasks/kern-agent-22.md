@@ -30,8 +30,10 @@ Beweis: main@4c8173e06 apps/agent/internal/monitor/collector.go:304-321 (disk.Us
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: changelog.d/kern-agent-22.md
 
-### T4 — R-1693: Windows-Self-Update vertraut der enrollten CA  [ ]
-Komponente: agent · Dateien: apps/agent/internal/selfupdate/apply_windows.go, apps/agent/internal/selfupdate/client.go, apps/agent/internal/selfupdate/client_test.go
+### T4 — R-1693: Windows-Self-Update vertraut der enrollten CA  [x]
+Komponente: agent · Dateien: apps/agent/internal/selfupdate/apply_windows.go, apps/agent/internal/selfupdate/client.go, apps/agent/internal/selfupdate/client_test.go, changelog.d/kern-agent-22.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6d60fb5ff 2026-11-24T17:33:09+01:00
+Review: approve (.ah-out/review/kern-agent-22/T4.verdict.json)
 Beweis: main@4c8173e06 apps/agent/internal/selfupdate/apply_windows.go:131 (httpclient.New(cfg.CACert, …) auch mit enrollter Identität) · Dedup-Key: aus der Zeile R-1693
 Änderung: Eine Funktion ohne Build-Tag wählt den Client des Self-Updates: mit enrollter Identität (`enroll.Provisioned`) die CA aus `enroll.CAPath`, sonst wie bisher `cfg.CACert`/`cfg.Insecure`; `check` nutzt sie. Test erst rot auf Linux: ein TLS-Server mit einem Zertifikat der enrollten CA wird mit Identität akzeptiert, ohne passende CA abgelehnt. Windows prüft die CI. Neue Dateien mit SPDX-Header. `security` prüft die Task.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/

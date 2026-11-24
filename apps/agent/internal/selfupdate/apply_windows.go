@@ -21,7 +21,6 @@ import (
 	"golang.org/x/sys/windows"
 
 	"adminhelper-agent/internal/config"
-	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/logging"
 	"adminhelper-agent/internal/service"
 )
@@ -126,9 +125,9 @@ func check(ctx context.Context, current, dir string) {
 		logger.Warnf("self-update: %v", err)
 		return
 	}
-	// :8445 serves the same certificate as :443, so the agent's own TLS settings apply. The
+	// :8445 serves the same certificate as :443, so the agent's own trust applies. The
 	// signature over SHA256SUMS, not the transport, makes a release genuine.
-	client, err := httpclient.New(cfg.CACert, cfg.Insecure, fetchTimeout)
+	client, err := updateClient(config.AgentPkiDir(), cfg.CACert, cfg.Insecure, fetchTimeout)
 	if err != nil {
 		logger.Warnf("self-update: %v", err)
 		return
