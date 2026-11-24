@@ -285,10 +285,11 @@ def test_no_db_session_is_open_while_the_agent_route_forwards(
 
     app.dependency_overrides[database.get_db] = _get_db
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
-    open_at_forward: list[int] = []
+    # (sessions opened, sessions closed) at the moment of the forward
+    open_at_forward: list[tuple[int, int]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        open_at_forward.append(len(opened) - len(closed))
+        open_at_forward.append((len(opened), len(closed)))
         return httpx.Response(200, content=_PLAN, headers={"content-type": "application/json"})
 
     monkeypatch.setattr(proxy, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
@@ -302,6 +303,7 @@ def test_no_db_session_is_open_while_the_agent_route_forwards(
         )
 
     assert resp.status_code == 200, resp.text
-    assert open_at_forward == [0]
+    # [0] would also hold if the scope check ran after the forward or not at all
+    assert open_at_forward == [(1, 1)]
     assert len(opened) == 1  # the scope check ran on its own session
     assert entered == []

@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@f97e05f20`.
 
-### T1 — Server-Test: Scope-Session vor dem Forward geöffnet und geschlossen (R-1762)  [ ]
+### T1 — Server-Test: Scope-Session vor dem Forward geöffnet und geschlossen (R-1762)  [x]
 Komponente: server · Dateien: apps/server/tests/test_monitoring_proxy_plan.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @184711f2c 2026-11-24T20:25:52+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer kern-server-14 2026-11-24, test_monitoring_proxy_plan.py:305 (`open_at_forward == [0]` unterscheidet nichts)
 Dedup-Key: ref:server:test_monitoring_proxy_plan.py:open_at_forward
 Änderung: Der Handler merkt `(len(opened), len(closed))`; die Assertion ist `[(1, 1)]` statt `[0]`. Gegenprobe: die Scope-Prüfung hinter den Forward legen, der Test wird rot; Ergebnis in den Commit-Body.
