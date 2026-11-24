@@ -14,9 +14,9 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: → T7
 
 ### T2 — R-1695: keine DB-Verbindung über den Monitoring-Forward  [ ]
-Komponente: server · Dateien: apps/server/app/modules/monitoring_proxy/router.py, apps/server/app/core/identity.py, apps/server/tests/test_monitoring_proxy_plan.py, apps/server/tests/test_monitoring_proxy_audit.py
+Komponente: server · Dateien: apps/server/app/modules/monitoring_proxy/router.py, apps/server/app/core/identity.py, apps/server/tests/test_monitoring_proxy_plan.py, apps/server/tests/test_monitoring_proxy_audit.py, apps/server/tests/conftest.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_certificate_check.py
 Änderung: `proxy_agent_report` und `proxy_agent_plan` prüfen den Scope auf einer kurzen eigenen Session, wie `authenticate_stream_user`. `proxy_to_monitoring` gibt seine Session vor dem Forward frei. Der Test zählt die ausgeliehenen Pool-Verbindungen während eines gestubbten Forwards (0) und prüft, dass Scope-Ablehnung und Audit unverändert bleiben.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_proxy_plan.py tests/test_monitoring_proxy_audit.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_proxy_plan.py tests/test_monitoring_proxy_audit.py tests/test_mtls_scope.py tests/test_certificate_check.py
 Doku: keine (internes Verhalten)
 
 ### T3 — R-1697: Waisen gelöschter Server im Tag-Abgleich abräumen  [x]
@@ -27,8 +27,10 @@ Review: approve (.ah-out/review/kern-server-14/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: → T7
 
-### T4 — R-1698: Digest-Fehlschlag mit Backoff wie der normale Versand  [ ]
+### T4 — R-1698: Digest-Fehlschlag mit Backoff wie der normale Versand  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/digest.py, apps/server/tests/test_notification_digest.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ee24d908f 2026-11-24T15:49:52+01:00
+Review: approve (.ah-out/review/kern-server-14/T4.verdict.json)
 Änderung: Ein fehlgeschlagener Digest setzt `next_attempt_at` wie `outbox.py` (linear); die Auswahl nimmt nur fällige Einträge. Test: ein Relay-Ausfall von 20 min verwirft den Digest nicht mehr, der Versuch danach geht.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_digest.py
 Doku: → T7
