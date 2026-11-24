@@ -25,8 +25,10 @@ Wächter und beide Dienste sind nur zusammen grün.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T3
 
-### T2 — Mail-Renderer in ah_common (R-1740)  [ ]
+### T2 — Mail-Renderer in ah_common (R-1740)  [x]
 Komponente: server · Dateien: apps/pycommon/ah_common/mail_template.py, apps/server/app/modules/notifications/mail_template.py, apps/monitoring/app/mail_template.py, apps/monitoring/app/notify_config.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_notify_config.py, apps/monitoring/tests/test_mail_template_parity.py, apps/monitoring/tests/fixtures/mail_template_parity.json, apps/server/tests/test_no_python_copies.py, apps/monitoring/tests/test_alerter.py, apps/server/tests/test_notify_mail_template.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @86cdee5bc 2026-11-24T22:21:01+01:00
+Review: approve (.ah-out/review/kern-pycommon-2/T2.verdict.json)
 Änderung: Der Renderer (`Template`, `Mail`, `DEFAULT`, `PLACEHOLDERS`, `LOGO_CID`, `format_time`, `unknown`, `compose`)
 liegt einmal in `ah_common/mail_template.py` (SPDX); das Server-Modul behält `load`/`applied`/`using`/`current` und
 re-exportiert den Renderer, das Monitoring importiert `ah_common.mail_template` direkt. `_KNOWN` im Wächter wird leer.

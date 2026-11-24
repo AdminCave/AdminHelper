@@ -7,8 +7,8 @@ placeholder replacement, values HTML-escaped in the HTML part and raw in the tex
 the mails unchanged without a template, text and HTML as multipart/alternative, the
 logo as an inline part (multipart/related, Content-ID <logo>), the sender name in
 From, and the outbox, the digest and the personal test sending in the template of
-the panel. The parity fixtures hold the monitoring's copy of the renderer to the same
-output (T7).
+the panel. The fixtures pin the output of ah_common.mail_template, the one renderer the
+hub and the monitoring share.
 """
 
 import json
