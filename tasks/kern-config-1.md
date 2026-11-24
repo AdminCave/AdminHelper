@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-config-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_env.py tests/test_web_idle_timeout.py tests/test_web_session_max.py tests/test_logging_config.py tests/test_env_parity.py tests/test_no_python_copies.py
 Doku: → T5
 
-### T2 — Server: Doku hinter SERVER_ENABLE_DOCS, ERROR bei leerem MONITOR_API_KEY  [ ]
+### T2 — Server: Doku hinter SERVER_ENABLE_DOCS, ERROR bei leerem MONITOR_API_KEY  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_server_docs.py (neu, SPDX), apps/server/tests/test_hooks.py, scripts/tests/sse_push_e2e.sh, docker-compose.yml, .env.example
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2eb19d1df 2026-11-24T11:42:19+01:00
+Review: approve (.ah-out/review/kern-config-1/T2.verdict.json)
 Änderung: R-0699. `docs_url` und `openapi_url` nur mit `SERVER_ENABLE_DOCS` (`1`/`true`/`yes`), wie im Monitoring. Ist `MONITOR_API_KEY` leer, loggt die `lifespan` beim Start einmal einen ERROR mit Verweis auf `scripts/init-secrets.sh`, der Server läuft weiter. `test_hooks` liest das Schema über `app.openapi()`. `sse_push_e2e.sh` wartet auf einen Endpunkt ohne Doku-Schalter. `SERVER_ENABLE_DOCS` wird in Compose an den Server durchgereicht und steht in `.env.example`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_server_docs.py tests/test_hooks.py tests/test_openapi_snapshot.py tests/test_env_parity.py tests/test_schemathesis.py
 Doku: → T5

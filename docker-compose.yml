@@ -95,6 +95,8 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Swagger UI at /api/docs and /openapi.json: off unless 1/true/yes.
+      - SERVER_ENABLE_DOCS=${SERVER_ENABLE_DOCS:-}
       # No DOMAIN/EXTRA_SANS here: nothing in apps/server reads them. They are
       # the ca-issuer's and the gateway's knobs and are set on those services.
       # Uvicorn worker count. Default 1 (single-worker). Set >1 to scale across
