@@ -13,9 +13,7 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import module_sync
 from app.catalog.loader import load_catalog
@@ -26,7 +24,6 @@ from app.catalog.modules.wordpress import MODULE as WP_MODULE
 from app.check_configs import ProbeConfig
 from app.discovery import MAX_CONTAINER_PORTS, apply_discovery
 from app.models import (
-    Base,
     MonitorCheck,
     MonitorDiscovery,
     MonitorFinding,
@@ -199,12 +196,8 @@ PROJECT_SUMMARY = {"services": {"broker": "redis", "webserver": PAPERLESS_IMAGE}
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+def db(db_engine):
+    session = sessionmaker(bind=db_engine)()
     yield session
     session.close()
 

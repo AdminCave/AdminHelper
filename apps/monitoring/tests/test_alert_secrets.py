@@ -14,14 +14,12 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorAlertRule, MonitorTemplate
+from app.models import MonitorAlertRule, MonitorTemplate
 
 
 def test_to_dict_masks_a_set_smtp_password():
@@ -45,14 +43,10 @@ def test_to_dict_leaves_config_without_password_untouched():
 
 
 @pytest.fixture()
-def client_db():
+def client_db(db_engine):
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()

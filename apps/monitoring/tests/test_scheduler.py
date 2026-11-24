@@ -10,13 +10,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import scheduler as sched
 from app.alert_bundle import flush_agent_alerts
-from app.models import Base, MonitorAlertLog
+from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck
 
 # --- _parse_trigger -----------------------------------------------------------
 
@@ -117,16 +115,15 @@ def test_add_check_drops_stale_job_on_switch_to_push_only():
 # --- alert-log cleanup ----------------------------------------------------------
 
 
-def test_alert_log_cleanup_removes_only_old_entries(monkeypatch):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+def test_alert_log_cleanup_removes_only_old_entries(monkeypatch, db_engine):
+    factory = sessionmaker(bind=db_engine)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with factory() as db:
-        # SQLite does not enforce FKs by default, so no parent rows needed.
+        # The rows the log points at: Postgres checks the foreign keys.
+        db.add(MonitorCheck(id="c1", name="c", check_type="ping", config="{}"))
+        db.add(MonitorAlertRule(id="r1", name="r", channel="webhook", channel_config="{}"))
+        db.flush()
         db.add_all(
             [
                 MonitorAlertLog(

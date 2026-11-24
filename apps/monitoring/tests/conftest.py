@@ -4,11 +4,12 @@
 
 """Test setup for the monitoring component.
 
-Deliberately NO Postgres/testcontainers: only pure-logic tests run here
-(line-protocol escaping, alert filter/cooldown, check status transitions).
-The modules under test pull a writable DATA_DIR via app.core.config — so redirect
-it to a tmp directory before every import. app.core.config refuses to import
-without MONITOR_API_KEY, so a fixed test key is set here as well.
+The database tests run on Postgres when DATABASE_URL (CI) or AH_TEST_DB (dev box)
+points at one, in a database of their own derived from it (`db_engine`); without
+either they fall back to an in-memory SQLite. The modules under test pull a
+writable DATA_DIR via app.core.config — so redirect it to a tmp directory before
+every import. app.core.config refuses to import without MONITOR_API_KEY, so a
+fixed test key is set here as well.
 """
 
 import os
@@ -19,7 +20,8 @@ from pathlib import Path
 import hypothesis
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -54,9 +56,118 @@ def _no_dns64(monkeypatch):
     monkeypatch.setattr(net, "_nat64_cache", None)
 
 
+def _postgres_url() -> str | None:
+    """The first of DATABASE_URL and AH_TEST_DB that points at a Postgres."""
+    for name in ("DATABASE_URL", "AH_TEST_DB"):
+        url = os.environ.get(name, "").strip()
+        if url.startswith("postgres"):
+            for old in ("postgresql+psycopg2://", "postgresql://"):
+                if url.startswith(old):
+                    return "postgresql+psycopg://" + url[len(old) :]
+            return url
+    return None
+
+
+@pytest.fixture(scope="session")
+def _postgres_unit_engine():
+    """One Postgres database for the run, `<db>_mon_unit`, with a fresh model schema.
+
+    Derived rather than the URL's own database: the migration tests drive alembic
+    against DATABASE_URL, and on the dev box AH_TEST_DB is the worktree's server
+    database — a create_all into either would mix two schemas. Dropped at the end of
+    the run. None without a Postgres URL.
+    """
+    base = _postgres_url()
+    if base is None:
+        yield None
+        return
+    from ah_common.database import make_engine
+    from app.models import Base
+
+    url = make_url(base)
+    name = f"{url.database}_mon_unit"
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        found = conn.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}
+        ).scalar()
+        if not found:
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+    admin.dispose()
+    engine = make_engine(
+        url.set(database=name).render_as_string(hide_password=False),
+        pool_size=5,
+        max_overflow=10,
+    )
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+    # Dropped rather than kept for the next run: worktree-teardown.sh drops only the
+    # worktree's own database, so a kept one would outlive every worktree.
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    admin.dispose()
+
+
 @pytest.fixture()
-def client_db(monkeypatch):
-    """Shared TestClient against the real app on sqlite: agent auth bypassed, VictoriaMetrics writes and
+def db_engine(_postgres_unit_engine):
+    """The engine a database test works on, empty at the start of the test.
+
+    On Postgres the tables are emptied before each test rather than rolled back
+    after it: the background dispatch and SessionLocal commit in sessions of their
+    own. The lock_timeout turns a session a test left open into a failure instead
+    of a hang.
+    """
+    if _postgres_unit_engine is None:
+        from app.models import Base
+
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+        Base.metadata.create_all(engine)
+        yield engine
+        engine.dispose()
+        return
+    from app.models import Base
+
+    tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+    with _postgres_unit_engine.begin() as conn:
+        conn.execute(text("SET LOCAL lock_timeout = '30s'"))
+        conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+    yield _postgres_unit_engine
+
+
+@pytest.fixture()
+def pooled_engine(db_engine, tmp_path):
+    """`db_engine` where a test needs a real connection pool: one connection per
+    session, and engine.pool.checkedout() counting them. On Postgres an engine of
+    its own on the same database, so a session another test left open does not
+    count; the SQLite fallback's StaticPool shares one connection and counts
+    nothing, so without Postgres a file SQLite with the default QueuePool stands in."""
+    if db_engine.dialect.name == "postgresql":
+        from ah_common.database import make_engine
+
+        engine = make_engine(
+            db_engine.url.render_as_string(hide_password=False), pool_size=5, max_overflow=10
+        )
+        yield engine
+        engine.dispose()
+        return
+    from app.models import Base
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'monitor.db'}", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture()
+def client_db(monkeypatch, db_engine):
+    """Shared TestClient against the real app on `db_engine`: agent auth bypassed, VictoriaMetrics writes and
     the background-dispatch SessionLocal pointed at the test DB. Centralized here so new endpoint suites
     don't each carry a near-identical copy (6.131). The pre-existing suites (test_agent_report,
     test_service_process_checker, test_pagination) still define their own local copies for now.
@@ -68,13 +179,8 @@ def client_db(monkeypatch):
     from app.core.auth import require_agent, require_internal
     from app.core.database import get_db
     from app.main import app
-    from app.models import Base
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()

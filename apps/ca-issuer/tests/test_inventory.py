@@ -20,13 +20,11 @@ from tests import renewal
 _OLD = datetime.datetime(2026, 1, 1)
 
 
-def _sqlite(create: bool = True):
-    eng = create_engine(
+def _sqlite_without_tables():
+    """A database the migration never reached; SQLite, where one costs nothing."""
+    return create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
-    if create:
-        db.metadata.create_all(eng)
-    return eng
 
 
 @pytest.fixture()
@@ -45,9 +43,9 @@ def _rows(engine) -> dict[str, dict]:
         return {r.name: r._asdict() for r in conn.execute(select(db.infra_certificates)).all()}
 
 
-def test_records_root_intermediates_and_server_certs(pki_tree):
+def test_records_root_intermediates_and_server_certs(pki_tree, db_engine):
     pki_dir, gateway_dir, frps_dir = pki_tree
-    engine = _sqlite()
+    engine = db_engine
 
     inventory.record(engine, inventory.collect(pki_dir, gateway_dir, frps_dir))
 
@@ -68,9 +66,9 @@ def test_records_root_intermediates_and_server_certs(pki_tree):
     assert rows["frps"]["fingerprint"] != rows["intermediate:tunnel"]["fingerprint"]
 
 
-def test_a_server_cert_that_is_not_there_gets_no_row(pki_tree, tmp_path):
+def test_a_server_cert_that_is_not_there_gets_no_row(pki_tree, tmp_path, db_engine):
     pki_dir, gateway_dir, _ = pki_tree
-    engine = _sqlite()
+    engine = db_engine
 
     certs = inventory.collect(pki_dir, gateway_dir, tmp_path / "no-frps")
     inventory.record(engine, certs)
@@ -80,9 +78,9 @@ def test_a_server_cert_that_is_not_there_gets_no_row(pki_tree, tmp_path):
     assert {"gateway", "frps"}.isdisjoint(_rows(engine))
 
 
-def test_a_new_start_replaces_the_old_snapshot(pki_tree):
+def test_a_new_start_replaces_the_old_snapshot(pki_tree, db_engine):
     pki_dir, gateway_dir, frps_dir = pki_tree
-    engine = _sqlite()
+    engine = db_engine
     with engine.begin() as conn:
         conn.execute(
             insert(db.infra_certificates),
@@ -105,10 +103,12 @@ def test_a_new_start_replaces_the_old_snapshot(pki_tree):
     assert len(rows) == 1 + len(pki.SCOPES) + 2
 
 
-def test_a_row_keeps_the_start_that_first_recorded_its_certificate(monkeypatch, pki_tree):
+def test_a_row_keeps_the_start_that_first_recorded_its_certificate(
+    monkeypatch, pki_tree, db_engine
+):
     # R-1021: rotate-root finish counts a device from the first start under the root on.
     pki_dir, gateway_dir, frps_dir = pki_tree
-    engine = _sqlite()
+    engine = db_engine
     first = datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
     later = first + datetime.timedelta(days=1)
     monkeypatch.setattr(pki, "_now", lambda: first)
@@ -130,12 +130,12 @@ def _fingerprint(cert) -> str:
 
 
 @pytest.mark.parametrize("phase", renewal.PHASES)
-def test_records_the_roots_of_a_root_renewal(monkeypatch, tmp_path, phase):
+def test_records_the_roots_of_a_root_renewal(monkeypatch, tmp_path, phase, db_engine):
     # R-1021: "root" is root.crt, the root that signs; beside it the staged new root, or
     # after the switch the old root and the cross certificate, until finish.
     pki_dir = tmp_path / "pki"
     r = renewal.renewed(monkeypatch, pki_dir, phase)
-    engine = _sqlite()
+    engine = db_engine
 
     inventory.record(engine, inventory.collect(pki_dir, None, None))
 
@@ -165,8 +165,10 @@ def _configure(monkeypatch, tmp_path, pki_tree, url):
     monkeypatch.setenv("DATABASE_URL", url)
 
 
-def test_record_inventory_writes_through_the_configured_db(monkeypatch, tmp_path, pki_tree):
-    engine = _sqlite()
+def test_record_inventory_writes_through_the_configured_db(
+    monkeypatch, tmp_path, pki_tree, db_engine
+):
+    engine = db_engine
     _configure(monkeypatch, tmp_path, pki_tree, "postgresql://ca:pw@db.invalid/ah")
     monkeypatch.setattr(db, "make_engine", lambda url: engine)
     monkeypatch.setattr(engine, "dispose", lambda: None)
@@ -190,7 +192,7 @@ def test_a_db_failure_is_logged_without_the_url_and_does_not_raise(
     monkeypatch, tmp_path, pki_tree, caplog
 ):
     # An engine without the table: the write fails like a DB without the migration.
-    engine = _sqlite(create=False)
+    engine = _sqlite_without_tables()
     _configure(monkeypatch, tmp_path, pki_tree, "postgresql://ca:s3cret-pw@db.invalid/ah")
     monkeypatch.setattr(db, "make_engine", lambda url: engine)
 

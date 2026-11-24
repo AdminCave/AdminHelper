@@ -7,17 +7,15 @@ SHA-256 hash lookup in monitor_agent_keys, the internal-key passthrough as '__in
 a missing/wrong key — was untested. test_auth.py only covers the key_matches building block. A
 regression comparing the raw key instead of hash_key would lock out every real agent (or worse, break
 the key/server binding), and nothing would go red. Tested by calling require_agent directly against a
-real sqlite DB and a fake request."""
+real database (`db_engine`) and a fake request."""
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core import auth
 from app.core.auth import require_agent
-from app.models import Base, MonitorAgentKey
+from app.models import MonitorAgentKey
 
 
 class _Req:
@@ -26,12 +24,8 @@ class _Req:
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+def db(db_engine):
+    session = sessionmaker(bind=db_engine)()
     try:
         yield session
     finally:

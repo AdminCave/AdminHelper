@@ -369,6 +369,8 @@ def _seed_alerts(factory):
                 id="rule-legacy", name="c-legacy", channel="webhook", channel_config='["x"]'
             )
         )
+        # No ORM relationship orders the rules before their log rows; Postgres checks the foreign key.
+        db.flush()
         db.add(
             MonitorAlertLog(
                 alert_rule_id="rule-full",

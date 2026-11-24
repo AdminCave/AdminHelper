@@ -14,9 +14,7 @@ from types import SimpleNamespace
 import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.alerter as alerter
 import app.check_engine as ce
@@ -27,7 +25,6 @@ from app import scheduler as sched
 from app.central.limits import RunSkipped
 from app.core.time import utcnow_naive
 from app.models import (
-    Base,
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
@@ -37,11 +34,7 @@ from app.models import (
 )
 
 
-def _factory():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+def _factory(engine):
     return sessionmaker(bind=engine)
 
 
@@ -78,10 +71,10 @@ def _changes(factory) -> list[tuple]:
 
 
 @pytest.fixture()
-def scheduler_path(monkeypatch):
+def scheduler_path(monkeypatch, db_engine):
     """execute_check against sqlite: the checker answers from `results` (an exception
     in it is raised), the alert dispatches are collected in `submitted`."""
-    factory = _factory()
+    factory = _factory(db_engine)
     results: list = []
 
     def run(_config):
@@ -210,7 +203,7 @@ def test_change_in_maintenance_is_logged_though_the_alert_is_muted(scheduler_pat
 
 
 @pytest.fixture()
-def push_path(monkeypatch):
+def push_path(monkeypatch, db_engine):
     """The report endpoint against sqlite, auth bypassed, VictoriaMetrics and the bell
     stubbed out."""
     from app.core import victoria as victoria_mod
@@ -218,7 +211,7 @@ def push_path(monkeypatch):
     from app.core.database import get_db
     from app.main import app
 
-    factory = _factory()
+    factory = _factory(db_engine)
 
     def override_get_db():
         db = factory()
@@ -290,8 +283,8 @@ def test_push_path_logs_object_rows_up_to_the_daily_budget(push_path, monkeypatc
 # --- retention ------------------------------------------------------------------
 
 
-def test_history_cleanup_keeps_90_days_whatever_the_alert_log_keeps(monkeypatch):
-    factory = _factory()
+def test_history_cleanup_keeps_90_days_whatever_the_alert_log_keeps(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed_check(factory)
     now = utcnow_naive()
     with factory() as db:

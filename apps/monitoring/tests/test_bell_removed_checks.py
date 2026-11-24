@@ -14,12 +14,10 @@ import uuid
 
 import pytest
 from fastapi import BackgroundTasks
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import alerter, template_sync
-from app.models import Base, MonitorCheck, MonitorSeedState, MonitorState, MonitorTemplate
+from app.models import MonitorCheck, MonitorSeedState, MonitorState, MonitorTemplate
 from app.routers import admin as admin_router
 from app.routers import templates as templates_router
 from app.server_cleanup import cleanup_server
@@ -38,12 +36,8 @@ HTTP = {**PING, "def_id": "http", "name": "HTTP {{server_name}}", "check_type": 
 
 
 @pytest.fixture()
-def db(monkeypatch):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+def db(monkeypatch, db_engine):
+    session = sessionmaker(bind=db_engine)()
     session.add(MonitorSeedState(slug=template_sync.OVERRIDE_BASELINE_KEY))
     session.commit()
     monkeypatch.setattr(template_sync, "add_check", lambda *args: None)
@@ -51,7 +45,6 @@ def db(monkeypatch):
     monkeypatch.setattr(templates_router, "remove_check", lambda cid: None)
     yield session
     session.close()
-    engine.dispose()
 
 
 @pytest.fixture()

@@ -17,9 +17,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
 import app.core.database as database_mod
@@ -34,7 +32,7 @@ from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsH
 from app.checkers.smart import SmartHealthChecker
 from app.checkers.system import SystemStateChecker
 from app.core.time import utcnow_naive
-from app.models import Base, MonitorCheck, MonitorState
+from app.models import MonitorCheck, MonitorState
 
 from ._helpers import no_env_proxy
 
@@ -1102,12 +1100,8 @@ class _Boom:
         pytest.param("ping", "{}", _Boom(), "Unexpected error: boom", id="checker-raises"),
     ],
 )
-def test_engine_message_is_english(monkeypatch, check_type, config, checker, message):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+def test_engine_message_is_english(monkeypatch, check_type, config, checker, message, db_engine):
+    factory = sessionmaker(bind=db_engine)
     with factory() as db:
         db.add(
             MonitorCheck(

@@ -12,21 +12,14 @@ import datetime
 import logging
 from types import SimpleNamespace
 
-import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
 import app.core.database as database_mod
-from app.models import Base, MonitorCheck, MonitorState
+from app.models import MonitorCheck, MonitorState
 
 
-def _factory():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+def _factory(engine):
     return sessionmaker(bind=engine)
 
 
@@ -73,8 +66,8 @@ def _wire(monkeypatch, factory, checker_status):
     monkeypatch.setattr(ce.victoria, "write_check_result", lambda **kw: None)
 
 
-def test_creates_state_and_dispatches_alert_on_first_failure(monkeypatch):
-    factory = _factory()
+def test_creates_state_and_dispatches_alert_on_first_failure(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     _seed(factory, consecutive_fails=1)
     _wire(monkeypatch, factory, "critical")
     submits = []
@@ -91,8 +84,8 @@ def test_creates_state_and_dispatches_alert_on_first_failure(monkeypatch):
     assert submits[0][1:] == ("c1", "pending", "critical")
 
 
-def test_suppresses_until_consecutive_fails_with_suffix(monkeypatch):
-    factory = _factory()
+def test_suppresses_until_consecutive_fails_with_suffix(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     # An already-ok check hitting its 1st of 3 required failures must stay ok (suppressed), advance
     # the fail counter, and NOT alert — the point of consecutive_fails is to swallow transient blips.
     _seed(factory, consecutive_fails=3, initial_status="ok", since=datetime.datetime(2020, 1, 1))
@@ -110,10 +103,10 @@ def test_suppresses_until_consecutive_fails_with_suffix(monkeypatch):
     assert submits == []  # ok -> ok: no transition, no alert
 
 
-def test_state_committed_before_alert_survives_dispatch_failure(monkeypatch):
+def test_state_committed_before_alert_survives_dispatch_failure(monkeypatch, db_engine):
     # H7: state is committed before the (off-thread) alert dispatch, so a failing dispatch must not
     # roll the committed state back.
-    factory = _factory()
+    factory = _factory(db_engine)
     _seed(factory, consecutive_fails=1)
     _wire(monkeypatch, factory, "critical")
 
@@ -129,8 +122,8 @@ def test_state_committed_before_alert_survives_dispatch_failure(monkeypatch):
         assert db.query(MonitorState).one().status == "critical"  # survives the dispatch failure
 
 
-def test_since_resets_only_on_status_change(monkeypatch):
-    factory = _factory()
+def test_since_resets_only_on_status_change(monkeypatch, db_engine):
+    factory = _factory(db_engine)
     old_since = datetime.datetime(2020, 1, 1)
     _seed(factory, consecutive_fails=1, initial_status="critical", since=old_since)
     _wire(monkeypatch, factory, "critical")  # stays critical -> no transition
@@ -148,10 +141,10 @@ def _state(factory):
         return st.status, st.ok_count, st.message
 
 
-def test_recovery_is_dispatched_only_after_consecutive_oks(monkeypatch):
+def test_recovery_is_dispatched_only_after_consecutive_oks(monkeypatch, db_engine):
     # R-0424: a reported critical ping stays critical on its first ok; the recovery
     # goes to the alert pool with the second (column default consecutive_oks 2).
-    factory = _factory()
+    factory = _factory(db_engine)
     _seed(factory, initial_status="critical", notified_status="critical")
     _wire(monkeypatch, factory, "ok")
     submits = []
@@ -166,11 +159,11 @@ def test_recovery_is_dispatched_only_after_consecutive_oks(monkeypatch):
     assert [s[1:] for s in submits] == [("c1", "critical", "ok")]
 
 
-def test_heartbeat_recovery_is_held_too(monkeypatch):
+def test_heartbeat_recovery_is_held_too(monkeypatch, db_engine):
     # The heartbeat runs the same pipeline: a reported "agent gone" stays critical
     # on the first fresh push. Only status and message here — where execute_check
     # sends the heartbeat's dispatch is the agent alert bundle's business.
-    factory = _factory()
+    factory = _factory(db_engine)
     _seed(factory, check_type="agent_ping", initial_status="critical", notified_status="critical")
     _wire(monkeypatch, factory, "ok")
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
@@ -184,19 +177,8 @@ def test_heartbeat_recovery_is_held_too(monkeypatch):
 
 # --- R-0615: no pooled connection during network I/O ------------------------
 # A checker runs up to its timeout and the metric write follows; a session held over
-# both let 30 scheduler workers drain the 30 pool connections. StaticPool shares one
-# connection and counts nothing, so these tests run on a file sqlite with the default
-# QueuePool, where engine.pool.checkedout() is the number of connections handed out.
-
-
-@pytest.fixture()
-def file_engine(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'monitor.db'}", connect_args={"check_same_thread": False}
-    )
-    Base.metadata.create_all(engine)
-    yield engine
-    engine.dispose()
+# both let 30 scheduler workers drain the 30 pool connections. These tests run on
+# `pooled_engine`, where engine.pool.checkedout() is the number of connections handed out.
 
 
 def _wire_counting(monkeypatch, factory, engine, held, run=None):
@@ -215,11 +197,11 @@ def _wire_counting(monkeypatch, factory, engine, held, run=None):
     monkeypatch.setattr(ce.victoria, "write_check_result", counting_write)
 
 
-def test_run_and_metric_write_hold_no_pooled_connection(monkeypatch, file_engine):
-    factory = sessionmaker(bind=file_engine)
+def test_run_and_metric_write_hold_no_pooled_connection(monkeypatch, pooled_engine):
+    factory = sessionmaker(bind=pooled_engine)
     _seed(factory)
     held = []
-    _wire_counting(monkeypatch, factory, file_engine, held)
+    _wire_counting(monkeypatch, factory, pooled_engine, held)
     submits = []
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: submits.append(a)))
 
@@ -232,8 +214,8 @@ def test_run_and_metric_write_hold_no_pooled_connection(monkeypatch, file_engine
     assert [s[1:] for s in submits] == [("c1", "pending", "critical")]
 
 
-def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, file_engine, caplog):
-    factory = sessionmaker(bind=file_engine)
+def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, pooled_engine, caplog):
+    factory = sessionmaker(bind=pooled_engine)
     _seed(factory)
 
     ran = []
@@ -245,7 +227,7 @@ def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, file_engin
             other.commit()
         return "critical", "msg", None
 
-    _wire_counting(monkeypatch, factory, file_engine, [], run=deleting_run)
+    _wire_counting(monkeypatch, factory, pooled_engine, [], run=deleting_run)
     submits = []
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: submits.append(a)))
 
@@ -262,17 +244,17 @@ def test_a_check_deleted_during_its_run_drops_the_result(monkeypatch, file_engin
     assert submits == []
 
 
-def test_manual_run_holds_no_pooled_connection(monkeypatch, file_engine):
+def test_manual_run_holds_no_pooled_connection(monkeypatch, pooled_engine):
     from fastapi.testclient import TestClient
 
     from app.core.auth import require_internal
     from app.core.database import get_db
     from app.main import app
 
-    factory = sessionmaker(bind=file_engine)
+    factory = sessionmaker(bind=pooled_engine)
     _seed(factory)
     held = []
-    _wire_counting(monkeypatch, factory, file_engine, held)
+    _wire_counting(monkeypatch, factory, pooled_engine, held)
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
 
     def override_get_db():
@@ -293,14 +275,14 @@ def test_manual_run_holds_no_pooled_connection(monkeypatch, file_engine):
     assert r.json()["state"]["status"] == "critical"
 
 
-def test_manual_run_of_a_check_deleted_during_its_run_is_404(monkeypatch, file_engine):
+def test_manual_run_of_a_check_deleted_during_its_run_is_404(monkeypatch, pooled_engine):
     from fastapi.testclient import TestClient
 
     from app.core.auth import require_internal
     from app.core.database import get_db
     from app.main import app
 
-    factory = sessionmaker(bind=file_engine)
+    factory = sessionmaker(bind=pooled_engine)
     _seed(factory)
     ran = []
 
@@ -311,7 +293,7 @@ def test_manual_run_of_a_check_deleted_during_its_run_is_404(monkeypatch, file_e
             other.commit()
         return "critical", "msg", None
 
-    _wire_counting(monkeypatch, factory, file_engine, [], run=deleting_run)
+    _wire_counting(monkeypatch, factory, pooled_engine, [], run=deleting_run)
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
 
     def override_get_db():
@@ -339,12 +321,12 @@ def _transition_lines(caplog) -> list[str]:
     ]
 
 
-def test_a_transition_whose_commit_fails_is_not_logged(monkeypatch, file_engine, caplog):
+def test_a_transition_whose_commit_fails_is_not_logged(monkeypatch, pooled_engine, caplog):
     # The line says a status changed; a commit that fails discards the change, so the
     # line must not come.
-    factory = sessionmaker(bind=file_engine)
+    factory = sessionmaker(bind=pooled_engine)
     _seed(factory, initial_status="ok")
-    _wire_counting(monkeypatch, factory, file_engine, [])
+    _wire_counting(monkeypatch, factory, pooled_engine, [])
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
 
     def failing_commit_factory():
@@ -368,10 +350,10 @@ def test_a_transition_whose_commit_fails_is_not_logged(monkeypatch, file_engine,
     )
 
 
-def test_a_saved_transition_is_logged_once(monkeypatch, file_engine, caplog):
-    factory = sessionmaker(bind=file_engine)
+def test_a_saved_transition_is_logged_once(monkeypatch, pooled_engine, caplog):
+    factory = sessionmaker(bind=pooled_engine)
     _seed(factory, initial_status="ok")
-    _wire_counting(monkeypatch, factory, file_engine, [])
+    _wire_counting(monkeypatch, factory, pooled_engine, [])
     monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
 
     with caplog.at_level(logging.INFO, logger="monitor.engine"):

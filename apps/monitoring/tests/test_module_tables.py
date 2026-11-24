@@ -7,19 +7,18 @@ instance, a check from before modules stays an ordinary loud check, and deleting
 server takes its discovery and findings with it.
 
 The migration part needs a real Postgres (DATABASE_URL), like the migration smoke
-test whose throwaway-database helper it borrows; on sqlite only the model part runs.
+test whose throwaway-database helper it borrows; without it only the model part runs.
 """
 
 import os
 import uuid
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.models import Base, MonitorDiscovery, MonitorFinding
+from app.models import MonitorDiscovery, MonitorFinding
 from app.server_cleanup import cleanup_server
 
 from .test_migrations_smoke import scratch_db
@@ -30,14 +29,9 @@ _REVISION = "b8d0f2a4c6e8"
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    with sessionmaker(bind=engine)() as session:
+def db(db_engine):
+    with sessionmaker(bind=db_engine)() as session:
         yield session
-    engine.dispose()
 
 
 def _finding(server_id="srv-1", module_id="paperless", instance_key="paperless"):

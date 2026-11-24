@@ -2,30 +2,24 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""DB-backed token store against sqlite: atomic one-time consume + revocation."""
+"""DB-backed token store on `db_engine`: atomic one-time consume + revocation."""
 
 import datetime
-import os
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import text
 
 from app import db
 from app.tokens import CertRecord, EnrollmentGrant, RenewalRefused
 
 
 @pytest.fixture()
-def engine():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    db.metadata.create_all(eng)
-    return eng
+def engine(db_engine):
+    return db_engine
 
 
 def _mint(engine, raw_token, subject_id, scope, *, browser=False, ttl_minutes=15):
@@ -102,16 +96,13 @@ def test_make_engine_forces_psycopg_driver():
 
 
 @pytest.fixture()
-def pg_engine():
-    url = os.environ.get("AH_TEST_DB")
-    if not url or "postgres" not in url:
+def pg_engine(db_engine):
+    if db_engine.dialect.name != "postgresql":
         pytest.skip("kein Postgres (AH_TEST_DB) — der TOCTOU-Test braucht echte Nebenläufigkeit")
-    eng = db.make_engine(url)
-    # The tables belong to the server; the shared test DB may lack them, so they come
-    # from the issuer's own view here.
-    db.metadata.create_all(eng)
+    # An engine of its own on the same database: a connection another test left
+    # checked out on the shared one does not take a slot here.
+    eng = db.make_engine(db_engine.url.render_as_string(hide_password=False))
     yield eng
-    db.metadata.drop_all(eng)
     eng.dispose()
 
 

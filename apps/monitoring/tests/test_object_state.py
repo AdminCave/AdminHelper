@@ -14,9 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.alerter as alerter
 import app.check_engine as ce
@@ -26,7 +25,7 @@ from app import scheduler as sched
 from app.central.limits import RunSkipped
 from app.check_engine import MAX_MESSAGE
 from app.core.time import utcnow_naive
-from app.models import Base, MonitorCheck, MonitorObjectState, MonitorState, MonitorStatusChange
+from app.models import MonitorCheck, MonitorObjectState, MonitorState, MonitorStatusChange
 from app.objects import KEY_MAX, MAX_NAME, object_key, read_objects
 
 T0 = datetime(2026, 11, 19, 12, 0, 0)
@@ -37,12 +36,8 @@ FALLBACK = "srv-1/check/c1"
 
 
 @pytest.fixture()
-def factory():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine)
+def factory(db_engine):
+    return sessionmaker(bind=db_engine)
 
 
 def _seed_check(factory, *, consecutive_fails=1, check_type="ping"):

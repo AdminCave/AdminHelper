@@ -15,9 +15,7 @@ import hashlib
 import json
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import builtin_templates, template_sync
 from app.builtin_templates import (
@@ -27,19 +25,15 @@ from app.builtin_templates import (
     reconcile_builtin_templates,
     seed_builtin_templates,
 )
-from app.models import Base, MonitorCheck, MonitorSeedState, MonitorTemplate
+from app.models import MonitorCheck, MonitorSeedState, MonitorTemplate
 from app.routers import templates as templates_router
 from app.schemas import TemplateAlertDef, TemplateCheckDef, TemplateUpdate
 from app.template_sync import apply_template
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+def db(db_engine):
+    factory = sessionmaker(bind=db_engine)
     session = factory()
     try:
         yield session

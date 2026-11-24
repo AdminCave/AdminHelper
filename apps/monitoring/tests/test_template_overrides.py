@@ -21,36 +21,29 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import builtin_templates, template_sync
 from app.builtin_templates import seed_builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorCheck, MonitorCheckTombstone, MonitorState, MonitorTemplate
+from app.models import MonitorCheck, MonitorCheckTombstone, MonitorState, MonitorTemplate
 from app.tag_sync import sync_tag_assignments
 from app.template_sync import apply_template
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(monkeypatch, db_engine):
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-
-    @event.listens_for(engine, "connect")
-    def _foreign_keys_on(dbapi_connection, _record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    if db_engine.dialect.name == "sqlite":
+        # Postgres checks foreign keys anyway. The fallback's StaticPool hands out the
+        # one connection create_all opened, so the pragma set on it holds.
+        with db_engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()

@@ -184,23 +184,18 @@ class TestTransitionSequence:
         assert (prev_fails, eff) == (0, "ok")
 
 
-def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
+def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch, db_engine):
     # 4.109: a check with a corrupt config must flip to unknown (so the alert chain fires) instead
     # of silently freezing on its last status. Previously json.loads raised into the outer except,
     # leaving the state untouched — a "dead" check that still looked healthy.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
@@ -231,23 +226,18 @@ def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
         assert state.last_check is not None  # the check is no longer "dead"
 
 
-def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
+def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch, db_engine):
     # 5.3: on a status change, execute_check submits the alert dispatch to the dedicated alert pool
     # (off the APScheduler check-worker thread) instead of calling process_alert inline — so a slow
     # webhook/SMTP server can't tie up the scheduler workers and misfire the following checks.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
@@ -286,25 +276,20 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
 
 @pytest.mark.parametrize(("check_type", "dispatched"), [("agent_ping", 0), ("ping", 1)])
 def test_execute_check_leaves_a_heartbeat_to_the_agent_alert_bundle(
-    monkeypatch, check_type, dispatched
+    monkeypatch, check_type, dispatched, db_engine
 ):
     # R-0424: a heartbeat that goes critical is not handed to the alert pool; the
     # discrepancy stays open in monitor_states for flush_agent_alerts, which
     # bundles agents that go silent together. Every other check type goes on as
     # before.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
@@ -359,23 +344,18 @@ class TestResolveConfigServerId:
         assert resolve_config_server_id({}, "agent_ping", None) == {}
 
 
-def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
+def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch, db_engine):
     # T4 (alert-sent-state): the dispatch condition is eff_status !=
     # notified_status — a suppressed discrepancy is caught up on the next
     # cycle even WITHOUT a status change; a matching sent-state stays silent.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     with factory() as db:
         db.add(
@@ -698,23 +678,18 @@ def test_a_created_state_carries_its_ok_count(result, ok_count):
     assert db.added[0].ok_count == ok_count
 
 
-def test_execute_check_cuts_a_long_checker_error(monkeypatch, caplog):
+def test_execute_check_cuts_a_long_checker_error(monkeypatch, caplog, db_engine):
     # R-0517, scheduler path: "Unexpected error: {exc}" carries the whole exception text.
     # The state and the transition log line (and from the state webhook and mail) get it
     # cut to 2000 characters.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     with factory() as db:
         db.add(
@@ -756,22 +731,17 @@ def test_execute_check_cuts_a_long_checker_error(monkeypatch, caplog):
     assert transitions == [f"Check 'c1': ok -> unknown ({state.message})"]
 
 
-def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
+def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch, db_engine):
     # R-0419 T9, scheduler path: a new check waiting for its first data shows
     # unknown, and the transition dispatches nothing (unknown policy).
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     with factory() as db:
         db.add(
@@ -813,23 +783,18 @@ def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
         pytest.param("\udfff", id="lone-low-surrogate"),
     ],
 )
-def test_execute_check_stores_a_text_the_database_cannot_take_replaced(monkeypatch, bad):
+def test_execute_check_stores_a_text_the_database_cannot_take_replaced(monkeypatch, bad, db_engine):
     # R-1366, scheduler path: Postgres keeps no NUL in a text column and the driver cannot
     # encode a lone surrogate. Message and details reach the state with U+FFFD in their
     # place; every other character, one outside the BMP too, stays as it was.
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
     import app.core.database as database_mod
     from app.core import victoria as victoria_mod
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+    engine = db_engine
     factory = sessionmaker(bind=engine)
     with factory() as db:
         db.add(

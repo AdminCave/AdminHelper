@@ -8,24 +8,18 @@ keys or fail to return/rotate the raw key. Untested until now."""
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorAgentKey
+from app.models import MonitorAgentKey
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(monkeypatch, db_engine):
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()

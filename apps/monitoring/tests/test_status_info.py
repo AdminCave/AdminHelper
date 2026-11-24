@@ -12,9 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app import alerter
 from app.alerter import resolve_notification
@@ -28,7 +26,7 @@ from app.check_engine import (
 )
 from app.checkers.probe import ProbeChecker
 from app.core.time import utcnow_naive
-from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorState
+from app.models import MonitorAlertRule, MonitorCheck, MonitorState
 
 T0 = int(datetime(2020, 1, 1, 12, 0, tzinfo=UTC).timestamp())
 STAMP = "2020-01-01T12:00:00Z"
@@ -103,13 +101,9 @@ def test_a_notification_sees_info_as_ok(notified, expected):
 
 
 @pytest.fixture()
-def pipeline(monkeypatch):
+def pipeline(monkeypatch, db_engine):
     """apply_result + process_alert on sqlite with a spied channel, consecutive_* 1."""
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine)()
+    db = sessionmaker(bind=db_engine)()
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(
         alerter,
