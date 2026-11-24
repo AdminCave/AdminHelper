@@ -36,7 +36,6 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | Paket | Version | Lizenz | S | M | C |
 |---|---|---|:-:|:-:|:-:|
 | bcrypt | 5.0.0 | Apache-2.0 | x |  |  |
-| python-multipart | 0.0.33 | Apache-2.0 | x |  |  |
 | opentelemetry-api | 1.45.2 | Apache-2.0 | x | x | x |
 | tzdata | 2026.6 | Apache-2.0 | x |  |  |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | x | x | x |
@@ -73,15 +72,14 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | typing-inspection | 0.4.4 | MIT | x | x | x |
 | tzlocal | 5.4.5 | MIT | x | x |  |
 | watchfiles | 1.3.0 | MIT | x | x | x |
-| greenlet | 3.5.6 | MIT AND PSF-2.0 | x | x |  |
 | certifi | 2026.10.23 | MPL-2.0 | x | x |  |
 | typing_extensions | 4.16.0 | PSF-2.0 | x | x | x |
 
 `fastapi` ist in allen drei Diensten auf `0.162.0` gepinnt; es zieht
 `opentelemetry-api` mit (ohne SDK, sendet nichts).
 
-**Auflagen-relevant:** Apache-2.0 (NOTICE) — `bcrypt`, `python-multipart`,
-`opentelemetry-api`, `tzdata`;
+**Auflagen-relevant:** Apache-2.0 (NOTICE) — `bcrypt`, `opentelemetry-api`,
+`tzdata`;
 LGPL-3.0 — `psycopg`, `psycopg-binary`; MPL-2.0 — `certifi`. `cryptography`
 (Apache OR BSD) und `uvloop` (Apache OR MIT) sind dual — es wird der
 permissive Zweig geführt (siehe „Auflagen & Hinweise").
@@ -249,7 +247,7 @@ Test-Harness und wird nicht ausgeliefert.
 betreffenden Projekte in der Distribution weiterzugeben. Zwingend
 Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 
-- **Python:** `bcrypt`, `python-multipart`, `tzdata`
+- **Python:** `bcrypt`, `tzdata`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
 - **Rust:** `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
   `russh-sftp`, `sync_wrapper`, `tao`, `target-lexicon`

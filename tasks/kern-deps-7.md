@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-7 — Task-Ledger
-Status: aktiv · Branch: feature/kern-deps-7 · Review: pro Task
+Status: bereit · Branch: feature/kern-deps-7 · Review: pro Task
 Spec: docs/features/kern-deps-7.md (Roadmap R-0701)
 Heavy: linux-full — Laufzeit-Locks von Server und Monitoring ändern das Image; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,8 +41,10 @@ bleibt (Dev-Deps stehen nicht darin).
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_db_token_store.py
 Doku: keine (Dev-Datei, kein dokumentiertes Verhalten)
 
-### T4 — R-0701: Lizenzliste und Changelog  [ ]
+### T4 — R-0701: Lizenzliste und Changelog  [x]
 Komponente: scripts · Dateien: THIRD_PARTY_LICENSES.md, changelog.d/kern-deps-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @afc3fad0b 2026-11-24T14:30:49+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Zeilen `python-multipart` und `greenlet` aus Tabelle 1, `python-multipart` aus beiden NOTICE-Listen;
 Fragment unter `### Changed` (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
