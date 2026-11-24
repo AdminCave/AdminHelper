@@ -9,7 +9,7 @@ must reject when no key is configured."""
 from ah_common.auth import key_matches
 
 
-def test_correctkey_matches():
+def test_correct_key_matches():
     assert key_matches("s3cret-token", "s3cret-token") is True
 
 

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-server-10 — Test-Zeit und Testname — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-server-10 · Review: am Ende
+Status: bereit · Branch: feature/klein-tests-server-10 · Review: am Ende
 Spec: docs/features/klein-tests-server-10.md (Roadmap R-1718, R-1741)
 Heavy: none — zwei Test-Änderungen ohne Produktcode
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Dedup-Key: ref:server:tests/test_frps_supervisor.py:ninety-second-helper-timeout
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py::test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait
 Doku: keine (Test)
 
-### T2 — Monitoring-Test: Name (R-1741)  [ ]
+### T2 — Monitoring-Test: Name (R-1741)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_auth.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @eefc31cfb 2026-11-24T16:11:08+01:00
+Review: am Ende (Branch-Review)
 Dedup-Key: ref:monitoring:tests/test_auth.py:test_correctkey_matches
 Änderung: `test_correctkey_matches` → `test_correct_key_matches`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_auth.py
