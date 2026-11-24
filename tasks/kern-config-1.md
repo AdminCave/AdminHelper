@@ -26,8 +26,10 @@ Review: approve (.ah-out/review/kern-config-1/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_server_docs.py tests/test_hooks.py tests/test_openapi_snapshot.py tests/test_env_parity.py tests/test_schemathesis.py
 Doku: → T5
 
-### T3 — Monitoring: fail-fast und kein Auto-Schlüssel  [ ]
+### T3 — Monitoring: fail-fast und kein Auto-Schlüssel  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/config.py, apps/monitoring/tests/conftest.py, apps/monitoring/tests/test_config_env.py (neu, SPDX), apps/monitoring/tests/test_retention.py, apps/monitoring/tests/test_central_resolve.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5bb6c3919 2026-11-24T11:45:13+01:00
+Review: approve (.ah-out/review/kern-config-1/T3.verdict.json)
 Änderung: R-0699. `SMTP_PORT`, `ALERT_LOG_RETENTION_DAYS` (Minimum 1), `DB_POOL_SIZE` und `DB_MAX_OVERFLOW` laufen über `env_int`. Ein Eintrag in `MONITOR_PUBLIC_RESOLVERS`, der keine IP ist, bricht ab (`ConfigError`). Ein leerer `MONITOR_API_KEY` bricht mit Verweis auf `scripts/init-secrets.sh` ab; `DATA_DIR/.api_key` wird weder geschrieben noch gelesen. `conftest.py` setzt einen Test-Schlüssel.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_config_env.py tests/test_retention.py tests/test_central_resolve.py tests/test_logging_config.py tests/test_require_agent.py
 Doku: → T5

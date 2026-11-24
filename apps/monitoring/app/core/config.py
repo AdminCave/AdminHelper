@@ -6,8 +6,9 @@ import ipaddress
 import logging
 import os
 import re
-import secrets
 from pathlib import Path
+
+from ah_common.env import ConfigError, env_int
 
 logger = logging.getLogger("monitor.config")
 
@@ -34,24 +35,15 @@ if SERVER_HUB_URL.startswith("http://") and os.environ.get("ALLOW_INSECURE_HUB")
         SERVER_HUB_URL,
     )
 
-# Internal API key for service-to-service communication (AdminHelper -> Monitoring)
+# Internal API key for service-to-service communication (AdminHelper -> Monitoring).
+# Required: without it the server's proxy and this service cannot authenticate each
+# other, and a key generated here would never match the server's (R-0699).
 INTERNAL_API_KEY = os.environ.get("MONITOR_API_KEY", "").strip()
 if not INTERNAL_API_KEY:
-    key_file = DATA_DIR / ".api_key"
-    if key_file.exists():
-        INTERNAL_API_KEY = key_file.read_text().strip()
-    else:
-        INTERNAL_API_KEY = secrets.token_urlsafe(48)
-        # Create the key file 0600 atomically: write_text() would create it with the
-        # process umask (typically 0644) and only chmod afterwards, leaving a brief
-        # window where the fresh secret is world-readable. O_EXCL also refuses to follow
-        # a pre-planted symlink at the path (fail closed) (3.75).
-        fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(INTERNAL_API_KEY)
-        logger.info("MONITOR_API_KEY auto-generiert und in %s gespeichert", key_file)
-
-    # Agent API keys are now stored per server in the DB (monitor_agent_keys)
+    raise ConfigError(
+        "MONITOR_API_KEY is empty: the monitoring service needs the key it shares with "
+        "the server; run scripts/init-secrets.sh and restart"
+    )
 
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see monitoring/alembic/), no longer by
@@ -68,19 +60,12 @@ if not DATABASE_URL:
     DATABASE_URL = "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor"
 
 # SQLAlchemy pool of the process, as in the server (same variables, same defaults).
-DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
-DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+DB_POOL_SIZE = env_int("DB_POOL_SIZE", 10, minimum=1)
+DB_MAX_OVERFLOW = env_int("DB_MAX_OVERFLOW", 20, minimum=0)
 
-# SMTP (email alert channel). Empty SMTP_HOST disables email alerts. A non-integer
-# SMTP_PORT falls back to 587 with a warning instead of crashing the whole service at import —
-# SMTP is only an optional alert channel, so a typo in the compose file must not take monitoring
-# down in a crash loop (4.108).
+# SMTP (email alert channel). Empty SMTP_HOST disables email alerts.
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
-try:
-    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-except ValueError:
-    logger.warning("Ungueltiger SMTP_PORT %r — nutze 587", os.environ.get("SMTP_PORT"))
-    SMTP_PORT = 587
+SMTP_PORT = env_int("SMTP_PORT", 587, minimum=1)
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
@@ -91,27 +76,13 @@ SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 
 # Alert-log retention in days (periodic cleanup job in scheduler.py). NOTE:
 # VictoriaMetrics has its own, independent retention knob (`VM_RETENTION` /
-# -retentionPeriod in docker-compose.yml) — the two do not sync. Invalid or
-# non-positive values fall back to 90 instead of crashing the service (a typo
-# must not delete the whole log or crash-loop the container).
-try:
-    ALERT_LOG_RETENTION_DAYS = int(os.environ.get("ALERT_LOG_RETENTION_DAYS", "90"))
-except ValueError:
-    logger.warning(
-        "Invalid ALERT_LOG_RETENTION_DAYS %r — falling back to 90",
-        os.environ.get("ALERT_LOG_RETENTION_DAYS"),
-    )
-    ALERT_LOG_RETENTION_DAYS = 90
-if ALERT_LOG_RETENTION_DAYS < 1:
-    logger.warning(
-        "ALERT_LOG_RETENTION_DAYS %d is < 1 — falling back to 90", ALERT_LOG_RETENTION_DAYS
-    )
-    ALERT_LOG_RETENTION_DAYS = 90
+# -retentionPeriod in docker-compose.yml) — the two do not sync. There is no
+# "keep forever": 0 would make the cleanup delete the whole log, so the minimum is 1.
+ALERT_LOG_RETENTION_DAYS = env_int("ALERT_LOG_RETENTION_DAYS", 90, minimum=1)
 
 # Resolvers the central checks ask directly, never the system resolver (R-1224): the
-# rule public/internal needs the answer the internet gets. Comma-separated IPs; an
-# entry that is no IP is dropped with a warning, and with none left the default
-# applies, so a typo cannot switch every central check to "resolvers unreachable".
+# rule public/internal needs the answer the internet gets. Comma-separated IPs; empty
+# means the default, an entry that is no IP stops the start (R-0699).
 _DEFAULT_PUBLIC_RESOLVERS = ("9.9.9.9", "1.1.1.1")
 
 
@@ -123,18 +94,13 @@ def _public_resolvers(raw: str) -> tuple[str, ...]:
         try:
             resolver = str(ipaddress.ip_address(entry))
         except ValueError:
-            logger.warning("Ignoring MONITOR_PUBLIC_RESOLVERS entry %r: not an IP address", entry)
-            continue
+            raise ConfigError(
+                f"MONITOR_PUBLIC_RESOLVERS={raw!r} is not a comma-separated list of IP addresses "
+                f"({entry!r} is not one)"
+            ) from None
         if resolver not in resolvers:
             resolvers.append(resolver)
-    if not resolvers:
-        if raw.strip():
-            logger.warning(
-                "MONITOR_PUBLIC_RESOLVERS has no usable entry — using %s",
-                ",".join(_DEFAULT_PUBLIC_RESOLVERS),
-            )
-        return _DEFAULT_PUBLIC_RESOLVERS
-    return tuple(resolvers)
+    return tuple(resolvers) or _DEFAULT_PUBLIC_RESOLVERS
 
 
 PUBLIC_RESOLVERS = _public_resolvers(os.environ.get("MONITOR_PUBLIC_RESOLVERS", ""))

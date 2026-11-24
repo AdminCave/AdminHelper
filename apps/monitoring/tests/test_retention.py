@@ -3,12 +3,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Alert-log retention is env-configurable (T33): ALERT_LOG_RETENTION_DAYS
-overrides the 90-day default; garbage and non-positive values fall back to 90
-instead of crashing the service or wiping the whole log."""
+overrides the 90-day default; garbage and non-positive values stop the start
+(R-0699) instead of silently keeping 90 or wiping the whole log."""
 
 import importlib
 
 import pytest
+
+from ah_common.env import ConfigError
 
 
 @pytest.fixture()
@@ -33,11 +35,17 @@ def test_retention_env_override(monkeypatch, reload_config):
     assert reload_config().ALERT_LOG_RETENTION_DAYS == 30
 
 
-def test_retention_invalid_value_falls_back(monkeypatch, reload_config):
+def test_retention_invalid_value_stops_the_start(monkeypatch, reload_config):
     monkeypatch.setenv("ALERT_LOG_RETENTION_DAYS", "soon")
-    assert reload_config().ALERT_LOG_RETENTION_DAYS == 90
+    with pytest.raises(
+        ConfigError, match=r"^ALERT_LOG_RETENTION_DAYS='soon' is not a whole number >= 1$"
+    ):
+        reload_config()
 
 
-def test_retention_non_positive_falls_back(monkeypatch, reload_config):
+def test_retention_non_positive_stops_the_start(monkeypatch, reload_config):
     monkeypatch.setenv("ALERT_LOG_RETENTION_DAYS", "0")
-    assert reload_config().ALERT_LOG_RETENTION_DAYS == 90
+    with pytest.raises(
+        ConfigError, match=r"^ALERT_LOG_RETENTION_DAYS='0' is not a whole number >= 1$"
+    ):
+        reload_config()
