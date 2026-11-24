@@ -353,6 +353,15 @@ export async function openRowByName(rowSel, nameSel, name) {
 // The rows of the connections page; a single click selects, a double click connects.
 export const CONN_ROW = '[data-testid="conn-row"]';
 
+// Waits until the connections page lists at least one row (`$(CONN_ROW)` would match every row and
+// fail under strictSelectors).
+export async function waitForConnRows(timeout = 15000) {
+  await browser.waitUntil(async () => (await $$(CONN_ROW)).length > 0, {
+    timeout,
+    timeoutMsg: `no connection row appeared (${CONN_ROW})`,
+  });
+}
+
 // A mouse event on the connection row whose name matches, dispatched in the page like jsClick,
 // so WebKitWebDriver's pointer actions play no part.
 async function dispatchOnRow(name, type) {

@@ -17,7 +17,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { login, connectByName, CONN_ROW, jsClick } from '../lib/live.js';
+import { login, connectByName, waitForConnRows, jsClick } from '../lib/live.js';
 
 const RDP = '.rdp';
 const CANVAS = `${RDP} .rdp-view canvas`;
@@ -29,7 +29,7 @@ const DISCONNECT = `${RDP} .rdp-head button:is([aria-label="Trennen"], [aria-lab
 const COMMAND = ['Enter', 'KeyT', 'KeyO', 'KeyU', 'KeyC', 'KeyH', 'Space', 'KeyA', 'KeyH', 'KeyK', 'KeyE', 'KeyY', 'Enter'];
 
 async function chooseAdminHelperForRdp() {
-  await $('.sidebar-bottom .sidebar-item').click();
+  await $('.sidebar-bottom .sidebar-item:first-child').click();
   await $('.sm-panel').waitForExist({ timeout: 10000 });
   await $('.sm-panel [data-section="rdp"]').click();
   const select = await $('.sm-panel [data-field="rdp-client"]');
@@ -84,7 +84,7 @@ const seen = () => browser.execute(() => window.__rdpSeen);
 
 // The resolution and the frame rate in the foot: "1280×720 · — · 12 fps · …".
 async function footFigures() {
-  const text = await $(`${RDP} .rdp-foot span`).getText();
+  const text = await $(`${RDP} .rdp-foot span:first-of-type`).getText();
   const size = /(\d+)×(\d+)/.exec(text);
   const fps = /(\d+) fps/.exec(text);
   return {
@@ -300,7 +300,7 @@ describe('RDP in a tab of AdminHelper (R-1098)', () => {
 
     const nav = await $$('.sidebar-nav .sidebar-item'); // dashboard / connections / infrastructure
     await nav[1].click();
-    await $(CONN_ROW).waitForExist({ timeout: 15000 });
+    await waitForConnRows();
 
     await connectByName('rdp-embedded');
     await $('.pw-panel').waitForExist({ timeout: 10000 });
