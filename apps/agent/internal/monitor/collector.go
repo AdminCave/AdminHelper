@@ -303,21 +303,38 @@ func skippedDisk(p disk.PartitionStat, goos string) bool {
 		hasPrefix(p.Mountpoint, skipMountPrefixes)
 }
 
-func collectDisks() []DiskInfo {
-	parts, err := disk.Partitions(false)
-	if err != nil {
-		return nil
-	}
+// fsStat is the part of a statfs record the disk list needs, as getfsstat(2) returns it on FreeBSD.
+type fsStat struct {
+	Mount, FSType        string
+	Bsize, Blocks, Bfree uint64
+	Bavail               int64
+}
+
+// disksFromFsstat maps mount records to the disk list with gopsutil's arithmetic (disk.Usage):
+// free is Bavail (negative when root dips into its reserve, then 0), used is Blocks - Bfree, the
+// percent is used / (used + free).
+func disksFromFsstat(stats []fsStat, goos string) []DiskInfo {
 	var disks []DiskInfo
-	for _, p := range parts {
-		if skippedDisk(p, resourceCalls.goos) {
+	for _, s := range stats {
+		p := disk.PartitionStat{Mountpoint: s.Mount, Fstype: s.FSType}
+		if skippedDisk(p, goos) || s.Blocks == 0 {
 			continue
 		}
-		usage, err := disk.Usage(p.Mountpoint)
-		if err != nil || usage.Total == 0 {
-			continue
+		avail := uint64(0)
+		if s.Bavail > 0 {
+			avail = uint64(s.Bavail)
 		}
-		disks = append(disks, diskInfo(p, usage, resourceCalls.goos))
+		usage := &disk.UsageStat{
+			Path:   s.Mount,
+			Fstype: s.FSType,
+			Total:  s.Blocks * s.Bsize,
+			Free:   avail * s.Bsize,
+			Used:   (s.Blocks - s.Bfree) * s.Bsize,
+		}
+		if usage.Used+usage.Free > 0 {
+			usage.UsedPercent = float64(usage.Used) / float64(usage.Used+usage.Free) * 100
+		}
+		disks = append(disks, diskInfo(p, usage, goos))
 	}
 	return disks
 }

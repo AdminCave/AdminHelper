@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Platten-Sammler FreeBSD, Paketaufteilung monit
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1701: FreeBSD liest die Platten ohne Hänger (MNT_NOWAIT, Netz-Mounts mit Frist)  [ ]
+### T1 — R-1701: FreeBSD liest die Platten ohne Hänger (MNT_NOWAIT, Netz-Mounts mit Frist)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/disks_bounded.go, apps/agent/internal/monitor/disks_freebsd.go, apps/agent/internal/monitor/disks_other.go, apps/agent/internal/monitor/disks_test.go, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-agent-23.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @049ae8f5f 2026-11-24T20:00:59+01:00
+Review: approve (.ah-out/review/kern-agent-23/T1.verdict.json)
 Beweis: main@4c8173e06 apps/agent/internal/monitor/collector.go:304-321 (disk.Usage je Mount), gopsutil v4.26.10 disk/disk_freebsd.go:27,33 (Getfsstat MNT_WAIT) · Dedup-Key: bug:agent:collector.go:freebsd-hung-share-blocks-report
 Änderung: Unter FreeBSD baut `collectDisks` die Liste aus `unix.Getfsstat(MNT_NOWAIT)`. Netz-Mounts (nfs, smbfs, fusefs) fragt `boundedStats` je in einer Goroutine mit 5 s Frist frisch ab, ein Mount ohne Antwort fehlt in diesem Lauf. Die Umrechnung `Statfs_t` → `DiskInfo` ist eine reine Funktion ohne Build-Tag und wird unter Linux getestet. Grundlage ist der gesicherte Stand aus kern-agent-22 T3: Antwort erst senden, dann melden, und nach der Frist die gepufferten Antworten abholen. Wackler-Gegenprobe: `-count=20000` bei `GOMAXPROCS` 2 und 8, Summary in den Commit-Body. Neue Dateien mit SPDX-Header. Nicht auf FreeBSD gefahren, weil keine Box im Pool ist; der Cross-Build läuft in der Verify.
 Verify: bash scripts/dev/verify.sh agent --strict
