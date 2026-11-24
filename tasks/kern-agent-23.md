@@ -1,5 +1,5 @@
 # kern-agent-23 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-23 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-23 · Review: pro Task
 Spec: docs/features/kern-agent-23.md (Roadmap R-1701, R-1728)
 Heavy: linux-full — apps/agent (Platten-Sammler FreeBSD, Paketaufteilung monitor/send/push mit Provisioning-Aufrufer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T4
 Test-Löschung: apps/agent/internal/monitor/init_test.go::* — zieht nach internal/monitor/push/init_test.go; apps/agent/internal/monitor/monitor_test.go::* — zieht nach internal/monitor/push/init_test.go; apps/agent/internal/monitor/report_test.go::TestPushReportSuccessNoRetry — zieht nach internal/monitor/send/send_test.go; apps/agent/internal/monitor/report_test.go::TestPushReportRetriesOnceOnTransientError — zieht nach send; apps/agent/internal/monitor/report_test.go::TestPushReportFailsAfterSingleRetry — zieht nach send; apps/agent/internal/monitor/report_test.go::TestPushReportAbortsInFlightRequestOnContextCancel — zieht nach send; apps/agent/internal/monitor/report_test.go::TestPushBudgetKeepsThePushReserve — zieht nach internal/monitor/push/push_test.go; apps/agent/internal/monitor/report_test.go::TestPushKeepsTheStateThroughALostPush — zieht nach internal/monitor/push/push_test.go (Ende-zu-Ende-Test aus T2)
 
-### T4 — Doku: Paketaufteilung des Agent-Monitorings (R-1728)  [ ]
-Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html
+### T4 — Doku: Paketaufteilung des Agent-Monitorings (R-1728)  [x]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f061b98c0 2026-11-24T20:46:26+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Abschnitte zum Report-Bau und Versand nennen `monitor` (Collectoren, `Collect`/`Done`), `monitor/send` (Versand) und `monitor/push` (Init, TOFU, Lauf). Verweise auf `PushReport` und `monitor.go` sind nachgezogen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html DE+EN
