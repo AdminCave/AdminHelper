@@ -114,10 +114,16 @@
           <p>Häufige Ursachen: Uhrzeit-Drift &gt; 5 Min, abgelaufenes Client-Zertifikat, DNS-Fehler, Firewall blockiert <code>443/tcp</code> (Pushes und Zertifikats-Erneuerung des Agents laufen über das Gateway).</p>
           <p><strong>Timer rot vs. grün:</strong> Bei einem <em>permanenten</em> Fehler — widerrufener/rotierter API-Key (401/403) oder gelöschter Server (404) — beendet sich der Oneshot-Lauf <code>adminhelper-agent.service</code> mit Exit&ne;0 (erscheint als <code>failed</code> in <code>systemctl status</code>, ein konfiguriertes <code>OnFailure=</code> feuert). <em>Transiente</em> Fehler (Server-5xx, Netz/DNS) bleiben grün und werden beim nächsten Lauf erneut versucht.</p>
 
+          <h2>Dienst startet nicht</h2>
+          <ul>
+            <li>Die letzte Zeile von <code>docker compose logs &lt;dienst&gt;</code> nennt die Variable mit ungültigem Wert und was erwartet ist (siehe <a href="installation.html#env">Umgebungsvariablen</a>). Wert in der <code>.env</code> korrigieren oder die Zeile entfernen, dann <code>docker compose up -d</code>.</li>
+            <li>Monitoring mit <code>MONITOR_API_KEY is empty</code>: <code>./scripts/init-secrets.sh</code>, dann <code>docker compose up -d</code>.</li>
+          </ul>
+
           <h2>Monitoring zeigt keine Daten</h2>
           <ul>
             <li>VictoriaMetrics erreichbar? <code>docker compose exec monitoring curl -s http://victoria:8428/health</code></li>
-            <li>Server → Monitoring: <code>MONITOR_API_KEY</code> identisch in beiden Containern?</li>
+            <li>Server → Monitoring: <code>MONITOR_API_KEY</code> identisch in beiden Containern? Ist er leer, meldet der Server-Log beim Start <code>MONITOR_API_KEY is empty</code>.</li>
             <li>Agent-Debug: <code>sudo adminhelper-agent run --once --log-level debug</code> auf dem Ziel-Host</li>
           </ul>
 

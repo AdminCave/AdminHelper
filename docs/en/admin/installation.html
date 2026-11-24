@@ -43,6 +43,7 @@
           </ul>
 
           <h2 id="env">Environment Variables</h2>
+          <p>A variable that is not set takes its default. A variable with an invalid value (say, no number where one is expected, or an unknown log level) stops the service at start; the last line of its log names the variable, the value and what is expected, for secrets without the value.</p>
           <table>
             <thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead>
             <tbody>
@@ -59,8 +60,9 @@
               <tr><td><code>TRUST_PROXY_HEADERS</code></td><td><code>false</code></td><td>Legacy switch, trusts <em>all</em> proxy headers. Has no effect under compose: there <code>TRUSTED_PROXIES</code> is always set and takes precedence.</td></tr>
               <tr><td><code>ALLOWED_IPS</code></td><td>empty</td><td>Whitelist of IPs/CIDRs allowed to access the server, checked against the client address the gateway sees (see <a href="./users.html">Users &amp; Access</a>). Empty = no filter.</td></tr>
               <tr><td><code>MONITOR_SERVICE_URL</code></td><td><code>http://monitoring:8080</code></td><td>URL of the monitoring service (container-internal).</td></tr>
-              <tr><td><code>MONITOR_API_KEY</code></td><td>empty</td><td>Shared secret between server and monitoring. Must be identical in both containers.</td></tr>
-              <tr><td><code>MONITOR_PUBLIC_RESOLVERS</code></td><td><code>9.9.9.9,1.1.1.1</code></td><td>Public resolvers (IP addresses, comma-separated) the central checks ask directly; without a usable entry the default applies. The monitoring container needs outbound DNS to them (see <a href="monitoring.html#central-resolvers">Central checks</a>).</td></tr>
+              <tr><td><code>MONITOR_API_KEY</code></td><td>empty</td><td>Shared secret between server and monitoring. Must be identical in both containers; without a value the monitoring does not start. Set by <code>./scripts/init-secrets.sh</code>.</td></tr>
+              <tr><td><code>MONITOR_PUBLIC_RESOLVERS</code></td><td><code>9.9.9.9,1.1.1.1</code></td><td>Public resolvers (IP addresses, comma-separated) the central checks ask directly; empty means the default, an entry that is not an IP address stops the start. The monitoring container needs outbound DNS to them (see <a href="monitoring.html#central-resolvers">Central checks</a>).</td></tr>
+              <tr><td><code>SERVER_ENABLE_DOCS</code></td><td>empty</td><td><code>1</code>, <code>true</code> or <code>yes</code> turns on the server's API documentation (<code>/api/docs</code>, Swagger UI, and <code>/openapi.json</code>); otherwise the server serves neither.</td></tr>
               <tr><td><code>MONITOR_SPAMHAUS_DQS_KEY</code></td><td>empty</td><td>Optional key for Spamhaus's Data Query Service (sensor <code>dnsbl</code>); empty: the service never asks Spamhaus. Letters and digits only (at most 63), otherwise Spamhaus stays off. Appears in no log.</td></tr>
               <tr><td><code>VISITOR_PORT_START</code> / <code>_END</code></td><td><code>6000</code> / <code>6999</code></td><td>Port range for STCP visitor tunnels in the desktop client.</td></tr>
               <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP port for the FRP bind (control channel); must match the <code>bind_port</code> in the FRP-config UI (otherwise every tunnel breaks); the FRP form warns when its bind port differs from it.</td></tr>
@@ -118,7 +120,7 @@ docker compose up -d</code></pre>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
               <div class="callout-title"><code>MONITOR_API_KEY</code> without the init script = dead monitoring UI</div>
-              <p>Server and monitoring containers share <code>MONITOR_API_KEY</code> as an internal shared secret. If the value in <code>.env</code> stays empty, the monitoring container generates its own random — but the server sends an empty key, so every <code>/api/monitoring/*</code> call ends in a 401. <code>./scripts/init-secrets.sh</code> prevents this.</p>
+              <p>Server and monitoring containers share <code>MONITOR_API_KEY</code> as an internal shared secret. If the value in <code>.env</code> stays empty, the monitoring container does not start (the message in its log points to <code>scripts/init-secrets.sh</code>), and the server logs an ERROR <code>MONITOR_API_KEY is empty</code> at start but keeps running without monitoring. <code>./scripts/init-secrets.sh</code> sets the key; then run <code>docker compose up -d</code>.</p>
               <p>Just as important: <code>SECRET_KEY</code>. If it stays at <code>change-me-in-production</code> or empty, the server generates a random value into <code>./data/.secret_key</code> on first start — it works, but it is not portable between hosts. The init script writes a fixed value into <code>.env</code> so the stack stays reproducibly migratable.</p>
             </div>
           </div>

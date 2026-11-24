@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-config-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-config-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-config-1 · Review: pro Task
 Spec: docs/features/kern-config-1.md (Roadmap R-0699)
 Heavy: linux-full — `docker-compose.yml`, Server-API (`/api/docs`), `apps/ca-issuer`; kein Install- oder PKI-Datenpfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -42,8 +42,10 @@ Review: approve (.ah-out/review/kern-config-1/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_logging.py
 Doku: → T5
 
-### T5 — Doku DE+EN und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/betrieb.html, docs/en/admin/operations.html, README.md, DEVELOPMENT.md, changelog.d/kern-config-1.md (neu)
+### T5 — Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/betrieb.html, docs/en/admin/operations.html, README.md, DEVELOPMENT.md, changelog.d/kern-config-1.md (neu), docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @160ce0c05 2026-11-24T12:14:20+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: R-0699. Die Doku folgt der Spec: Abbruch bei ungültigem Wert, `MONITOR_API_KEY` ist Pflicht fürs Monitoring (Callout und Tabelle), `/api/docs` nur mit `SERVER_ENABLE_DOCS`, `LOG_LEVEL` auch für den CA-Issuer. Dazu das CHANGELOG-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
