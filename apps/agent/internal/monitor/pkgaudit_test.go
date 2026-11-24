@@ -51,7 +51,7 @@ func stubFreeBSDCalls(t *testing.T, hasPkg bool, replies map[string]dockerReply)
 		return "", exec.ErrNotFound
 	}
 	var calls []freebsdCall
-	freebsdCalls.run = func(_ context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	freebsdCalls.run = func(_ context.Context, timeout time.Duration, _ []string, name string, args ...string) ([]byte, error) {
 		checkAllowed(t, name, args)
 		argv := strings.Join(append([]string{name}, args...), " ")
 		calls = append(calls, freebsdCall{timeout, argv})

@@ -126,7 +126,10 @@ func stubDocker(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Cleanup(func() { dockerCLI = old })
 	var calls [][]string
 	dockerCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
-	dockerCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
+	dockerCLI.run = func(_ context.Context, timeout time.Duration, _ []string, name string, args ...string) ([]byte, error) {
+		if name != "docker" || timeout != dockerTimeout {
+			t.Errorf("docker call %v: name %q, timeout %v; want %q, %v", args, name, timeout, "docker", dockerTimeout)
+		}
 		calls = append(calls, args)
 		checkAllowed(t, "docker", args)
 		reply, ok := replies[args[0]]
@@ -694,7 +697,10 @@ func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Cleanup(func() { zpoolCLI = old })
 	var calls [][]string
 	zpoolCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
-	zpoolCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
+	zpoolCLI.run = func(_ context.Context, timeout time.Duration, _ []string, name string, args ...string) ([]byte, error) {
+		if name != "zpool" || timeout != pluginTimeout {
+			t.Errorf("zpool call %v: name %q, timeout %v; want %q, %v", args, name, timeout, "zpool", pluginTimeout)
+		}
 		calls = append(calls, args)
 		checkAllowed(t, "zpool", args)
 		key := args[0]
@@ -765,15 +771,17 @@ func TestCollectZFSTimeout(t *testing.T) {
 
 func TestCollectZFSRealZpoolCall(t *testing.T) {
 	// The stubs above hand collectZFS a ready error; here a real child process goes through runTimed,
-	// the runner runZpool uses, with only the binary and the timeout swapped: a hung zpool the timeout
+	// the runner zpoolCLI uses, with only the binary and the timeout swapped: a hung zpool the timeout
 	// killed (exec: "signal: killed") must be timeout, one that fails on its own cli_failed.
 	stubZpool(t, nil)
-	zpoolCLI.run = func(context.Context, ...string) ([]byte, error) {
+	zpoolCLI.run = func(context.Context, time.Duration, []string, string, ...string) ([]byte, error) {
 		return nil, runHelperDocker(t, "hang", 100*time.Millisecond)
 	}
 	assertZFSUnavailable(t, dockerWire(t, collectZFS(context.Background())), "timeout")
 
-	zpoolCLI.run = func(context.Context, ...string) ([]byte, error) { return nil, runHelperDocker(t, "fail", time.Minute) }
+	zpoolCLI.run = func(context.Context, time.Duration, []string, string, ...string) ([]byte, error) {
+		return nil, runHelperDocker(t, "fail", time.Minute)
+	}
 	wire := dockerWire(t, collectZFS(context.Background()))
 	assertZFSUnavailable(t, wire, "cli_failed")
 	if wire["error_message"] != "zpool list failed: exit status 3" {
@@ -1002,7 +1010,10 @@ func stubPvesh(t *testing.T, replies map[string]dockerReply) *[][]string {
 	// No corosync.conf: a node in no cluster, so no test reads the host's.
 	pveshCLI.corosyncConf = filepath.Join(t.TempDir(), "corosync.conf")
 	pveshCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
-	pveshCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
+	pveshCLI.run = func(_ context.Context, timeout time.Duration, _ []string, name string, args ...string) ([]byte, error) {
+		if name != "pvesh" || timeout != pluginTimeout {
+			t.Errorf("pvesh call %v: name %q, timeout %v; want %q, %v", args, name, timeout, "pvesh", pluginTimeout)
+		}
 		calls = append(calls, args)
 		checkAllowed(t, "pvesh", args)
 		var reply dockerReply

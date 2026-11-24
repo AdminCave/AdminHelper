@@ -93,8 +93,8 @@ func TestPkgAuditNative(t *testing.T) {
 	}
 	run := freebsdCalls.run
 	t.Cleanup(func() { freebsdCalls.run = run })
-	freebsdCalls.run = func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
-		return execTimed(ctx, timeout, nil, name, args...)
+	freebsdCalls.run = func(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
+		return execTimed(ctx, timeout, env, name, args...)
 	}
 	dir := t.TempDir()
 	vulnXML := filepath.Join(dir, "vuln.xml")
