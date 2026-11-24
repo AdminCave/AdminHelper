@@ -15,7 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ah_common.pagination import paginate
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
-from app.core.bounds import MAX_DEPTH, Offset, _find_unstorable
+from app.core.bounds import MAX_DEPTH, Offset, find_unstorable
 from app.core.database import get_db
 from app.core.request_context import actor_from_request
 from app.core.time import iso_utc
@@ -201,7 +201,7 @@ def _find_non_finite(payload) -> tuple | None:
 
     Python's json reads NaN, Infinity and -Infinity although JSON has none of them, and the
     answer cannot carry them back (JSONResponse writes with allow_nan=False): a script that
-    returned the payload made the answer a 500. Stack, not recursion, like _find_unstorable."""
+    returned the payload made the answer a 500. Stack, not recursion, like find_unstorable."""
     stack: list[tuple[tuple, object]] = [((), payload)]
     while stack:
         loc, value = stack.pop()
@@ -249,7 +249,7 @@ async def _do_trigger(token: str, request: Request, db: Session):
     # The payload has no schema, so RequestModel's rule is applied here by hand: a NUL
     # byte or a lone surrogate (JSON spells them \u0000 and \ud800) would reach the
     # script, and the response or the database fails once the script returns or stores it.
-    if found := _find_unstorable(payload):
+    if found := find_unstorable(payload):
         loc, value, reason = found
         raise RequestValidationError(
             [

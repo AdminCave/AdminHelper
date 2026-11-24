@@ -67,8 +67,10 @@ in `ah_common/database.py`; das Monitoring liest die Pool-Variablen jetzt auch.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T6 — bounds-Helfer in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/bounds.py, apps/server/app/core/bounds.py, apps/monitoring/app/core/bounds.py
+### T6 — bounds-Helfer in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/bounds.py, apps/server/app/core/bounds.py, apps/monitoring/app/core/bounds.py, apps/server/app/modules/hooks/router.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @e2a85c9f8 2026-11-24T06:59:29+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T6.verdict.json)
 Änderung: `BIGINT_MAX`, `storable`, `readable`, `find_unstorable` als eine Implementierung; dienstspezifische
 Grenzen bleiben in den Dienst-Modulen.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
