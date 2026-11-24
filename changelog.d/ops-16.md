@@ -21,3 +21,5 @@
 - **Taegliche DB-Sicherung als Profil:** Der Dienst `pg-backup` ist jetzt Teil der `docker-compose.yml` und laeuft
   nur mit `COMPOSE_PROFILES=backup` in der `.env`; Updates lassen die Einstellung stehen. Bisher musste man einen
   auskommentierten Block einkommentieren, den jedes Update wieder ueberschrieb.
+- **Runtime-Bundle: pg-restore.sh:** Das Release-Bundle liefert `scripts/pg-restore.sh` mit, auf das die
+  Betriebs-Doku verweist; `install.sh` legt `backups/` beim Installieren nur fuer den Besitzer lesbar an.

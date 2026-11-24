@@ -180,6 +180,8 @@ grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.34.0' "$INST/.env" \
   && ok "frps image pinned to ref" || bad "frps image not pinned to ref"
 [ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = sikrit123 ] \
   && ok "admin password reached create-admin on stdin" || bad "create-admin got no password on stdin"
+[ "$(stat -c %a "$INST/backups" 2>/dev/null)" = 700 ] \
+  && ok "install creates backups/ owner-only (0700)" || bad "backups/: mode $(stat -c %a "$INST/backups" 2>/dev/null || echo missing)"
 # The summary names the desktop button by its German label, folded to ae/oe/ue like
 # the rest of install.sh's output. The label comes from the desktop's dictionary, so
 # a rename there turns this red instead of the two drifting apart (R-0242).
@@ -188,6 +190,16 @@ label=$(grep -m1 "'login.enroll.switch'" "$REPO_ROOT/apps/desktop/ui/src/lib/i18
 [ -n "$label" ] && ok "desktop button label read: $label" || bad "no login.enroll.switch label in dictionaries.ts"
 { [ -n "$label" ] && grep -qF "\"$label\"" <<<"$out"; } \
   && ok "summary names the desktop button" || bad "summary does not name the desktop button \"$label\""
+
+# ── 1b. the bundle and RUNTIME_FILES carry the same ops scripts (R-1713) ─────
+# The ops docs point to scripts/pg-restore.sh; a script missing from the bundle never
+# reaches a host, one missing from RUNTIME_FILES not a pre-bundle install.
+bundle=$(sed -n '/^ *cp scripts\/install.sh/,/stage\/scripts\//p' "$REPO_ROOT/.github/workflows/release.yml" \
+  | grep -oE 'scripts/[a-z0-9-]+\.sh' | grep -vx 'scripts/install.sh' | sort | tr '\n' ' ')
+runtime=$(sed -n 's/^RUNTIME_FILES="\(.*\)"$/\1/p' "$INSTALL" | tr ' ' '\n' | grep '^scripts/' | sort | tr '\n' ' ')
+{ [ -n "$bundle" ] && [ "$bundle" = "$runtime" ] && grep -q 'scripts/pg-restore.sh' <<<"$bundle"; } \
+  && ok "release bundle and RUNTIME_FILES ship the same ops scripts, pg-restore.sh included" \
+  || bad "bundle [$bundle] vs RUNTIME_FILES [$runtime]"
 
 # ── 2. fail-closed: a release tag with no bundle asset must abort, not raw-fetch
 INST="$WORK/inst2"

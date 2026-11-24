@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-16 — Betriebsskripte: Update, Install, Restore, Backup — Task-Ledger
-Status: aktiv · Branch: feature/ops-16 · Review: pro Task
+Status: bereit · Branch: feature/ops-16 · Review: pro Task
 Spec: docs/features/ops-16.md (Roadmap R-1703, R-1686, R-1692, R-1712, R-1713, R-1714, R-1727)
 Heavy: linux-full — scripts/install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (backup_restore und upgrade_path im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -70,8 +70,10 @@ Beweis: Roadmap R-1727 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test
 Doku: changelog.d/ops-16.md (neutral)
 
-### T7 — R-1713: pg-restore.sh im Release-Bundle und in RUNTIME_FILES  [ ]
+### T7 — R-1713: pg-restore.sh im Release-Bundle und in RUNTIME_FILES  [x]
 Komponente: scripts · Dateien: scripts/install.sh, .github/workflows/release.yml, scripts/tests/install_test.sh, changelog.d/ops-16.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7eb9284b4 2026-11-24T16:56:58+01:00
+Review: approve (.ah-out/review/ops-16/T7.verdict.json)
 Änderung: `scripts/pg-restore.sh`, auf das die Betriebs-Doku verweist, kommt in `RUNTIME_FILES` (install.sh) und in die Bundle-Liste von release.yml. Test: RUNTIME_FILES und die Bundle-Liste von release.yml enthalten pg-restore.sh.
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test
 Doku: changelog.d/ops-16.md

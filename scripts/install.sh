@@ -62,7 +62,7 @@ MINISIGN_PUBKEY="RWTU2kEztd3UWTF8HW26S8MWWiTUe6oz38I7rTBBSOvmQ3SHmszo6llJ"
 RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/AdminCave/AdminHelper}"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
-RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/pg-backup.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh scripts/agent-install.sh"
+RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/pg-backup.sh scripts/pg-restore.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh scripts/agent-install.sh"
 DOMAIN=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD=""
@@ -724,6 +724,9 @@ fi
 
 # Populate ./repo before first boot so the gateway's repo mount is non-empty.
 fetch_repo_into
+# backups/ owner-only before anything writes there, as backup.sh and update.sh create
+# it: a service that mounts it would otherwise have Docker create it as root, 0755.
+( umask 077; mkdir -p backups ) || die "could not create backups/ in $(pwd)."
 
 # --- Stack hoch (enforced per Default) --------------------------------------
 # Pull first so a stale locally-cached :latest (or a pinned tag) is refreshed —
