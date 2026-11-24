@@ -123,13 +123,15 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, dahinter `final.md` (nach
    einem Basis-Merge neu erzeugt) und das `security`-Urteil; `gh pr create --title "<type>: <feature>" --body-file
    <Scratchpad>/pr-body.md`; `roadmap.py status R-nnnn pr --pr "#<n>"`.
-7. `gh pr checks <n> --watch --fail-fast`. Einreihen (CLAUDE.md §2): CI im ersten Anlauf grün, die Läufe aus 3
+7. Einreihen gleich nach `gh pr create`, ohne auf die PR-CI zu warten (CLAUDE.md §2): die Läufe aus 3
    grün, `review.sh final` Exit 0 auf dem PR-Stand, `security` `approve` wo nötig, keine Ersatzprüfung im Branch
    (auch nicht in einem Task-Commit), keine Sperre durch den neuesten Sammellauf (§5) → `bash WT/scripts/dev/review.sh
    final WT/tasks/<slug>.md > <Scratchpad>/final.md && gh pr merge <n> --match-head-commit "$(git -C WT rev-parse
    HEAD)"` reiht in die Merge Queue ein, gebunden an den geprüften Stand (ohne Merge-Methode, die setzt die Queue; nie
-   `--admin`, das umginge sie; ohne `--delete-branch`: gh entfernt sonst den Worktree). Nicht vor dem Ende der PR-CI
-   einreihen: Auto-Merge wartet nur auf die Pflicht-Checks des Rulesets, nicht auf jeden Check. Dann `bash
+   `--admin`, das umginge sie; ohne `--delete-branch`: gh entfernt sonst den Worktree). Auto-Merge wartet auf die
+   Pflicht-Checks; seit 2026-11-24 ist jeder Check eines PRs Pflicht außer `Changed paths` und den Shards, deren
+   Sammel-Jobs Pflicht sind. Ein neuer Job in `ci.yml` braucht daher Kevins Ruleset-Eintrag, sonst wartet
+   Auto-Merge nicht auf ihn. Rote PR-CI reiht so nie ein. Dann `bash
    WT/scripts/dev/queue-wait.sh <n>` aus `WT` als Hintergrund-Wächter; die Session baut solange ein anderes Vorhaben
    (CLAUDE.md §2). Exit 0 → die Zeile `merged <sha>` gibt den Merge-Commit für 8, den
    Remote-Branch danach mit `git push origin --delete feature/<slug>` löschen. Exit 1 (aus der Queue gefallen) → den

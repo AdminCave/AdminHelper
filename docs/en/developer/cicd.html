@@ -74,8 +74,10 @@
           for the owner. It is the outer boundary of the stage: a release is cut on a release branch rather
           than around the rule. <code>ci.yml</code> also runs on
           <code>merge_group</code>: since 2026-11-23 the ruleset requires a merge queue (merge method merge, build
-          concurrency&nbsp;2, group size&nbsp;1, check timeout 60&nbsp;min, green entries only). It tests
-          <code>main</code> plus the pull request before the merge; <code>gh pr merge</code> only enqueues,
+          concurrency&nbsp;3, group size up to&nbsp;3, check timeout 60&nbsp;min, green entries only; since 2026-11-24
+          every check of a pull request is required except <code>Changed paths</code> and the shards, whose summary
+          jobs are required). It tests
+          <code>main</code> plus the pull request before the merge; <code>gh pr merge</code> only enqueues, even while the PR CI is still running (auto-merge waits for the required checks),
           <code>scripts/dev/queue-wait.sh</code> waits for the merge commit.</p>
 
           <p><strong>Workflow hardening.</strong> Every <code>actions/checkout</code> runs with
