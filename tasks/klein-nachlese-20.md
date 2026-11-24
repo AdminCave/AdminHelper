@@ -28,16 +28,18 @@ Review: approve (.ah-out/review/klein-nachlese-20/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_scheduler_schema_gate.py tests/test_cli.py tests/test_monitoring_client.py
 Doku: keine (Tests, Docstring)
 
-### T3 — env_int mit Obergrenze für Ports (R-1746)  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/env.py, apps/server/app/core/config.py, apps/monitoring/app/core/config.py, apps/server/tests/test_config_env.py
-Änderung: Erst Test rot (Port 70000 ⇒ `ConfigError`). Dann `maximum` in `parse_int`/`env_int` (Meldung `a whole number between a and b`), `maximum=65535` für `FRP_BIND_PORT`, `VISITOR_PORT_START/END`, `ENROLL_PORT`, `REPO_PORT`, `SMTP_PORT` (Server und Monitoring). Konfig-Doku per `grep` auf genannte Wertebereiche prüfen.
+### T3 — env_int mit Obergrenze für Ports (R-1746)  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/env.py, apps/server/app/core/config.py, apps/server/tests/test_config_env.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @695bef8de 2026-11-24T15:08:26+01:00
+Review: approve (.ah-out/review/klein-nachlese-20/T3.verdict.json)
+Änderung: Erst Test rot (Port 70000 ⇒ `ConfigError`). Dann `maximum` in `parse_int`/`env_int` (Meldung `a whole number between a and b`), `maximum=65535` für `FRP_BIND_PORT`, `VISITOR_PORT_START/END`, `ENROLL_PORT`, `REPO_PORT`, `SMTP_PORT` (Server; der Monitoring-`SMTP_PORT` folgt in T4, eigene Komponente). Konfig-Doku per `grep` auf genannte Wertebereiche prüfen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_env.py tests/test_env_parity.py
 Doku: → T5
 
 ### T4 — Monitoring-Tests: SQLite-Docstrings (R-1749)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/tests/test_status_log.py, test_status_info.py, test_object_state.py, test_alerter.py, test_nul.py, test_alert_bundle.py, test_agent_report.py
-Änderung: Docstrings und Kommentare nennen Postgres statt SQLite (Zeilen aus der Roadmap-Zeile, frisch greppen); `test_agent_report.py` Trigger-Funktion: räumt der Test sie auf, sonst Aufräumen ergänzen oder Kommentar korrigieren. Keine Logikänderung der Tests.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_log.py tests/test_status_info.py tests/test_object_state.py tests/test_alerter.py tests/test_nul.py tests/test_alert_bundle.py tests/test_agent_report.py
+Komponente: monitoring · Dateien: apps/monitoring/app/core/config.py, apps/monitoring/tests/test_config_env.py, apps/monitoring/tests/test_status_log.py, test_status_info.py, test_object_state.py, test_alerter.py, test_nul.py, test_alert_bundle.py, test_agent_report.py
+Änderung: `SMTP_PORT` im Monitoring mit `maximum=65535` (Test erst rot: 70000, `test_config_env.py` mit neuer Meldung). Docstrings und Kommentare nennen Postgres statt SQLite (Zeilen aus der Roadmap-Zeile, frisch greppen); `test_agent_report.py` Trigger-Funktion: räumt der Test sie auf, sonst Aufräumen ergänzen oder Kommentar korrigieren. Keine Logikänderung der Tests.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_config_env.py tests/test_status_log.py tests/test_status_info.py tests/test_object_state.py tests/test_alerter.py tests/test_nul.py tests/test_alert_bundle.py tests/test_agent_report.py
 Doku: keine (Kommentare)
 
 ### T5 — Doku: Hooks-Shutdown, Changelog-Form  [ ]
