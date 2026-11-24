@@ -1,5 +1,5 @@
 # kern-agent-22 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-22 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-22 · Review: pro Task
 Spec: docs/features/kern-agent-22.md (Roadmap R-1688, R-1700, R-1701, R-1693, R-1702, R-1704, R-1705)
 Heavy: linux-full — apps/agent (Sammler, Self-Update, Probe-Listener); Windows-Teil über die CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -64,8 +64,16 @@ Review: approve (.ah-out/review/kern-agent-22/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/provision/ ./cmd/adminhelper-agent/
 Doku: changelog.d/kern-agent-22.md
 
+### T8 — R-1702, R-1688: Doku-Nachzug aus der Abschlussprüfung  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, tasks/kern-agent-22.md
+Änderung: Der Wächter-Absatz der Entwickler-Doku nennt für die Linux-Listener `sock_diag` (nur `TCP_LISTEN`) statt `/proc/net/tcp` (T5). Die Admin-Doku „Schonung unter Last“ nennt, dass der ARC in Containern nicht als verfügbar zählt (T1). DE+EN.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die genannten Seiten
+Task-Review: am Ende
+
 ## Entscheidungen
 - 2026-11-24 Plan: R-1706 fährt nicht mit. Die Zeile verlangt zuerst einen Messwert von einer FreeBSD- oder OPNsense-Box, eine solche Box gibt es im Pool nicht. Sie wandert nach kern-agent-23, Kevin wird nach dem Wert gefragt.
 - 2026-11-24 Plan: R-1688 ändert nur das Last-Tor. Ob `memory_percent` den ARC auch als verfügbar zählt, ist sichtbares Verhalten und geht als eigene Zeile zu Kevin.
 - 2026-11-24 T3: verschoben in kern-agent-23. Der Review fand MNT_NOWAIT als eingefrorene Werte (Umbau auf statfs je Mount, Netz-Mounts mit Frist), dann FUSE-Subtypen und eine Testrace; nach zwei Runden ohne approve fährt R-1701 im nächsten Zug mit frischem Prüfer. Der Stand liegt bei der Session.
 - 2026-11-24 T7 (R-1705): `cmd/adminhelper-agent/run.go` traegt dieselben deutschen cobra-Hilfen und eine Startzeile; die Planung hatte nur `main.go` genannt. Mitgenommen, damit `--help` des Agents einheitlich englisch ist (Prueferfund T7).
+- 2026-11-24 T6 (R-1704): `reprovisionHelps` prueft nur `frpc.toml`, nicht den frpc-Dienst. `stopFrpc` deaktiviert den Dienst und loescht `frpc.toml` zusammen; ein Dienst ohne Config traegt keinen Tunnel, Reprovisionieren hilft dort nicht mehr als ohne ihn (Nit der Abschlusspruefung).
