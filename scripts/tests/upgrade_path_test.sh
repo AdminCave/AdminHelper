@@ -316,10 +316,17 @@ elif grep -q "\"name\": *\"adminhelper-runtime-$PREV\.tar\.gz\"" <<<"$REL_JSON";
             || bad "update.sh: no minisign verification in the log — checksum-only path?"
         # The version truth of an install is the image pin in .env; an install
         # directory has no VERSION marker by design (it is not in MANIFEST.sha256,
-        # and install.sh removes it). A bundle with IMAGES (R-0460; update.sh leaves
-        # its copy in the install directory) pins tag AND digest, one without it the
-        # tag alone.
-        if [ -e "$INST/IMAGES" ]; then
+        # and install.sh removes it). A bundle with IMAGES (R-0460) pins tag AND
+        # digest, one without it the tag alone. The release asset says which, not
+        # anything the updater under test wrote: a bundle that cannot be read is red.
+        PREV_BUNDLE="$E2E_WORK/runtime-$PREV.tar.gz"
+        if ! curl -fsSL --max-time 60 -o "$PREV_BUNDLE" \
+                "https://github.com/AdminCave/AdminHelper/releases/download/$PREV/adminhelper-runtime-$PREV.tar.gz" \
+            || ! PREV_MEMBERS=$(tar tzf "$PREV_BUNDLE"); then
+            bad "could not read the runtime bundle of $PREV — digest pin not decided"
+            PREV_MEMBERS=""
+        fi
+        if grep -qxE '(\./)?IMAGES' <<<"$PREV_MEMBERS"; then
             want_pin="SERVER_IMAGE=$GHCR/server:${PREV_VER//./\\.}@sha256:[0123456789abcdef]\{64\}"
         else
             want_pin="SERVER_IMAGE=$GHCR/server:${PREV_VER//./\\.}"

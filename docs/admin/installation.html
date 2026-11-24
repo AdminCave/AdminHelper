@@ -220,7 +220,7 @@ docker compose up -d</code></pre>
 ./scripts/update.sh --redeploy
 
 # Weitere Flags: --skip-backup  --with-victoria  --no-rollback  --yes</code></pre>
-          <p>Der Installer pinnt die Images in der <code>.env</code> auf die installierte Version (z.&nbsp;B. <code>:0.34.0</code>) — ein Install bleibt <strong>reproduzierbar</strong> und springt nie unbemerkt. Nach 0.47.0 tr&auml;gt das signierte Runtime-Bundle jedes Release die Digests der f&uuml;nf eigenen Images (Datei <code>IMAGES</code>); <code>install.sh --ref</code> und <code>update.sh</code> pinnen dann Tag und Digest (<code>ghcr.io/admincave/adminhelper/server:X.Y.Z@sha256:&hellip;</code>), und Docker zieht per Digest, auch wenn jemand den Tag in der Registry umh&auml;ngt. Ein Bundle ohne <code>IMAGES</code> (&auml;ltere Releases) pinnt wie bisher den Tag. Ist die Datei da, passt aber nicht zur Version, zum Repo oder zur Form, bricht das Skript ab, bevor es etwas &auml;ndert. Ein Update von einer &auml;lteren Installation pinnt beim ersten Lauf schon den Digest, weil das neue <code>update.sh</code> aus dem Bundle den Tausch f&uuml;hrt. Die Kopie von <code>IMAGES</code> im Installationsverzeichnis liest kein Skript; die Pins stehen in der <code>.env</code>, und ein Edit an <code>IMAGES</code> &auml;ndert nichts. <code>update.sh</code> liegt nach der Installation <strong>lokal</strong> im <code>adminhelper/</code>-Verzeichnis.</p>
+          <p>Der Installer pinnt die Images in der <code>.env</code> auf die installierte Version (z.&nbsp;B. <code>:0.34.0</code>) — ein Install bleibt <strong>reproduzierbar</strong> und springt nie unbemerkt. Nach 0.47.0 tr&auml;gt das signierte Runtime-Bundle jedes Release die Digests der f&uuml;nf eigenen Images (Datei <code>IMAGES</code>); <code>install.sh --ref</code> und <code>update.sh</code> pinnen dann Tag und Digest (<code>ghcr.io/admincave/adminhelper/server:X.Y.Z@sha256:&hellip;</code>), und Docker zieht per Digest, auch wenn jemand den Tag in der Registry umh&auml;ngt. Ein Bundle ohne <code>IMAGES</code> (&auml;ltere Releases) pinnt wie bisher den Tag. Ist die Datei da, passt aber nicht zur Version, zum Repo oder zur Form, bricht das Skript ab, bevor es etwas &auml;ndert. Ein Update von einer &auml;lteren Installation pinnt beim ersten Lauf schon den Digest, weil das neue <code>update.sh</code> aus dem Bundle den Tausch f&uuml;hrt. Die Datei bleibt im Bundle: <code>install.sh</code> und <code>update.sh</code> lesen sie, bevor sie etwas &auml;ndern, und legen keine Kopie ins Installationsverzeichnis; die Pins stehen allein in der <code>.env</code>. <code>update.sh</code> liegt nach der Installation <strong>lokal</strong> im <code>adminhelper/</code>-Verzeichnis.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
@@ -253,12 +253,12 @@ docker compose up -d server</code></pre>
           <h2 id="deinstallation">Deinstallation</h2>
           <p><code>scripts/uninstall.sh</code> entfernt eine Server-Installation <strong>restlos</strong>. Standardmässig <strong>interaktiv</strong>: das Script fragt für jede Kategorie einzeln nach — gelöscht wird erst, nachdem alle Fragen beantwortet sind. Aus dem Install-Verzeichnis (dort, wo die <code>docker-compose.yml</code> liegt) ausführen:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Interaktiv — fragt pro Kategorie (Stack, Volumes, ./data+./certs, .env,
-# Backups, Images):
+<pre><code># Interaktiv — fragt pro Kategorie (Stack, Volumes, ./data+./certs+./repo,
+# .env, Backups, Images):
 ./scripts/uninstall.sh
 
-# Nicht-interaktiv (z. B. in einem Skript): Stack + Volumes + ./data/./certs
-# + .env weg, Backups und Images bleiben:
+# Nicht-interaktiv (z. B. in einem Skript): Stack + Volumes + ./data/./certs/
+# ./repo + .env weg, Backups und Images bleiben:
 ./scripts/uninstall.sh --yes
 
 # "Wirklich alles weg" — auch Images und Backups (--rmi/--purge-backups belegen

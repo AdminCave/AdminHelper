@@ -112,7 +112,8 @@ red "unsigned image -> exit 1" "monitoring:1.2.3 has no valid signature"
 # ── 4: a malformed digest is refused, never written ─────────────────────────
 setup malformed; echo "sha256:XYZ" > "$STUB/digest-gateway"
 run v1.2.3 "$STUB/IMAGES"
-red "malformed digest -> exit 1" "gateway:1.2.3 resolved to a malformed digest"
+red "malformed digest -> exit 1" "gateway:1.2.3 resolved to a malformed digest (10 chars"
+if grep -qF "XYZ" "$LOG"; then bad "malformed digest: the value is echoed"; else ok "malformed digest: the value is not echoed"; fi
 
 # ── 5: signature lands late (docker.yml still signing) → polls, then pins ──
 setup late; echo 2 > "$STUB/late-ca-issuer"
