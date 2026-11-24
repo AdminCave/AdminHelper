@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pycommon-1 — Task-Ledger
-Status: erledigt · Branch: feature/kern-pycommon-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-pycommon-1 · Review: pro Task
 Spec: docs/features/kern-pycommon-1.md (Roadmap R-0698)
 Heavy: linux-full — Build-Kontext und Dockerfiles von server und monitoring, `docker-compose.test.yml`; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -123,6 +123,13 @@ fürs Monitoring; PID im Monitoring-Log; CHANGELOG `### Changed`. Pfade der Doku
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
+
+### T12 — Wächter-Meldung ohne Pfad-Muster  [ ]
+Komponente: server · Dateien: apps/server/tests/test_no_python_copies.py
+Änderung: Die Assert-Meldung `apps/{tree}` las `test_ci_changes.py` als `apps/*` (PR #647, Server-Shard 2/2 rot:
+`apps/agent/.gitignore is not in the scope server`); die Meldung nennt den Baum ohne `apps/`-Präfix.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_changes.py tests/test_no_python_copies.py
+Doku: keine (nur Testtext)
 
 ## Entscheidungen
 - T1 (Lieferweg): Tests finden `ah_common` über eine `sys.path`-Zeile in beiden `tests/conftest.py`, nicht über
