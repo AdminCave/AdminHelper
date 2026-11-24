@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-testdb-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-testdb-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-testdb-1 · Review: pro Task
 Spec: docs/features/kern-testdb-1.md (Roadmap R-0700)
 Heavy: none — nur Testdateien und DEVELOPMENT.md; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,6 +61,18 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
+
+### T7 — Monitoring: abgeleitete Test-DB am Laufende droppen  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/conftest.py
+Änderung: R-0700, Abschlussprüfung (wichtig): `_postgres_unit_engine` dropt `<db>_mon_unit` nach `dispose()` mit `DROP DATABASE IF EXISTS … WITH (FORCE)`, sonst bliebe sie nach `worktree-teardown.sh` je Worktree liegen.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
+Doku: keine (Test-Infrastruktur, DEVELOPMENT.md nennt nur die abgeleitete Datenbank)
+
+### T8 — CA-Issuer: abgeleitete Test-DB am Laufende droppen  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/conftest.py
+Änderung: R-0700, Abschlussprüfung (wichtig): wie T7 für `<db>_ca_unit`.
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_db_token_store.py
+Doku: keine (wie T7)
 
 ## Entscheidungen
 - 2026-11-24 (T1): Laufzeit der Monitoring-Suite auf der Dev-Box: SQLite 225 s (`pytest -q`, ohne Postgres-URL), Postgres 253 s (195 s + 58 s der zweiten Stufe von `run.sh`), etwa +12 %. Der 15-Minuten-Deckel des CI-Jobs bleibt weit entfernt.
