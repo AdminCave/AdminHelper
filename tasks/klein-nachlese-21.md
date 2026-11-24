@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-21 — Nachlese kern-server-14 und kern-agent-22 — Task-Ledger
-Status: geplant · Branch: feature/klein-nachlese-21 · Review: am Ende
+Status: aktiv · Branch: feature/klein-nachlese-21 · Review: am Ende
 Spec: docs/features/klein-nachlese-21.md (Roadmap R-1762, R-1770)
 Heavy: none — ein Test, ein Refactor im Agent-Linux-Pfad, ein Changelog-Fragment
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
