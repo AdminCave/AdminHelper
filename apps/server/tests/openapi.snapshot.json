@@ -9685,6 +9685,22 @@
         ]
       }
     },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
     "/api/hooks": {
       "get": {
         "operationId": "list_hooks_api_hooks_get",

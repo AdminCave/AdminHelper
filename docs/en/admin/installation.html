@@ -154,7 +154,7 @@ docker compose up -d</code></pre>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2v1M19.07 4.93l-.71.71M22 12h-1M4.93 4.93l.71.71M2 12h1"/><path d="M12 17a5 5 0 0 0 5-5 5 5 0 0 0-10 0 5 5 0 0 0 5 5z"/></svg>
             <div>
               <div class="callout-title">Health check</div>
-              <p>The server exposes a short JSON status at <code>/api/health</code>. Use this endpoint for monitoring systems or Docker health checks.</p>
+              <p>The server answers <code>GET /api/health</code> with <code>{"status": "ok"}</code>, without login and without a database query: the answer shows that the process responds, not that the database is reachable. The Docker healthcheck of the <code>server</code> service asks the route inside the container (<code>http://127.0.0.1:8080/api/health</code>) and counts any HTTP answer as healthy, a 403 too, when <code>ALLOWED_IPS</code> does not contain <code>127.0.0.1</code>; a check fails only when no answer comes within 2&nbsp;s. A monitoring system reaches the route from outside through the gateway, where the same rules apply as for any other request.</p>
             </div>
           </div>
 

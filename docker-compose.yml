@@ -186,11 +186,26 @@ services:
     pids_limit: 4096
     # Memory: per uvicorn worker an interpreter, its requests and up to eight hook processes.
     mem_limit: 6g
-    # TCP-readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
-    # 8080, so a successful connect means migrations are done — lets dependants wait on service_healthy
+    # Readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
+    # 8080, so an answer means migrations are done — lets dependants wait on service_healthy
     # instead of racing Alembic (the gateway otherwise serves 502s to fresh clients) (1.22).
+    # An HTTP GET on /api/health, not a TCP connect: the kernel completes a connect from the
+    # listen backlog even while the process hangs (R-1715). Any HTTP status counts as an
+    # answer: with ALLOWED_IPS set and without 127.0.0.1, the server answers this request 403.
+    # No proxy: Docker hands proxy variables from the client config to every container, and
+    # urllib would send even a loopback request through them.
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - |
+          import urllib.error, urllib.request
+          try:
+              opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              opener.open('http://127.0.0.1:8080/api/health', timeout=2).read()
+          except urllib.error.HTTPError:
+              pass
       interval: 5s
       timeout: 3s
       retries: 48

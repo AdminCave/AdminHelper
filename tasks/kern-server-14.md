@@ -1,5 +1,5 @@
 # kern-server-14 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-14 · Review: pro Task
 Spec: docs/features/kern-server-14.md (Roadmap R-1694, R-1695, R-1697, R-1698, R-1699, R-1734, R-1737, R-1744, R-1715)
 Heavy: linux-full — Server-API (neue Route), docker-compose.yml (Healthcheck), Monitoring-Abgleich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,10 @@ Review: approve (.ah-out/review/kern-server-14/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_users_last_admin.py
 Doku: keine (Tests und Kommentar)
 
-### T7 — R-1744, R-1715: Route /api/health, Compose-Healthcheck, Doku  [ ]
-Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_health.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_compose_healthchecks.py, docker-compose.yml, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-server-14.md
+### T7 — R-1744, R-1715: Route /api/health, Compose-Healthcheck, Doku  [x]
+Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_health.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_compose_healthchecks.py, docker-compose.yml, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-server-14.md, docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8a9c12804 2026-11-24T16:16:45+01:00
+Review: approve (.ah-out/review/kern-server-14/T7.verdict.json)
 Änderung: `GET /api/health` → `200 {"status":"ok"}`, ohne Auth und DB, vor der Catch-all-Route. Der Compose-Healthcheck des Servers fragt sie per HTTP ab, der Kommentar zur Migrations-Reihenfolge bleibt. Doku DE und EN passend dazu, dazu die Hook-Notiz (T1). Changelog-Fragment für T1, T3, T4, T7. Neue Testdatei mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_health.py tests/test_openapi_snapshot.py tests/test_compose_healthchecks.py
 Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite DE+EN, changelog.d/kern-server-14.md
@@ -63,3 +65,4 @@ Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite 
 - 2026-11-24: R-1694 als Glocken-Notiz, keine Migration (Kevin). R-1744/R-1715 als Route `/api/health` ohne DB (Kevin).
 - 2026-11-24 T3: Die bekannten Server-IDs werden vor dem Holen des Inventars gelesen. Der Hub legt einen Server an, bevor das Monitoring Daten zu ihm bekommt, so kann ein gerade angelegter Server nicht als Waise gelten. `test_assignment_of_a_server_missing_from_the_inventory_stays` sicherte das alte Verhalten ab, das R-1697 absichtlich ändert. Er ist ersetzt durch `test_server_missing_from_the_inventory_is_cleaned_up`, dazu kommen Tests für leeres und gescheitertes Inventar.
 - 2026-11-24 T6: Prüfpunkt aus der Nachlese bestätigt sich nicht, kein Fix. Ein `create-admin` per `docker compose exec` läuft als root und hinterlässt die Policy-Datei root-eigen (0644, für frps lesbar). Der Server-Prozess ersetzt sie trotzdem: `_replace_atomically` schreibt eine Temp-Datei und benennt sie per `os.replace` um, dafür reicht Schreibrecht auf das Verzeichnis, und das gehört nach `chown -R` im Entrypoint `app`. Aus Code und rename-Semantik gelesen, nicht im Container gefahren.
+- 2026-11-24 T7: Der Compose-Healthcheck des Servers wertet jede HTTP-Antwort als gesund, auch ein 403. `IPFilterMiddleware` sieht beim Check im Container `127.0.0.1`; ist `ALLOWED_IPS` gesetzt und enthält Loopback nicht, antwortet der Server 403, und ein Check, der nur 2xx gelten ließe, machte den Dienst `unhealthy` (dann rollte `update.sh` mit `up --wait` zurück). `/api/health` vom IP-Filter auszunehmen hätte das Sicherheitsverhalten geändert. Ungesund heißt so: keine Antwort binnen 2 s, wie bei einem hängenden Prozess.
