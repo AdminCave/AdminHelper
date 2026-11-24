@@ -49,7 +49,19 @@ Doku: keine (internes Verhalten)
 Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/tests/test_bootstrap.py, apps/server/tests/test_users_last_admin.py
 Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @efbb49e98 2026-11-24T16:06:59+01:00
 Review: approve (.ah-out/review/kern-server-14/T6.verdict.json)
-Änderung: Routen-Tests für die 409 bei einem vergebenen Benutzernamen (Bootstrap und API), den veralteten Kommentar berichtigen, den Prüfpunkt aus der privaten Nachlese klären (Ergebnis unter `### T8 — R-1744: /api/health im Inventar der öffentlichen Routen  [ ]
+Änderung: Routen-Tests für die 409 bei einem vergebenen Benutzernamen (Bootstrap und API), den veralteten Kommentar berichtigen, den Prüfpunkt aus der privaten Nachlese klären (Ergebnis unter `## Entscheidungen`; ein Fix nur, wenn er sich bestätigt).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_users_last_admin.py
+Doku: keine (Tests und Kommentar)
+
+### T7 — R-1744, R-1715: Route /api/health, Compose-Healthcheck, Doku  [x]
+Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_health.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_compose_healthchecks.py, docker-compose.yml, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-server-14.md, docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8a9c12804 2026-11-24T16:16:45+01:00
+Review: approve (.ah-out/review/kern-server-14/T7.verdict.json)
+Änderung: `GET /api/health` → `200 {"status":"ok"}`, ohne Auth und DB, vor der Catch-all-Route. Der Compose-Healthcheck des Servers fragt sie per HTTP ab, der Kommentar zur Migrations-Reihenfolge bleibt. Doku DE und EN passend dazu, dazu die Hook-Notiz (T1). Changelog-Fragment für T1, T3, T4, T7. Neue Testdatei mit SPDX-Header.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_health.py tests/test_openapi_snapshot.py tests/test_compose_healthchecks.py
+Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite DE+EN, changelog.d/kern-server-14.md
+
+### T8 — R-1744: /api/health im Inventar der öffentlichen Routen  [ ]
 Komponente: server · Dateien: apps/server/tests/test_route_auth_gate.py
 Beweis: feature/kern-server-14@27c1119e9 tests/test_route_auth_gate.py::test_every_api_route_is_guarded_or_explicitly_public rot (1 failed, 4 passed), Abschlussprüfung
 Änderung: `("GET", "/api/health")` mit Begründung (Liveness ohne Auth und DB, R-1744) in `_PUBLIC_ROUTES`. Der Test war vor der Änderung rot.
@@ -62,18 +74,6 @@ Beweis: feature/kern-server-14@27c1119e9 app/modules/hooks/script_runner.py:403-
 Änderung: `notify_hook_failure` liest Name und ID des Hooks vor dem `try` und nutzt danach nur die lokalen Werte. Test erst rot: scheitert das Schreiben und ist die DB danach nicht mehr erreichbar, wirft die Funktion nicht.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: keine (Fehlerpfad)
-
-## Entscheidungen`; ein Fix nur, wenn er sich bestätigt).
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bootstrap.py tests/test_users_last_admin.py
-Doku: keine (Tests und Kommentar)
-
-### T7 — R-1744, R-1715: Route /api/health, Compose-Healthcheck, Doku  [x]
-Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_health.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_compose_healthchecks.py, docker-compose.yml, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-server-14.md, docs/developer/hooks.html, docs/en/developer/hooks.html
-Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8a9c12804 2026-11-24T16:16:45+01:00
-Review: approve (.ah-out/review/kern-server-14/T7.verdict.json)
-Änderung: `GET /api/health` → `200 {"status":"ok"}`, ohne Auth und DB, vor der Catch-all-Route. Der Compose-Healthcheck des Servers fragt sie per HTTP ab, der Kommentar zur Migrations-Reihenfolge bleibt. Doku DE und EN passend dazu, dazu die Hook-Notiz (T1). Changelog-Fragment für T1, T3, T4, T7. Neue Testdatei mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_health.py tests/test_openapi_snapshot.py tests/test_compose_healthchecks.py
-Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite DE+EN, changelog.d/kern-server-14.md
 
 ## Entscheidungen
 - 2026-11-24: R-1694 als Glocken-Notiz, keine Migration (Kevin). R-1744/R-1715 als Route `/api/health` ohne DB (Kevin).
