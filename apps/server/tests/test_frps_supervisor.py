@@ -1613,7 +1613,9 @@ def test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait(box,
     dashboard.hang = True
 
     with pytest.raises(AssertionError) as caught:
-        _with_dashboard(box, dashboard, timeout=6, FRPS_READ_SECONDS="1")
+        # This test checks the expiry of the wait itself, so it may use a short one: the first poll
+        # reaches the dashboard about a second after the start and the read timeout is one second.
+        _with_dashboard(box, dashboard, timeout=10, FRPS_READ_SECONDS="1")
 
     message = str(caught.value)
     assert "not the proxy lists within" in message

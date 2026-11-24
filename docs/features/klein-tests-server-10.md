@@ -17,7 +17,7 @@ die betroffenen Dateien.
 
 ## Ziel & Nicht-Ziele
 `_with_dashboard` bekommt einen optionalen Timeout (Standard bleibt `3 * WAIT`); der eine Test gibt einen kurzen
-mit (Richtwert 6 s: der Supervisor pollt jede Sekunde, `FRPS_READ_SECONDS=1`). Die Assertions bleiben unverändert,
+mit (Richtwert 10 s: der Supervisor pollt jede Sekunde, `FRPS_READ_SECONDS=1`). Die Assertions bleiben unverändert,
 alle anderen Aufrufer behalten ihr Verhalten. Der Test wird umbenannt, sonst nichts. Kein Produktcode.
 
 ## Betroffene Komponenten & Dateien
@@ -28,7 +28,7 @@ Keine.
 
 ## Trade-offs & Alternativen
 Ein Parameter am Helfer statt eigener Kopie des Wartens im Test: eine Zeile mehr, kein zweiter Pfad. Ein zu kurzer
-Timeout würde den Test flackern lassen; 6 s lassen mehr als fünf Polls zu, die Meldung nennt schon nach dem ersten
+Timeout würde den Test flackern lassen; 10 s lassen rund neun Polls zu, die Meldung nennt schon nach dem ersten
 Request die Pfade.
 
 ## Risiken & Rollback
