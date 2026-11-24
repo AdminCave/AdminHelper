@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-22 — Nachlese kern-agent-23 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-22 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-22 · Review: am Ende
 Spec: docs/features/klein-nachlese-22.md (Roadmap R-1771)
 Heavy: none — eine Doku-Zelle, Fehlertexte und Kommentare in Tests
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -24,8 +24,10 @@ Dedup-Key: ref:agent:monitor_init_test.go:nachlese-kern-agent-23
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 
-### T2 — Agent-Tests: Fehlertexte nennen push.Init, TestPush* tragen den runCycle-Hinweis (R-1771)  [ ]
+### T2 — Agent-Tests: Fehlertexte nennen push.Init, TestPush* tragen den runCycle-Hinweis (R-1771)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/monitor_init_test.go, apps/agent/internal/monitor/plan_test.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/servicelogs_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @40d31ae4c 2026-11-24T22:11:19+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer/security kern-agent-23 2026-11-24 · monitor_init_test.go:56,66,131, apps/agent/internal/monitor/push/init.go:46 (`func Init`)
 Semantik: keine Stelle in docs/ — gesucht: Testtexte sind kein dokumentiertes Verhalten
 Dedup-Key: ref:agent:monitor_init_test.go:nachlese-kern-agent-23-tests

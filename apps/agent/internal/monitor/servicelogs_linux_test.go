@@ -138,6 +138,7 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 }
 
 // The plan's switch reaches the pushed report, and a lost push sends the lines again.
+// Since kern-agent-23 this test runs runCycle (Collect, then Done), not Push; the name stays.
 func TestPushSendsTheErrorLinesThePlanAsksForAndAgainAfterALostPush(t *testing.T) {
 	stubReportHost(t)
 	s := stubCPU(t)
