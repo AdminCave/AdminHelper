@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-20 — Nachlese kern-agent-20 bis kern-testdb-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-20 · Review: pro Task
+Status: erledigt · Branch: feature/klein-nachlese-20 · Review: pro Task
 Spec: docs/features/klein-nachlese-20.md (Roadmap R-1730, R-1731, R-1733, R-1735, R-1736, R-1746, R-1749)
 Heavy: none — Test-, Kommentar- und Doku-Nits; die Port-Prüfung greift beim Dienststart und ist per Unit-Test belegt
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
