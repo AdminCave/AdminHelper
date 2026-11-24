@@ -105,8 +105,10 @@ bleibt je Dienst.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T10 — Wächter gegen neue Kopien  [ ]
+### T10 — Wächter gegen neue Kopien  [x]
 Komponente: server · Dateien: apps/server/tests/test_no_python_copies.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @df9e4aafc 2026-11-24T09:49:42+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T10.verdict.json)
 Änderung: Ein AST-Test (SPDX) über `apps/server/app` und `apps/monitoring/app`: zwei Funktionen mit gleichem Namen und
 gleichem normalisiertem Rumpf (ohne Docstrings) schlagen an; eine kurze Ausnahmeliste mit Begründung.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_no_python_copies.py
@@ -145,3 +147,8 @@ Task-Review: am Ende
   eigene Metadaten). Der UTC-Listener heißt öffentlich `set_session_utc`; die Server-Conftest importiert ihn von dort.
 - T5: Compose reicht `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` auch dem Monitoring durch, sonst bliebe das Lesen im Betrieb
   wirkungslos; `.env.example` nennt es. Vorgabe weiter 10/20.
+- T10: Der Wächter fand außer den Spec-Helfern zehn identische Funktionen: `_nul_rejected`/`dispatch` der Middleware
+  (die Spec nannte sie „ohne gemeinsame Logik“, das stimmt nicht), `core/query_params.py` und `mail_template`. Sie
+  ziehen nicht in diesem Zug um, sondern stehen als Ausnahmen je Modulpaar im Test mit Verweis auf R-1740 (neu);
+  ein zweiter Test meldet eine Ausnahme, die keine Kopie mehr ist. Gegenprobe: eine neue Kopie und eine veraltete
+  Ausnahme schlagen je an.
