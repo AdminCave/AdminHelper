@@ -290,6 +290,7 @@ def test_refresh_with_a_revoked_certificate_is_refused(test_client, db_session, 
     _assert_revoked(resp)
 
 
+@pytest.mark.usefixtures("scope_session_on_test_db")
 @pytest.mark.parametrize("enforced", [True, False])
 def test_an_agent_push_with_a_revoked_tunnel_certificate_is_refused(
     test_client, db_session, monkeypatch, enforced

@@ -23,7 +23,13 @@ from app.core import monitoring_client
 from app.core.auth import get_current_admin
 from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
-from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_cert_server, require_scope
+from app.core.identity import (
+    SCOPE_ACCESS,
+    SCOPE_AGENT,
+    require_cert_server,
+    require_scope,
+    require_scope_brief,
+)
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend
 from app.core.request_context import actor_from_request
@@ -110,7 +116,7 @@ async def _audit_write(db: Session, request: Request, path: str, status: str, de
 async def proxy_agent_report(
     server_id: str,
     request: Request,
-    _scope=Depends(require_scope(SCOPE_AGENT)),
+    _scope=Depends(require_scope_brief(SCOPE_AGENT)),
 ):
     """Proxy for agent reports (auth via X-API-Key, no JWT needed; agent scope)."""
     ip = resolve_client_ip(request)
@@ -143,7 +149,7 @@ async def proxy_agent_report(
 async def proxy_agent_plan(
     server_id: str,
     request: Request,
-    _scope=Depends(require_scope(SCOPE_AGENT)),
+    _scope=Depends(require_scope_brief(SCOPE_AGENT)),
 ):
     """Proxy for the agent's plan (auth via X-API-Key, no JWT needed; agent scope)."""
     ip = resolve_client_ip(request)
@@ -208,6 +214,10 @@ async def proxy_to_monitoring(
         forward_path = quote(path, safe="/")
 
     target_url = f"{_MONITOR_BASE}/{forward_path}"
+    # Hand the connection of the auth checks back before waiting on the monitoring (up to
+    # the client timeout): a hanging monitoring would otherwise drain the pool (R-1695).
+    # The audit row afterwards takes a fresh one.
+    db.close()
     try:
         resp = await _client.request(
             method=request.method,
