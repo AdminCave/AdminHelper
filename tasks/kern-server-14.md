@@ -61,8 +61,10 @@ Review: approve (.ah-out/review/kern-server-14/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_health.py tests/test_openapi_snapshot.py tests/test_compose_healthchecks.py
 Doku: docs/admin/installation.html, docs/en/admin/installation.html, Hook-Seite DE+EN, changelog.d/kern-server-14.md
 
-### T8 — R-1744: /api/health im Inventar der öffentlichen Routen  [ ]
+### T8 — R-1744: /api/health im Inventar der öffentlichen Routen  [x]
 Komponente: server · Dateien: apps/server/tests/test_route_auth_gate.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @57ae50d65 2026-11-24T16:38:14+01:00
+Review: approve (.ah-out/review/kern-server-14/T8.verdict.json)
 Beweis: feature/kern-server-14@27c1119e9 tests/test_route_auth_gate.py::test_every_api_route_is_guarded_or_explicitly_public rot (1 failed, 4 passed), Abschlussprüfung
 Änderung: `("GET", "/api/health")` mit Begründung (Liveness ohne Auth und DB, R-1744) in `_PUBLIC_ROUTES`. Der Test war vor der Änderung rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_route_auth_gate.py tests/test_health.py

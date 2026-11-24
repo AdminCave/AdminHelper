@@ -57,6 +57,7 @@ _PUBLIC_ROUTES = {
     ("POST", "/api/hooks/trigger"),  # public webhook, token in X-Hook-Token header (3.101)
     # agent activation, one-time provision token in body (no cert/JWT yet)
     ("POST", "/api/servers/{server_id}/provision/activate"),
+    ("GET", "/api/health"),  # liveness for the compose healthcheck, no auth and no DB (R-1744)
 }
 
 
