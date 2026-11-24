@@ -74,8 +74,8 @@ def _postgres_unit_engine():
 
     Derived rather than the URL's own database: the migration tests drive alembic
     against DATABASE_URL, and on the dev box AH_TEST_DB is the worktree's server
-    database — a create_all into either would mix two schemas. None without a
-    Postgres URL.
+    database — a create_all into either would mix two schemas. Dropped at the end of
+    the run. None without a Postgres URL.
     """
     base = _postgres_url()
     if base is None:
@@ -103,6 +103,12 @@ def _postgres_unit_engine():
     Base.metadata.create_all(engine)
     yield engine
     engine.dispose()
+    # Dropped rather than kept for the next run: worktree-teardown.sh drops only the
+    # worktree's own database, so a kept one would outlive every worktree.
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    admin.dispose()
 
 
 @pytest.fixture()

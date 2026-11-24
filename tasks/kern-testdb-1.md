@@ -62,8 +62,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T7 — Monitoring: abgeleitete Test-DB am Laufende droppen  [ ]
+### T7 — Monitoring: abgeleitete Test-DB am Laufende droppen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/conftest.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5707b8ffc 2026-11-24T14:07:12+01:00
+Review: approve (.ah-out/review/kern-testdb-1/T7.verdict.json)
 Änderung: R-0700, Abschlussprüfung (wichtig): `_postgres_unit_engine` dropt `<db>_mon_unit` nach `dispose()` mit `DROP DATABASE IF EXISTS … WITH (FORCE)`, sonst bliebe sie nach `worktree-teardown.sh` je Worktree liegen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: keine (Test-Infrastruktur, DEVELOPMENT.md nennt nur die abgeleitete Datenbank)
