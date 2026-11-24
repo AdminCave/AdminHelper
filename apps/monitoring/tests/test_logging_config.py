@@ -9,6 +9,7 @@ import sys
 import httpx
 import pytest
 
+from ah_common.env import ConfigError
 from app.core.logging_config import configure_logging
 
 _CONFIGURED_LOGGERS = ("", "httpx", "httpcore", "uvicorn", "uvicorn.access", "uvicorn.error")
@@ -55,8 +56,14 @@ def test_level_from_env(monkeypatch):
     assert logging.getLogger().level == logging.DEBUG
 
 
-def test_invalid_level_falls_back_to_info(monkeypatch):
+def test_invalid_level_stops_the_start(monkeypatch):
     monkeypatch.setenv("LOG_LEVEL", "not-a-level")
+    with pytest.raises(ConfigError, match="LOG_LEVEL='not-a-level'"):
+        configure_logging()
+
+
+def test_empty_level_means_info(monkeypatch):
+    monkeypatch.setenv("LOG_LEVEL", "")
     configure_logging()
     assert logging.getLogger().level == logging.INFO
 

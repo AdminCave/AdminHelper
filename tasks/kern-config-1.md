@@ -10,8 +10,10 @@ Heavy: linux-full — `docker-compose.yml`, Server-API (`/api/docs`), `apps/ca-i
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — ah_common.env und fail-fast im Server  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/env.py (neu, SPDX), apps/pycommon/ah_common/logging_config.py, apps/server/app/core/config.py, apps/server/tests/test_config_env.py (neu, SPDX), apps/server/tests/test_web_idle_timeout.py, apps/server/tests/test_web_session_max.py, apps/server/tests/test_logging_config.py, apps/monitoring/tests/test_logging_config.py
+### T1 — ah_common.env und fail-fast im Server  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/env.py (neu, SPDX), apps/pycommon/ah_common/logging_config.py, apps/server/app/core/config.py, apps/server/tests/test_config_env.py (neu, SPDX), apps/server/tests/test_web_idle_timeout.py, apps/server/tests/test_web_session_max.py, apps/server/tests/test_logging_config.py, apps/monitoring/tests/test_logging_config.py, apps/server/tests/test_env_parity.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @09669d33c 2026-11-24T11:36:57+01:00
+Review: approve (.ah-out/review/kern-config-1/T1.verdict.json)
 Änderung: R-0699. Neu in `ah_common/env.py`: `env_int(name, default, *, minimum=None)` und `ConfigError(ValueError)`. Die Meldung nennt Variable, Wert und Erwartung. Alle Zahlen-Variablen in `apps/server/app/core/config.py` laufen darüber (`SMTP_PORT` bis `NOTIFICATION_RETENTION_DAYS`). `WEB_IDLE_TIMEOUT_MINUTES`, `WEB_SESSION_MAX_HOURS` und ein unbekanntes `LOG_LEVEL` (`ah_common.logging_config`) brechen ab statt zurückzufallen. Die Fallback-Tests werden zu Abbruch-Tests, auch der des Monitorings, weil `logging_config` geteilt ist; T3 fährt ihn.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_env.py tests/test_web_idle_timeout.py tests/test_web_session_max.py tests/test_logging_config.py tests/test_env_parity.py tests/test_no_python_copies.py
 Doku: → T5
