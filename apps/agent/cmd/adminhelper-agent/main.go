@@ -22,7 +22,7 @@ import (
 	"adminhelper-agent/internal/diagnostics"
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/logging"
-	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/monitor/push"
 	"adminhelper-agent/internal/provision"
 	"adminhelper-agent/internal/service"
 )
@@ -269,7 +269,7 @@ func monitorInitCmd() *cobra.Command {
 				}
 				apiKey = k
 			}
-			return initMonitor(monitor.InitParams{
+			return initMonitor(push.InitParams{
 				URL:      url,
 				APIKey:   apiKey,
 				ServerID: serverID,
@@ -292,16 +292,16 @@ func monitorInitCmd() *cobra.Command {
 	return cmd
 }
 
-// monitorInit and enableTimer are monitor.Init and service.EnableTimer; tests swap them, the real
+// monitorInit and enableTimer are push.Init and service.EnableTimer; tests swap them, the real
 // ones write the monitor config and run systemctl.
 var (
-	monitorInit = monitor.Init
+	monitorInit = push.Init
 	enableTimer = service.EnableTimer
 )
 
 // initMonitor sets the monitor up and only then enables the agent timer (R-0641): a setup that
 // failed enables nothing, and a timer that cannot be enabled is a warning, the setup stands.
-func initMonitor(p monitor.InitParams) error {
+func initMonitor(p push.InitParams) error {
 	if err := monitorInit(p); err != nil {
 		return err
 	}
@@ -317,7 +317,7 @@ func monitorPushCmd() *cobra.Command {
 		Use:   "push",
 		Short: "Run one metrics push",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return monitor.Push(context.Background())
+			return push.Push(context.Background())
 		},
 	}
 }

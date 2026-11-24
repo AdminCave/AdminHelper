@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -364,7 +363,6 @@ func TestRunDueProbesDropsAProbeTheRunEndedUnder(t *testing.T) {
 
 func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	s := stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	var runs atomic.Int32
@@ -382,19 +380,9 @@ func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 		Version int           `json:"report_version"`
 		Probes  probe.Results `json:"probes"`
 	}
-	received := make(chan sent, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.WriteHeader(int(planStatus.Load()))
-			_, _ = w.Write([]byte(planBody.Load().(string)))
-			return
-		}
-		var body sent
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("report body: %v", err)
-		}
-		received <- body
-		w.WriteHeader(int(reportStatus.Load()))
+		w.WriteHeader(int(planStatus.Load()))
+		_, _ = w.Write([]byte(planBody.Load().(string)))
 	}))
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
@@ -408,10 +396,10 @@ func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 	push := func(busy, idle float64) (sent, error) {
 		t.Helper()
 		s.times = cpuTimes(busy, idle)
-		err := Push(context.Background())
+		data, err := runCycle(t, reportStatus.Load() == http.StatusOK)
 		var last sent
-		for len(received) > 0 {
-			last = <-received
+		if uerr := json.Unmarshal(data, &last); uerr != nil {
+			t.Fatal(uerr)
 		}
 		return last, err
 	}
@@ -476,7 +464,6 @@ const planCredentialProbe = `{"plan_version": 1, "catalog_version": "c1", "scan"
 
 func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	credPath := config.MonitorCredentialsFile()
@@ -502,18 +489,8 @@ func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *te
 
 	var reportStatus atomic.Int32
 	reportStatus.Store(http.StatusBadGateway)
-	received := make(chan map[string]json.RawMessage, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(planCredentialProbe))
-			return
-		}
-		var body map[string]json.RawMessage
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("report body: %v", err)
-		}
-		received <- body
-		w.WriteHeader(int(reportStatus.Load()))
+		_, _ = w.Write([]byte(planCredentialProbe))
 	}))
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
@@ -526,10 +503,10 @@ func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *te
 	statePath := config.MonitorReportStateFile()
 	push := func() (map[string]json.RawMessage, error) {
 		t.Helper()
-		err := Push(context.Background())
+		data, err := runCycle(t, reportStatus.Load() == http.StatusOK)
 		var last map[string]json.RawMessage
-		for len(received) > 0 {
-			last = <-received
+		if uerr := json.Unmarshal(data, &last); uerr != nil {
+			t.Fatal(uerr)
 		}
 		return last, err
 	}
@@ -590,7 +567,6 @@ func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *te
 
 func TestACredentialsBindingOutlivesALostPushUntilTheCredentialIsSetAnew(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	credPath := config.MonitorCredentialsFile()
@@ -616,13 +592,13 @@ func TestACredentialsBindingOutlivesALostPushUntilTheCredentialIsSetAnew(t *test
 	var reportStatus atomic.Int32
 	reportStatus.Store(http.StatusBadGateway)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(planCredentialProbe))
-			return
-		}
-		_, _ = io.Copy(io.Discard, r.Body)
-		w.WriteHeader(int(reportStatus.Load()))
+		_, _ = w.Write([]byte(planCredentialProbe))
 	}))
+	push := func() error {
+		t.Helper()
+		_, err := runCycle(t, reportStatus.Load() == http.StatusOK)
+		return err
+	}
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
 		{Key: "MONITOR_URL", Value: srv.URL},
@@ -635,7 +611,7 @@ func TestACredentialsBindingOutlivesALostPushUntilTheCredentialIsSetAnew(t *test
 	want := map[string]probe.Binding{"db": {ID: boundID, Target: "t1"}}
 
 	// 1) The push is lost: the binding the probe made stays in the state.
-	if err := Push(context.Background()); err == nil {
+	if err := push(); err == nil {
 		t.Fatal("push against 502: want an error")
 	}
 	if len(seen) != 1 || seen[0] != nil {
@@ -647,7 +623,7 @@ func TestACredentialsBindingOutlivesALostPushUntilTheCredentialIsSetAnew(t *test
 
 	// 2) The next push keeps it.
 	reportStatus.Store(http.StatusOK)
-	if err := Push(context.Background()); err != nil {
+	if err := push(); err != nil {
 		t.Fatal(err)
 	}
 	if st := loadReportState(statePath); !reflect.DeepEqual(st.Bindings, want) {
@@ -661,7 +637,7 @@ func TestACredentialsBindingOutlivesALostPushUntilTheCredentialIsSetAnew(t *test
 	if err := credentials.Set(context.Background(), credPath, "db", "pw2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Push(context.Background()); err != nil {
+	if err := push(); err != nil {
 		t.Fatal(err)
 	}
 	if st := loadReportState(statePath); st.Bindings != nil || len(seen) != 1 {
@@ -676,7 +652,6 @@ const planLogProbe = `{"plan_version": 1, "catalog_version": "c1", "scan": false
 
 func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	var got []string
@@ -695,12 +670,13 @@ func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T)
 	var reportStatus atomic.Int32
 	reportStatus.Store(http.StatusBadGateway)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(plan.Load().(string)))
-			return
-		}
-		w.WriteHeader(int(reportStatus.Load()))
+		_, _ = w.Write([]byte(plan.Load().(string)))
 	}))
+	push := func() error {
+		t.Helper()
+		_, err := runCycle(t, reportStatus.Load() == http.StatusOK)
+		return err
+	}
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
 		{Key: "MONITOR_URL", Value: srv.URL},
@@ -716,7 +692,7 @@ func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T)
 
 	// 1) The push is lost: the probe counted from its stored cursor, and the cursor its run left stays
 	// with its result. The cursor of a probe the plan no longer holds is done.
-	if err := Push(context.Background()); err == nil {
+	if err := push(); err == nil {
 		t.Fatal("push against 502: want an error")
 	}
 	if !reflect.DeepEqual(got, []string{"c0"}) {
@@ -733,7 +709,7 @@ func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T)
 	// 2) The probe measures with a sensor that does not count now: its cursor is done.
 	plan.Store(strings.Replace(planLogProbe, `"sensor": "log"`, `"sensor": "fake"`, 1))
 	reportStatus.Store(http.StatusOK)
-	if err := Push(context.Background()); err != nil {
+	if err := push(); err != nil {
 		t.Fatal(err)
 	}
 	if st := loadReportState(statePath); st.Cursors != nil {
@@ -746,7 +722,6 @@ const planScan = `{"plan_version": 1, "catalog_version": "c1", "scan": true,
 
 func TestPushRunsTheDiscoveryThePlanAsksForOnce(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	calls := stubDiscovery(t, discovery.Inventory{TS: 1, Markers: map[string]bool{"nginx": true}})
@@ -754,17 +729,19 @@ func TestPushRunsTheDiscoveryThePlanAsksForOnce(t *testing.T) {
 	planStatus.Store(http.StatusOK)
 	var posted atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.WriteHeader(int(planStatus.Load()))
-			_, _ = w.Write([]byte(planScan))
-			return
-		}
+		w.WriteHeader(int(planStatus.Load()))
+		_, _ = w.Write([]byte(planScan))
+	}))
+	push := func() error {
+		t.Helper()
+		data, err := runCycle(t, true)
 		var report map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
-			t.Errorf("report: %v", err)
+		if uerr := json.Unmarshal(data, &report); uerr != nil {
+			t.Fatal(uerr)
 		}
 		posted.Store(report)
-	}))
+		return err
+	}
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
 		{Key: "MONITOR_URL", Value: srv.URL},
@@ -775,7 +752,7 @@ func TestPushRunsTheDiscoveryThePlanAsksForOnce(t *testing.T) {
 	}
 
 	// 1) The plan asks for a discovery: it runs with the plan's markers and its block goes out.
-	if err := Push(context.Background()); err != nil {
+	if err := push(); err != nil {
 		t.Fatal(err)
 	}
 	want := []probe.Marker{{ID: "nginx", Paths: []string{"/etc/nginx"}, Packages: []string{"nginx"}}}
@@ -794,7 +771,7 @@ func TestPushRunsTheDiscoveryThePlanAsksForOnce(t *testing.T) {
 
 	// 2) The monitoring service's plan cannot be read: the saved plan stands in and repeats no discovery.
 	planStatus.Store(http.StatusBadGateway)
-	if err := Push(context.Background()); err != nil {
+	if err := push(); err != nil {
 		t.Fatal(err)
 	}
 	if len(*calls) != 1 {

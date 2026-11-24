@@ -188,7 +188,7 @@ func TestRunOnceBudgetKeepsThePushWhenSyncHangs(t *testing.T) {
 	if pushCtxErr != nil {
 		t.Fatalf("the push got an ended context: %v", pushCtxErr)
 	}
-	// The push runs under the run's budget, which leaves monitor.Push its reserve.
+	// The push runs under the run's budget, which leaves push.Push its reserve.
 	if !pushHasDeadline || pushDeadline.After(start.Add(1100*time.Millisecond)) {
 		t.Fatalf("push deadline = %v (set %v), want the run's budget of 1s", pushDeadline.Sub(start), pushHasDeadline)
 	}

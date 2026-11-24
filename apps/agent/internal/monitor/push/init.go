@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package monitor
+package push
 
 import (
 	"context"
@@ -16,10 +16,11 @@ import (
 	"time"
 
 	"adminhelper-agent/internal/config"
-	"adminhelper-agent/internal/credentials"
+	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/monitor/send"
 )
 
-// InitParams groups monitor.Init's arguments (6 same-typed positionals before).
+// InitParams groups Init's arguments (6 same-typed positionals before).
 type InitParams struct {
 	URL      string
 	APIKey   string
@@ -130,8 +131,8 @@ func Init(p InitParams) error {
 	logger.Infof("Config geschrieben: %s", config.MonitorConfFile())
 
 	// Test push
-	report := BuildReport(config.SplitServices(services))
-	if err := PushReport(context.Background(), PushReportParams{
+	report := monitor.BuildReport(config.SplitServices(services))
+	if err := send.Report(context.Background(), send.Params{
 		URL:      url,
 		APIKey:   apiKey,
 		ServerID: serverID,
@@ -171,89 +172,4 @@ func fetchServerCertPEM(rawURL string) ([]byte, error) {
 		pemBytes = append(pemBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
 	}
 	return pemBytes, nil
-}
-
-// pushReserve is the time a run keeps for PushReport after the collection: one
-// request of at most 15 s, the retry delay of 10 s and the retry's 15 s
-// (report.go: pushRetryDelay, the client timeout), plus a margin.
-var pushReserve = 45 * time.Second
-
-// Push reads the config and sends a one-off report. The ctx aborts the push
-// retry backoff on shutdown so a stopping service is not blocked up to 10s.
-func Push(ctx context.Context) error {
-	cfg, err := config.LoadMonitorConfig()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("Config laden: %w", err)
-	}
-	if cfg.MonitorURL == "" || cfg.APIKey == "" || cfg.ServerID == "" {
-		return fmt.Errorf("Config unvollstaendig — bitte erneut mit init einrichten")
-	}
-
-	reportStatePath := config.MonitorReportStateFile()
-	// With a deadline (a run of the agent), the collection ends pushReserve before it:
-	// a slow tool costs its part of the report, not the push. Without one (monitor push
-	// by hand) the collection runs as long as its tools do.
-	collectCtx := ctx
-	if deadline, ok := ctx.Deadline(); ok {
-		var cancel context.CancelFunc
-		collectCtx, cancel = context.WithDeadline(ctx, deadline.Add(-pushReserve))
-		defer cancel()
-	}
-	plan := currentPlan(collectCtx, cfg, config.MonitorPlanFile())
-	work := &probeWork{probes: plan.Probes, scan: plan.Scan, markers: plan.Discovery.Markers, serviceLogs: plan.ServiceLogs}
-	work.creds, work.credsErr = credentials.Load(config.MonitorCredentialsFile())
-	if work.credsErr != nil {
-		logger.Warnf("the credentials cannot be read, the probes that need one report no_credential: %v", work.credsErr)
-	}
-	prevReportState := loadReportState(reportStatePath)
-	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, work, prevReportState, time.Now())
-	statePath := config.MonitorInventoryStateFile()
-	newState, sentFull := throttleInventory(report, statePath, time.Now())
-	if err := PushReport(ctx, PushReportParams{
-		URL:      cfg.MonitorURL,
-		APIKey:   cfg.APIKey,
-		ServerID: cfg.ServerID,
-		Report:   report,
-		TLS:      config.TLSOpts{CACert: cfg.CACert, Insecure: cfg.Insecure},
-	}); err != nil {
-		logger.Errorf("Report senden fehlgeschlagen: %v", err)
-		// The probes that ran keep their results all the same: the next report carries them with their
-		// own time, and they are not due again before their interval, however long the monitoring service
-		// is away; a counting probe counts on from where the run of its kept result stopped. The
-		// self-throttle counts what the collectors cost, sent or not, a refused credential stays
-		// refused and a bound one stays bound. The load gate counts the runs it read, so a host under
-		// load is not measured in full while the service is away. The hourly update count and the
-		// backup index stay as read, or every run would read them again until a push goes through
-		// (R-1700). The rest of the state stays as the last push left it.
-		kept := prevReportState
-		kept.Probes = nextReportState.Probes
-		kept.Throttle = nextReportState.Throttle
-		kept.Brake = nextReportState.Brake
-		kept.Bindings = nextReportState.Bindings
-		kept.Cursors = nextReportState.Cursors
-		kept.LoadShed = nextReportState.LoadShed
-		kept.Updates = nextReportState.Updates
-		kept.ProxmoxBackups = nextReportState.ProxmoxBackups
-		if err := saveReportState(reportStatePath, kept); err != nil {
-			logger.Warnf("saving the probe results and the self-throttle failed: %v", err)
-		}
-		return err
-	}
-	if sentFull {
-		// A write failure must never block the push flow — the next run then
-		// simply sends the full inventory again.
-		if err := saveInventoryState(statePath, newState); err != nil {
-			logger.Warnf("Inventory-State speichern fehlgeschlagen: %v", err)
-		}
-	}
-	// Saved only after the push went through, so a lost one leaves the window the next CPU share is
-	// measured over open instead of moving it.
-	if err := saveReportState(reportStatePath, nextReportState); err != nil {
-		logger.Warnf("saving the report state failed: %v", err)
-	}
-	logger.Infof("Report gesendet")
-	return nil
 }

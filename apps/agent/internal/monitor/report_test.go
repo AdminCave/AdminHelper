@@ -6,15 +6,11 @@ package monitor
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os/exec"
 	"reflect"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/discovery"
 	"adminhelper-agent/internal/probe"
 )
@@ -241,158 +237,6 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	BuildReport(nil)
 	if len(handed) != 1 || handed[0].OOMKill != nil || handed[0].CPU != nil {
 		t.Errorf("BuildReport handed the collector %+v, want the empty state", handed)
-	}
-}
-
-// shortenRetryDelay shrinks the push retry backoff for the test duration.
-func shortenRetryDelay(t *testing.T) {
-	t.Helper()
-	orig := pushRetryDelay
-	pushRetryDelay = time.Millisecond
-	t.Cleanup(func() { pushRetryDelay = orig })
-}
-
-func TestPushReportSuccessNoRetry(t *testing.T) {
-	shortenRetryDelay(t)
-	var attempts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts.Add(1)
-		if r.Header.Get("X-API-Key") != "key" {
-			t.Errorf("X-API-Key = %q, erwartet %q", r.Header.Get("X-API-Key"), "key")
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}}); err != nil {
-		t.Fatalf("PushReport: %v", err)
-	}
-	if got := attempts.Load(); got != 1 {
-		t.Errorf("attempts = %d, erwartet 1 (kein Retry bei Erfolg)", got)
-	}
-}
-
-func TestPushReportRetriesOnceOnTransientError(t *testing.T) {
-	shortenRetryDelay(t)
-	var attempts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if attempts.Add(1) == 1 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}}); err != nil {
-		t.Fatalf("PushReport nach Retry: %v", err)
-	}
-	if got := attempts.Load(); got != 2 {
-		t.Errorf("attempts = %d, erwartet 2 (genau ein Retry)", got)
-	}
-}
-
-func TestPushReportFailsAfterSingleRetry(t *testing.T) {
-	shortenRetryDelay(t)
-	var attempts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts.Add(1)
-		w.WriteHeader(http.StatusBadGateway)
-	}))
-	defer srv.Close()
-
-	err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}})
-	if err == nil {
-		t.Fatal("PushReport erwartete Fehler, bekam keinen")
-	}
-	if got := attempts.Load(); got != 2 {
-		t.Errorf("attempts = %d, erwartet 2 (genau ein Retry, kein Loop)", got)
-	}
-}
-
-func TestPushReportAbortsInFlightRequestOnContextCancel(t *testing.T) {
-	// The handler hangs on its request's ctx. Without 2.67 (ctx reaching the
-	// request) the client would block until its own 15s timeout; cancelling
-	// mid-flight must abort the in-flight request itself, so PushReport returns
-	// promptly. The long backoff would also stall a stray retry, so returning
-	// fast proves the ctx short-circuits both the request and the retry.
-	orig := pushRetryDelay
-	pushRetryDelay = 30 * time.Second
-	t.Cleanup(func() { pushRetryDelay = orig })
-
-	ctx, cancel := context.WithCancel(context.Background())
-	var attempts atomic.Int32
-	reached := make(chan struct{})
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if attempts.Add(1) == 1 {
-			close(reached)
-		}
-		<-release // block until the test releases the handler
-	}))
-	defer srv.Close()
-	defer close(release) // let the blocked handler finish so srv.Close() returns
-
-	go func() {
-		<-reached
-		cancel()
-	}()
-
-	start := time.Now()
-	if err := PushReport(ctx, PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: &Report{}}); err == nil {
-		t.Fatal("PushReport erwartete ctx-Fehler nach Cancel")
-	}
-	if elapsed := time.Since(start); elapsed > 5*time.Second {
-		t.Errorf("PushReport blockierte %v — der in-flight-Request wurde nicht abgebrochen", elapsed)
-	}
-	if got := attempts.Load(); got != 1 {
-		t.Errorf("attempts = %d, erwartet 1 (kein Retry)", got)
-	}
-}
-
-func TestPushBudgetKeepsThePushReserve(t *testing.T) {
-	stubReportHost(t)
-	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
-	oldReserve := pushReserve
-	pushReserve = 300 * time.Millisecond
-	t.Cleanup(func() { pushReserve = oldReserve })
-	// A collector that hangs until its context ends: only the collection deadline
-	// pushReserve before the run's deadline leaves the push its time.
-	pluginCollectors.docker = func(ctx context.Context) *DockerBlock {
-		<-ctx.Done()
-		return nil
-	}
-
-	received := make(chan time.Time, 2)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only the report counts: the plan GET comes before the collection.
-		if r.Method == http.MethodPost {
-			received <- time.Now()
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
-		{Key: "MONITOR_URL", Value: srv.URL},
-		{Key: "API_KEY", Value: "key"},
-		{Key: "SERVER_ID", Value: "srv-1"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	deadline, _ := ctx.Deadline()
-	if err := Push(ctx); err != nil {
-		t.Fatalf("Push: %v", err)
-	}
-	select {
-	case at := <-received:
-		if !at.Before(deadline) {
-			t.Fatalf("report received %s after the deadline", at.Sub(deadline))
-		}
-	default:
-		t.Fatal("the server got no report")
 	}
 }
 

@@ -31,7 +31,7 @@ const ReprovisionHint = reprovisionHint
 //
 // It lives in the enroll package (not httpclient) because it depends on
 // Provisioned/CertPath/KeyPath/CAPath here — moving it to httpclient would form
-// an import cycle. Consumed by frpc.Sync and monitor.PushReport.
+// an import cycle. Consumed by frpc.Sync and send.Report.
 func ServerClient(dir, fallbackCacert string, fallbackInsecure bool, timeout time.Duration) (*http.Client, error) {
 	if Provisioned(dir) {
 		// If the enrolled leaf has already expired, the mTLS handshake can never

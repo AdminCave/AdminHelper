@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -343,58 +342,65 @@ func TestReportStateNotUsedByBuildReport(t *testing.T) {
 	}
 }
 
+// errLostPush stands for the error of a push that did not go through.
+var errLostPush = errors.New("lost push")
+
+// runCycle is a run as Push makes it, without the push itself: Collect, then Done as pushed or lost.
+// It returns the report as the monitoring service decodes it, and errLostPush for a lost push.
+func runCycle(t *testing.T, pushed bool) ([]byte, error) {
+	t.Helper()
+	cfg, err := config.LoadMonitorConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Collect(context.Background(), cfg)
+	data, err := json.Marshal(c.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Done(pushed)
+	if !pushed {
+		return data, errLostPush
+	}
+	return data, nil
+}
+
 func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	s := stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 
 	var status atomic.Int32
 	status.Store(http.StatusOK)
-	received := make(chan float64, 8)
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			// The plan: none, as from a monitoring service without probes.
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		var body struct {
-			Resources struct {
-				CPUPercent float64 `json:"cpu_percent"`
-			} `json:"resources"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("report body: %v", err)
-		}
-		received <- body.Resources.CPUPercent
-		w.WriteHeader(int(status.Load()))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The plan: none, as from a monitoring service without probes.
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
-	caPath := config.MonitorCACert()
-	if err := os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
 		{Key: "MONITOR_URL", Value: srv.URL},
 		{Key: "API_KEY", Value: "key"},
 		{Key: "SERVER_ID", Value: "srv-1"},
-		{Key: "CACERT", Value: caPath},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	statePath := config.MonitorReportStateFile()
 
-	// push runs one Push with the given CPU counters and returns the cpu_percent the server received
-	// last and the error of Push.
+	// push runs one run with the given CPU counters, pushed or lost after status, and returns the
+	// cpu_percent of its report and errLostPush for a lost push.
 	push := func(busy, idle float64) (float64, error) {
 		t.Helper()
 		s.times = cpuTimes(busy, idle)
-		err := Push(context.Background())
-		last := -1.0
-		for len(received) > 0 {
-			last = <-received
+		data, err := runCycle(t, status.Load() == http.StatusOK)
+		var body struct {
+			Resources struct {
+				CPUPercent float64 `json:"cpu_percent"`
+			} `json:"resources"`
 		}
-		return last, err
+		if uerr := json.Unmarshal(data, &body); uerr != nil {
+			t.Fatal(uerr)
+		}
+		return body.Resources.CPUPercent, err
 	}
 	savedCPU := func() *cpuSample {
 		t.Helper()

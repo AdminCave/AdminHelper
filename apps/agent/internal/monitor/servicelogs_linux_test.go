@@ -140,7 +140,6 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 // The plan's switch reaches the pushed report, and a lost push sends the lines again.
 func TestPushSendsTheErrorLinesThePlanAsksForAndAgainAfterALostPush(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	s := stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	failed := []string{"a.service"}
@@ -159,18 +158,8 @@ func TestPushSendsTheErrorLinesThePlanAsksForAndAgainAfterALostPush(t *testing.T
 			} `json:"failed_logs"`
 		} `json:"systemd"`
 	}
-	received := make(chan sent, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(plan))
-			return
-		}
-		var body sent
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("report body: %v", err)
-		}
-		received <- body
-		w.WriteHeader(int(reportStatus.Load()))
+		_, _ = w.Write([]byte(plan))
 	}))
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
@@ -186,10 +175,10 @@ func TestPushSendsTheErrorLinesThePlanAsksForAndAgainAfterALostPush(t *testing.T
 		reportStatus.Store(int32(status))
 		busy += 100
 		s.times = cpuTimes(busy, busy*4)
-		err := Push(context.Background())
+		data, err := runCycle(t, reportStatus.Load() == http.StatusOK)
 		var last sent
-		for len(received) > 0 {
-			last = <-received
+		if uerr := json.Unmarshal(data, &last); uerr != nil {
+			t.Fatal(uerr)
 		}
 		return last, err
 	}

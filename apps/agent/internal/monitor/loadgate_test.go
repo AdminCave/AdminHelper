@@ -7,7 +7,6 @@ package monitor
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -332,7 +331,6 @@ func TestBuildReportShedsNoThrottleItHasNot(t *testing.T) {
 
 func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 	stubReportHost(t)
-	shortenRetryDelay(t)
 	stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	readLoad = func(*Resources, *cpuSample, *cpuSample) loadReading {
@@ -343,22 +341,22 @@ func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 	status.Store(http.StatusBadGateway)
 	active := make(chan any, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	push := func() error {
+		t.Helper()
+		data, err := runCycle(t, status.Load() == http.StatusOK)
 		var body struct {
 			Self struct {
 				LoadShed map[string]any `json:"load_shed"`
 			} `json:"self"`
 		}
-		data, _ := io.ReadAll(r.Body)
-		if err := json.Unmarshal(data, &body); err != nil {
-			t.Errorf("report body: %v", err)
+		if uerr := json.Unmarshal(data, &body); uerr != nil {
+			t.Fatal(uerr)
 		}
 		active <- body.Self.LoadShed["active"]
-		w.WriteHeader(int(status.Load()))
-	}))
+		return err
+	}
 	defer srv.Close()
 	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
 		{Key: "MONITOR_URL", Value: srv.URL},
@@ -371,7 +369,7 @@ func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 
 	// Two lost pushes over the limits: the second one sheds, and the state says so.
 	for i := 1; i <= 2; i++ {
-		if err := Push(context.Background()); err == nil {
+		if err := push(); err == nil {
 			t.Fatalf("push %d against 502: want an error", i)
 		}
 	}
@@ -384,7 +382,7 @@ func TestPushKeepsTheLoadGateAfterALostPush(t *testing.T) {
 	for len(active) > 0 {
 		<-active
 	}
-	if err := Push(context.Background()); err != nil {
+	if err := push(); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-active; got != true {
