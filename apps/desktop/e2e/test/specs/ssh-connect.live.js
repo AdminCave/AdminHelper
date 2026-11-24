@@ -15,7 +15,7 @@
 
 import {
   login,
-  CONN_ROW,
+  waitForConnRows,
   MODAL,
   TERM_PANE,
   jsClick,
@@ -54,7 +54,10 @@ async function connectIn(index) {
   await more.waitForExist({ timeout: 15000 });
   await jsClick(more);
   const item = `${INSP} [role="menu"] [role="menuitem"]`;
-  await $(item).waitForExist({ timeout: 10000 });
+  await browser.waitUntil(async () => (await $$(item)).length > 0, {
+    timeout: 10000,
+    timeoutMsg: `the menu of the arrow never opened (${item})`,
+  });
   const items = await $$(item);
   expect(items.length).toBe(2);
   await jsClick(items[index]);
@@ -207,7 +210,7 @@ describe('Open an SSH connection through the GUI', () => {
   before(async () => {
     await login();
     await $('.sidebar-nav [data-nav="connections"]').click();
-    await $(CONN_ROW).waitForExist({ timeout: 15000 });
+    await waitForConnRows();
   });
 
   it('runs ssh in a session tab of the AdminHelper terminal, again after a reconnect', async () => {

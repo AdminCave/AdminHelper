@@ -114,7 +114,7 @@ describe("Monitoring server page with its cards (arch-monitoring-ui T11)", () =>
     await $('.sidebar-nav [data-nav="monitoring"]').click();
     await $('.mon-tabs [data-tab="overview"]').click();
     // The list view, which holds the server page: the first option of the view switch.
-    await $('.mon-overview-toolbar [role="radio"]').click();
+    await $('.mon-overview-toolbar [role="radio"]:first-of-type').click();
     await clickItemByName(".mon-srv-item", ".mon-srv-name", SERVER_NAME);
     await $(".mon-dashboard-name").waitForExist({ timeout: 15000 });
     expect(await textContentOf(await $(".mon-dashboard-name"))).toBe(SERVER_NAME);
@@ -145,7 +145,7 @@ describe("Monitoring server page with its cards (arch-monitoring-ui T11)", () =>
   it("adopts the port finding into a module card that shows the agent's result", async () => {
     const item = await findingItem(FINDING);
     // The first action of a finding adopts it, the second dismisses it.
-    await jsClick(await item.$(".inbox-actions button"));
+    await jsClick(await item.$(".inbox-actions button:first-of-type"));
     const card = await waitForCard(moduleCardTitle, `for ${FINDING}`);
     expect(await domTexts(".inbox-item .inbox-instance")).not.toContain(FINDING);
     // Adopted and not run yet: pending, so the card stays closed.
@@ -243,7 +243,7 @@ describe("Monitoring detail views with a fixture report (arch-monitoring-ui-2 T1
 
   it("opens the fixture server's page with every check of the report", async () => {
     await $('.mon-tabs [data-tab="overview"]').click();
-    await $('.mon-overview-toolbar [role="radio"]').click();
+    await $('.mon-overview-toolbar [role="radio"]:first-of-type').click();
     // The checks were made past the app's store: the list names the server, and its page shows
     // them, only after the store's refresh, which is slower than clickItemByName waits.
     await browser.waitUntil(

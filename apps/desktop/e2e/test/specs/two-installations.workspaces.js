@@ -358,7 +358,10 @@ describe('Two installations side by side: Standard at stack A, Kunde B at stack 
       // Through the GUI: a double click on the row spawns ssh to that port (seen at the target by the orchestrator).
       const s = w.session;
       await s.$('.sidebar-nav [data-nav="connections"]').click();
-      await s.$(CONN_ROW).waitForExist({ timeout: 15000 });
+      await s.waitUntil(async () => (await s.$$(CONN_ROW)).length > 0, {
+        timeout: 15000,
+        timeoutMsg: `no connection row appeared (${CONN_ROW})`,
+      });
       // Queried anew on each pass: a render between the listing and the click stales a handle.
       await s.waitUntil(
         async () => {

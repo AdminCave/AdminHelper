@@ -7,7 +7,7 @@
 // (desktop_e2e_connect.sh) puts an xdg-open shim on PATH that fetches the URL, so
 // it verifies from the target side via the nginx access log.
 
-import { login, connectByName, CONN_ROW } from '../lib/live.js';
+import { login, connectByName, waitForConnRows } from '../lib/live.js';
 
 describe('Open a Web connection through the GUI', () => {
   it('launches the browser for the seeded web target on connect', async () => {
@@ -15,7 +15,7 @@ describe('Open a Web connection through the GUI', () => {
 
     const nav = await $$('.sidebar-nav .sidebar-item'); // dashboard / connections / infrastructure
     await nav[1].click();
-    await $(CONN_ROW).waitForExist({ timeout: 15000 });
+    await waitForConnRows();
 
     await connectByName('web-direct'); // -> open::that(url) -> xdg-open shim
 

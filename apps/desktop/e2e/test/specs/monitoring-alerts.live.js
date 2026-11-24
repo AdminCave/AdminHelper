@@ -26,7 +26,7 @@ describe("Monitoring alert rule via the GUI", () => {
 
     // channel defaults to webhook → name + webhookUrl are the required fields.
     await $(`${MODAL} ${MODAL_PANEL}`).waitForExist({ timeout: 10000 });
-    await $(`${MODAL} input[type="text"]`).setValue("e2e-cpu-alert");
+    await (await $$(`${MODAL} input[type="text"]`))[0].setValue("e2e-cpu-alert");
     await $(`${MODAL} input[type="url"]`).setValue(
       "https://hooks.example.com/e2e",
     );

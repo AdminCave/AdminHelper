@@ -16,7 +16,7 @@
 // nothing listens on the local port of the held tunnel's visitor.
 
 import net from 'node:net';
-import { adminTunnels, login, connectByName, CONN_ROW, jsClick } from '../lib/live.js';
+import { adminTunnels, login, connectByName, waitForConnRows, jsClick } from '../lib/live.js';
 
 const SERVER_URL = process.env.AH_SERVER_URL;
 const ENROLL_TOKEN = process.env.AH_ENROLL_TOKEN;
@@ -168,7 +168,7 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
 
     const nav = await $$('.sidebar-nav .sidebar-item');
     await nav[1].click(); // connections
-    await $(CONN_ROW).waitForExist({ timeout: 15000 });
+    await waitForConnRows();
 
     // SSH over tunnel (no prompt) and Web over tunnel (xdg-open shim).
     await connectByName('ssh-tunnel');

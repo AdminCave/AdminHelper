@@ -109,7 +109,7 @@ describe("Monitoring check via the GUI", () => {
 
     await $('[data-action="check-new"]').click();
     await $(`${MODAL} ${MODAL_PANEL}`).waitForExist({ timeout: 10000 });
-    await $(`${MODAL} input[type="text"]`).setValue("cpu-check");
+    await (await $$(`${MODAL} input[type="text"]`))[0].setValue("cpu-check");
     const selects = await $$(`${MODAL} select`); // checkType, interval, severity
     await selects[0].selectByAttribute("value", "agent_resources");
     await clickInModal(".btn.primary"); // save -> POST /api/monitoring/checks
@@ -162,22 +162,22 @@ describe("Monitoring check via the GUI", () => {
     await $('.sidebar-nav [data-nav="monitoring"]').click();
     await $('.mon-tabs [data-tab="overview"]').click();
     // The list view, which holds the dashboard: the first option of the view switch.
-    await $('.mon-overview-toolbar [role="radio"]').click();
+    await $('.mon-overview-toolbar [role="radio"]:first-of-type').click();
     await clickItemByName(".mon-srv-item", ".mon-srv-name", SERVER_NAME);
     await openSystemCard();
 
     await waitForChart(HISTORY);
     expect(await (await periodButton(HISTORY, 1)).getAttribute("aria-pressed")).toBe("true");
     // The first row of the statistics is CPU, with a value.
-    const cpu = await $(`${HISTORY} .history-stats tbody tr`);
+    const cpu = await $(`${HISTORY} .history-stats tbody tr:first-of-type`);
     expect(await cpu.$("th").getText()).toContain("CPU");
-    expect(await cpu.$("td").getText()).not.toBe(EMPTY_VALUE);
+    expect(await cpu.$("td:first-of-type").getText()).not.toBe(EMPTY_VALUE);
     // The CSV export, the last tool; disabled without data.
     expect(await $(`${HISTORY} .history-tools > .btn.small:last-child`).isEnabled()).toBe(true);
 
     await switchPeriod(HISTORY, 0);
     expect(await (await periodButton(HISTORY, 0)).getAttribute("aria-pressed")).toBe("true");
-    expect(await $(`${HISTORY} .history-stats tbody tr td`).getText()).not.toBe(EMPTY_VALUE);
+    expect(await $(`${HISTORY} .history-stats tbody tr:first-of-type td:first-of-type`).getText()).not.toBe(EMPTY_VALUE);
   });
 
   it("ranks the server in the comparison tab, for 24 hours, then for 1 hour (R-1103)", async () => {

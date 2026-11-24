@@ -46,7 +46,7 @@ async function invokeValue(cmd, args = {}) {
 
 async function openSettings() {
   // The gear in the sidebar footer opens the settings.
-  await $('.sidebar-bottom .sidebar-item').click();
+  await $('.sidebar-bottom .sidebar-item:first-child').click();
   await $('.sm-panel').waitForExist({ timeout: 10000 });
   // Registration, identity and reset live in the section "Device" (R-1063).
   await $('.sm-panel [data-section="device"]').click();

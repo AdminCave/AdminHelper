@@ -163,7 +163,7 @@ describe("Monitoring service list of a server (arch-monitoring-ui-3 T11)", () =>
   it("lists every service of the server, an alias with its unit", async () => {
     await $('.sidebar-nav [data-nav="monitoring"]').click();
     await $('.mon-tabs [data-tab="overview"]').click();
-    await $('.mon-overview-toolbar [role="radio"]').click();
+    await $('.mon-overview-toolbar [role="radio"]:first-of-type').click();
     await clickItemByName(".mon-srv-item", ".mon-srv-name", FIXTURE_SERVER);
     await $(".mon-dashboard-name").waitForExist({ timeout: 30000 });
     expect(await textContentOf(await $(".mon-dashboard-name"))).toBe(FIXTURE_SERVER);
