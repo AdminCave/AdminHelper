@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.auth import get_current_admin, get_current_user
 from app.core.bounds import IntPk
 from app.core.database import get_db
-from app.modules.frp._helpers import frpc_sync_inputs, get_allow_users, get_frp_config
+from app.modules.frp._helpers import allow_users_by_server, frpc_sync_inputs, get_frp_config
 from app.modules.frp.config_generator import (
     active_tunnels,
     generate_frpc_toml,
@@ -218,13 +218,14 @@ def gen_bulk_zip(
 
         servers = db.query(Server).filter(Server.id.in_(by_server.keys())).all()
         servers_by_id = {s.id: s for s in servers}
+        allow_users_by_id = allow_users_by_server(db, by_server.keys())
 
         for server_id, tunnels in by_server.items():
             server = servers_by_id.get(server_id)
             # The name is the folder of the server's frpc.toml in the ZIP, not part of it.
             if not server or name_refused(server.name) or _path_refused(server.name):
                 continue
-            allow_users = get_allow_users(db, server_id)
+            allow_users = allow_users_by_id[server_id]
             frpc = generate_frpc_toml(
                 config, tunnels, server.id, allow_users, key_generation=server.frp_key_generation
             )

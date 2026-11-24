@@ -37,8 +37,10 @@ Review: approve (.ah-out/review/kern-server-14/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_digest.py
 Doku: → T7
 
-### T5 — R-1699, R-1737: FRP-Policy und Bulk-ZIP mit fester Abfragezahl  [ ]
+### T5 — R-1699, R-1737: FRP-Policy und Bulk-ZIP mit fester Abfragezahl  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/frp/_helpers.py, apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frp_query_count.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @528f946dc 2026-11-24T16:04:21+01:00
+Review: approve (.ah-out/review/kern-server-14/T5.verdict.json)
 Änderung: `build_policy` lädt Admin-Namen und `server_id -> usernames` einmal und reicht sie durch; die Policy bleibt byte-gleich. Neue Tests zählen die Statements von `sync_policy` (unabhängig von der Serverzahl) und von `gen_bulk_zip` mit drei Benutzern (Muster `tests/test_auth_query_count.py`). Neue Testdatei mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py tests/test_frp_query_count.py
 Doku: keine (internes Verhalten)
