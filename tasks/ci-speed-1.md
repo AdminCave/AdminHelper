@@ -10,8 +10,10 @@ Heavy: none — CI-Workflow, Harness-Skript und Skill-Text; kein Stack-, Gateway
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1743: Server-pytest in vier Shards  [ ]
-Komponente: server · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-speed-1.md
+### T1 — R-1743: Server-pytest in vier Shards  [x]
+Komponente: server · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-speed-1.md, apps/server/tests/test_ci_shards.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9d8b92bb4 2026-11-24T11:25:49+01:00
+Review: am Ende (Branch-Review)
 Änderung: In `server` und `python-lock-server` Matrix `shard: [1, 2, 3, 4]`, `PYTEST_SHARD: ${{ matrix.shard }}/4`, Jobname `… shard ${{ matrix.shard }}/4`, `SHARDS: "4"` in beiden Gate-Jobs; Kommentare nachziehen. cicd.html DE+EN: vier Shards. Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py tests/test_ci_workflow.py
 Doku: docs/developer/cicd.html DE+EN · changelog.d/ci-speed-1.md
