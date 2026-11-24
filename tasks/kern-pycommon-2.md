@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-pycommon-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-pycommon-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-pycommon-2 · Review: pro Task
 Spec: docs/features/kern-pycommon-2.md (Roadmap R-1740)
 Heavy: linux-full — Laufzeit-Imports von Server und Monitoring ändern sich (Images mit ah_common); kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
