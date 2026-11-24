@@ -45,6 +45,9 @@ _CONFIG_MODULE = {
     "monitoring": "apps/monitoring/app/core/config.py",
     "ca-issuer": "apps/ca-issuer/app/config.py",
 }
+# The images of these components ship apps/pycommon/ah_common next to their app, so what
+# it reads is read by them too.
+_USES_PYCOMMON = {"server", "monitoring"}
 
 # Interpreter and OS variables. The container sets them for Python and for libc,
 # no application code reads them, and requiring it would be wrong — a category
@@ -98,9 +101,12 @@ def _compose_environment() -> dict[str, set[str]]:
 def _read_by(component: str) -> set[str]:
     """Every variable the component's code or entrypoint reads."""
     names: set[str] = set()
-    app = _ROOT / "apps" / component / "app"
-    for py in app.rglob("*.py"):
-        names.update(_ENV_READ.findall(py.read_text(encoding="utf-8", errors="replace")))
+    trees = [_ROOT / "apps" / component / "app"]
+    if component in _USES_PYCOMMON:
+        trees.append(_ROOT / "apps" / "pycommon" / "ah_common")
+    for tree in trees:
+        for py in tree.rglob("*.py"):
+            names.update(_ENV_READ.findall(py.read_text(encoding="utf-8", errors="replace")))
     entrypoint = _ROOT / "apps" / component / "docker-entrypoint.sh"
     if entrypoint.exists():
         text = entrypoint.read_text(encoding="utf-8")

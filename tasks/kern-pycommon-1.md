@@ -49,8 +49,10 @@ unberührt; T3 prüft, dass das erzeugte SQL beider Dienste gleich bleibt.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T11
 
-### T4 — logging_config in ah_common  [ ]
-Komponente: server · Dateien: apps/pycommon/ah_common/logging_config.py, apps/server/app/core/logging_config.py, apps/monitoring/app/core/logging_config.py
+### T4 — logging_config in ah_common  [x]
+Komponente: server · Dateien: apps/pycommon/ah_common/logging_config.py, apps/server/app/core/logging_config.py, apps/monitoring/app/core/logging_config.py, apps/monitoring/tests/test_logging_config.py, apps/server/tests/test_env_parity.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @763e68296 2026-11-24T04:12:09+01:00
+Review: approve (.ah-out/review/kern-pycommon-1/T4.verdict.json)
 Änderung: Ein Format mit `[%(process)d]` und dieselbe `LOG_LEVEL`-Auswertung für beide Dienste; der Logger-Präfix
 bleibt je Dienst.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
@@ -126,3 +128,5 @@ Task-Review: am Ende
   Metadata verglichen). In Statements (`onupdate`, `ON CONFLICT … SET`) rendert der Server `'UTC'` jetzt als Literal
   statt als Bind-Parameter; ein Test fährt das gegen Postgres in einer Berlin-Session. Der Helfer heißt wie bisher
   `iso_utc` (der Plan sagte `iso_z`).
+- T4: Die Dienst-Module `app.core.logging_config` bleiben als Re-Export: `test_scheduler_schema_gate.py` patcht
+  `configure_logging` dort, und `scheduler_main` importiert es zur Laufzeit von dort.

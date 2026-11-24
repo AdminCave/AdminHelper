@@ -40,6 +40,15 @@ def test_root_has_timestamped_handler():
     assert line[:4].isdigit()
 
 
+def test_line_carries_the_pid():
+    # As on the server: the PID tells the lines of several processes apart.
+    configure_logging()
+    record = logging.LogRecord("monitor.test", logging.INFO, __file__, 1, "msg", None, None)
+    line = logging.getLogger().handlers[0].formatter.format(record)
+
+    assert f"[{record.process}]" in line
+
+
 def test_level_from_env(monkeypatch):
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     configure_logging()
