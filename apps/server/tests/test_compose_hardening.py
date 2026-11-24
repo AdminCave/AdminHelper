@@ -221,28 +221,17 @@ def test_the_scheduler_trusts_no_proxy():
     assert "TRUSTED_PROXIES" not in _entries(_services()["scheduler"], "environment")
 
 
-def _commented_service(name: str) -> dict:
-    """A service the compose file ships commented out (`# name:` plus its `#   key: value`
-    lines up to the blank line): yaml.safe_load drops comments, so the tests above never see
-    it, and whoever uncomments it takes it over exactly as written."""
-    block: list[str] = []
-    for line in _COMPOSE.read_text(encoding="utf-8").splitlines():
-        if line == f"  # {name}:":
-            block = [f"  {name}:"]
-        elif block and line.startswith("  #   "):
-            block.append("  " + line[4:])
-        elif block:
-            break
-    assert block, f"no commented-out service {name} in {_COMPOSE.name}"
-    return yaml.safe_load("services:\n" + "\n".join(block))["services"][name]
+def test_pg_backup_runs_only_in_the_backup_profile():
+    """The daily DB backup ships as a service an update keeps (R-1713): COMPOSE_PROFILES=backup
+    in .env switches it on, without it `docker compose up` leaves it out. Its hardening is
+    checked with every other service above."""
+    assert _services()["pg-backup"].get("profiles") == ["backup"]
 
 
-def test_the_commented_out_pg_backup_carries_the_hardening_of_the_active_services():
-    service = _commented_service("pg-backup")
-
-    assert _NO_NEW_PRIVILEGES in service.get("security_opt", [])
-    limit = service.get("pids_limit")
-    assert type(limit) is int and limit >= 128
-    memory = service.get("mem_limit")
-    assert isinstance(memory, str) and re.fullmatch(r"[1-9][0-9]*[kmg]", memory)
-    assert int(memory[:-1]) * _BYTE_UNITS[memory[-1]] >= 128 * 1024**2
+def test_pg_backup_writes_owner_only_files():
+    """The dumps hold the whole database: the script the service runs sets umask 077 before
+    its first pg_dump, as backup.sh keeps its archives owner-only."""
+    script = (_ROOT / "scripts" / "pg-backup.sh").read_text(encoding="utf-8")
+    code = [line.strip() for line in script.splitlines() if not line.lstrip().startswith("#")]
+    first_dump = next(i for i, line in enumerate(code) if line.startswith("pg_dump"))
+    assert "umask 077" in code[:first_dump]

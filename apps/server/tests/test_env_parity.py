@@ -216,9 +216,13 @@ def test_every_substituted_knob_is_documented():
     )
 
 
+# Knobs compose reads itself, not through a ${…} substitution.
+_COMPOSE_OWN = {"COMPOSE_PROFILES"}
+
+
 def test_every_documented_knob_reaches_a_service():
     substituted, documented = _substituted_and_documented()
-    ineffective = sorted(documented - substituted)
+    ineffective = sorted(documented - substituted - _COMPOSE_OWN)
     assert ineffective == [], (
         f".env.example documents knobs compose never passes on — setting them changes "
         f"nothing: {ineffective}"
@@ -241,7 +245,9 @@ def test_both_services_of_the_server_image_share_the_pool_knobs():
 
 # One Postgres role per service (apps/server/app/db_roles.py): only postgres and db-init see
 # the superuser's password, every other service connects with its own role, and waits for
-# db-init to have set the roles up.
+# db-init to have set the roles up. The one exception is pg-backup, which dumps both
+# databases as the superuser like scripts/backup.sh and runs only in the opt-in profile
+# `backup` (R-1713).
 _DB_ROLES = {
     "server": "ah_server",
     "scheduler": "ah_scheduler",
@@ -259,7 +265,8 @@ def test_only_postgres_and_db_init_see_the_superuser_password():
             re.search(r"\$\{POSTGRES_PASSWORD\b", entry) for entry in spec.get("environment") or []
         )
     )
-    assert holders == ["db-init", "postgres"]
+    assert holders == ["db-init", "pg-backup", "postgres"]
+    assert services["pg-backup"]["profiles"] == ["backup"]
 
 
 def test_each_service_connects_with_its_role_after_db_init():

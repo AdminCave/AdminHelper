@@ -16,3 +16,6 @@
 
 - **Update: Platz in backups/:** `update.sh` behaelt von den Laufzeit-Snapshots `runtime-prev-*` die drei
   neuesten und nennt am Ende, wie viel Platz `backups/` belegt.
+- **Taegliche DB-Sicherung als Profil:** Der Dienst `pg-backup` ist jetzt Teil der `docker-compose.yml` und laeuft
+  nur mit `COMPOSE_PROFILES=backup` in der `.env`; Updates lassen die Einstellung stehen. Bisher musste man einen
+  auskommentierten Block einkommentieren, den jedes Update wieder ueberschrieb.

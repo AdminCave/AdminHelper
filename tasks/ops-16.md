@@ -52,8 +52,10 @@ Beweis: main@6895f8eaf scripts/restore.sh:528-530,554-556; Gegenprobe pg_restore
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: changelog.d/ops-16.md
 
-### T5 — R-1713: pg-backup als Compose-Profil  [ ]
-Komponente: server · Dateien: docker-compose.yml, .env.example, apps/server/tests/test_compose_hardening.py, apps/server/tests/test_compose_healthchecks.py, apps/server/tests/test_env_parity.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-16.md
+### T5 — R-1713: pg-backup als Compose-Profil  [x]
+Komponente: server · Dateien: docker-compose.yml, .env.example, apps/server/tests/test_compose_hardening.py, apps/server/tests/test_compose_healthchecks.py, apps/server/tests/test_env_parity.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-16.md, scripts/pg-backup.sh
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @27f4f8618 2026-11-24T16:31:55+01:00
+Review: approve (.ah-out/review/ops-16/T5.verdict.json)
 Änderung: Der Dienst `pg-backup` wird regulär mit `profiles: [backup]` ausgeliefert; `.env.example` nennt `COMPOSE_PROFILES` (leer, Kommentar). Die Wächter-Tests nehmen ihn auf: Profil `backup` (ersetzt den Test des auskommentierten Blocks; seine Härtung prüfen jetzt die Tests aller Dienste), kein Healthcheck (öffnet keinen Port), als einzige Ausnahme Halter des Superuser-Passworts neben postgres/db-init (sichert wie backup.sh als Superuser, nur im Opt-in-Profil), `COMPOSE_PROFILES` als Compose-eigene Variable. Doku DE+EN: Einschalten über `COMPOSE_PROFILES=backup`.
 Beweis: main@6895f8eaf docker-compose.yml:636-637, scripts/update.sh:886,893-899 · Dedup-Key: bug:ops:docker-compose.yml:pg-backup-lost-on-update
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py tests/test_compose_healthchecks.py tests/test_env_parity.py

@@ -639,34 +639,34 @@ services:
     # below the host's RAM, otherwise of the RAM.
     mem_limit: 8g
 
-  # Optionaler Postgres-Backup-Container.
-  # Aktivieren mit: docker compose up -d pg-backup
-  # Schreibt taeglich pg_dump-Backups beider DBs nach ./backups/.
-  # Retention 7 Tage rolling.
-  #
-  # pg-backup:
-  #   image: postgres:18-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
-  #   volumes:
-  #     - ./backups:/backups
-  #     - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
-  #   environment:
-  #     - PGHOST=postgres
-  #     - PGUSER=adminhelper
-  #     - PGPASSWORD=${POSTGRES_PASSWORD}
-  #     - BACKUP_DIR=/backups
-  #     - RETENTION_DAYS=7
-  #   entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
-  #   restart: unless-stopped
-  #   # No process gains privileges on exec (setuid bits, file capabilities).
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   # Processes: the loop shell, then one pg_dump or find at a time.
-  #   pids_limit: 128
-  #   # Memory: pg_dump streams to the file, nothing is held.
-  #   mem_limit: 256m
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
+  # Optional daily DB backup (R-1713): runs only with the profile `backup`, switched on by
+  # COMPOSE_PROFILES=backup in .env, which every update keeps. Writes pg_dump backups of
+  # both DBs to ./backups/ every 24 h, 7-day rolling retention; it does not replace
+  # scripts/backup.sh, which takes the CA as well.
+  pg-backup:
+    profiles: [backup]
+    image: postgres:18-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
+    volumes:
+      - ./backups:/backups
+      - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
+    environment:
+      - PGHOST=postgres
+      - PGUSER=adminhelper
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - BACKUP_DIR=/backups
+      - RETENTION_DAYS=7
+    entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
+    restart: unless-stopped
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
+    # Processes: the loop shell, then one pg_dump or find at a time.
+    pids_limit: 128
+    # Memory: pg_dump streams to the file, nothing is held.
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 # Four networks. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
 # plane is NOT on the shared default net — a compromised internet-facing frps could
