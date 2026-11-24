@@ -63,7 +63,7 @@ def _postgres_unit_engine():
     """One Postgres database for the run, `<db>_ca_unit`, with a fresh schema of the
     issuer's tables. Derived rather than the URL's own database: on the dev box that is
     the worktree's server database, whose tables come from the server's migrations.
-    None without a Postgres URL."""
+    Dropped at the end of the run. None without a Postgres URL."""
     if _POSTGRES_URL is None:
         yield None
         return
@@ -84,6 +84,12 @@ def _postgres_unit_engine():
     db.metadata.create_all(engine)
     yield engine
     engine.dispose()
+    # Dropped rather than kept for the next run: worktree-teardown.sh drops only the
+    # worktree's own database, so a kept one would outlive every worktree.
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    admin.dispose()
 
 
 @pytest.fixture()

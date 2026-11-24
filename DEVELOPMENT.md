@@ -199,7 +199,8 @@ mkdir -p ~/.local/bin && ln -s ~/.cache/ah-venv/bin/ruff ~/.local/bin/ruff
 SQLite im Speicher. Zeigt `DATABASE_URL` (CI) oder `AH_TEST_DB` (nach `source .devenv.sh`) auf ein
 Postgres, laufen sie dort, in einer eigenen, aus der URL abgeleiteten Datenbank (`<db>_mon_unit`
 bzw. `<db>_ca_unit`; Fixture `db_engine` in der jeweiligen `tests/conftest.py`). Der Fixture legt
-sie beim ersten Lauf an, die Rolle braucht dafür `CREATEDB`; vor jedem Test leert er alle Tabellen.
+sie zu Beginn jedes Laufs an und löscht sie an dessen Ende, die Rolle braucht dafür `CREATEDB`; vor
+jedem Test leert er alle Tabellen.
 Erst Postgres prüft Fremdschlüssel, Sperren und Trigger wie im Betrieb, `verify.sh` und die CI
 fahren die Suiten deshalb dort.
 Ihre Test-Deps stehen in der jeweiligen `requirements-dev.txt` — bei `ca-issuer` auch

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-testdb-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-testdb-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-testdb-1 · Review: pro Task
 Spec: docs/features/kern-testdb-1.md (Roadmap R-0700)
 Heavy: none — nur Testdateien und DEVELOPMENT.md; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -70,11 +70,13 @@ Review: approve (.ah-out/review/kern-testdb-1/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: keine (Test-Infrastruktur, DEVELOPMENT.md nennt nur die abgeleitete Datenbank)
 
-### T8 — CA-Issuer: abgeleitete Test-DB am Laufende droppen  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/conftest.py
+### T8 — CA-Issuer: abgeleitete Test-DB am Laufende droppen  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/conftest.py, DEVELOPMENT.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @07f8133c3 2026-11-24T14:08:20+01:00
+Review: approve (.ah-out/review/kern-testdb-1/T8.verdict.json)
 Änderung: R-0700, Abschlussprüfung (wichtig): wie T7 für `<db>_ca_unit`.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_db_token_store.py
-Doku: keine (wie T7)
+Doku: DEVELOPMENT.md (anlegen je Lauf, löschen am Ende; Nit aus T7)
 
 ## Entscheidungen
 - 2026-11-24 (T1): Laufzeit der Monitoring-Suite auf der Dev-Box: SQLite 225 s (`pytest -q`, ohne Postgres-URL), Postgres 253 s (195 s + 58 s der zweiten Stufe von `run.sh`), etwa +12 %. Der 15-Minuten-Deckel des CI-Jobs bleibt weit entfernt.
