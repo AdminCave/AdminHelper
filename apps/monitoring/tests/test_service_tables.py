@@ -7,20 +7,19 @@ server nobody has decided about, error lines are unique per server and unit and 
 a naive UTC time, and deleting a server takes its inventory and error lines with it.
 
 The migration part needs a real Postgres (DATABASE_URL), like the migration smoke
-test whose throwaway-database helper it borrows; on sqlite only the model part runs.
+test whose throwaway-database helper it borrows; without it only the model part runs.
 """
 
 import os
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.time import utcnow_naive
-from app.models import Base, MonitorServiceInventory, MonitorServiceLog
+from app.models import MonitorServiceInventory, MonitorServiceLog
 from app.server_cleanup import cleanup_server
 
 from .test_migrations_smoke import scratch_db
@@ -31,14 +30,9 @@ _REVISION = "c1e3a5b7d9f0"
 
 
 @pytest.fixture()
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    with sessionmaker(bind=engine)() as session:
+def db(db_engine):
+    with sessionmaker(bind=db_engine)() as session:
         yield session
-    engine.dispose()
 
 
 def _assert_naive_utc_now(value: datetime) -> None:

@@ -284,17 +284,15 @@ class TestClockJumpCorrection:
         assert agent._last_report_mono["srv-1"] == 42.0
 
 
-def test_corrected_verdict_keeps_host_down_inhibition_alive(monkeypatch):
+def test_corrected_verdict_keeps_host_down_inhibition_alive(monkeypatch, db_engine):
     """The correction must keep agent_ping at 'critical' for a genuinely dead
     host — that exact status is what _host_is_down() matches. An earlier design
     returned 'unknown' on a clock jump, which silently released the inhibition
     and let every suppressed check of that host alert at once."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
 
     from app import alerter
-    from app.models import Base, MonitorCheck, MonitorState
+    from app.models import MonitorCheck, MonitorState
 
     monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
     monkeypatch.setattr(agent, "_last_report_mono", {"srv-1": 1000.0})
@@ -304,11 +302,7 @@ def test_corrected_verdict_keeps_host_down_inhibition_alive(monkeypatch):
     status, _msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
     assert status == "critical"
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine)()
+    db = sessionmaker(bind=db_engine)()
     try:
         db.add(
             MonitorCheck(

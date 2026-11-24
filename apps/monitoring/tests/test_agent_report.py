@@ -8,30 +8,26 @@ consecutive-fails damping as the scheduler path — including the
 
 import json
 import logging
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.auth import require_agent, require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorHostFacts, MonitorState
+from app.models import MonitorAlertRule, MonitorCheck, MonitorHostFacts, MonitorState
 
 
 @pytest.fixture()
-def client_db(monkeypatch):
-    """TestClient against the real app with sqlite, auth bypassed and
+def client_db(monkeypatch, db_engine):
+    """TestClient against the real app on `db_engine`, auth bypassed and
     VictoriaMetrics writes stubbed out."""
     from app.core import victoria as victoria_mod
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()
@@ -43,7 +39,7 @@ def client_db(monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[require_agent] = lambda: "srv-1"
     # Background alert dispatch opens its own session via database.SessionLocal;
-    # point it at the same sqlite so post-response tasks hit the test DB.
+    # point it at the same database so post-response tasks hit the test DB.
     import app.core.database as database_mod
 
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
@@ -1367,6 +1363,45 @@ def test_every_report_moves_host_facts_updated_at(client_db, monkeypatch):
     assert _facts_updated_at(factory) == t3
 
 
+@contextmanager
+def _refusing_host_facts(factory):
+    """An insert into monitor_host_facts fails its flush with an IntegrityError."""
+    with factory() as db:
+        if db.get_bind().dialect.name == "postgresql":
+            # The trigger outlives the test on the shared database; SQLSTATE 23000
+            # surfaces as the IntegrityError SQLite's RAISE(ABORT) gives.
+            db.execute(
+                text(
+                    "CREATE FUNCTION refuse_host_facts() RETURNS trigger LANGUAGE plpgsql "
+                    "AS $$ BEGIN RAISE EXCEPTION 'refused' USING ERRCODE = '23000'; END $$"
+                )
+            )
+            db.execute(
+                text(
+                    "CREATE TRIGGER refuse_host_facts BEFORE INSERT ON monitor_host_facts "
+                    "FOR EACH ROW EXECUTE FUNCTION refuse_host_facts()"
+                )
+            )
+        else:
+            db.execute(
+                text(
+                    "CREATE TRIGGER refuse_host_facts BEFORE INSERT ON monitor_host_facts "
+                    "BEGIN SELECT RAISE(ABORT, 'refused'); END"
+                )
+            )
+        db.commit()
+    try:
+        yield
+    finally:
+        with factory() as db:
+            if db.get_bind().dialect.name == "postgresql":
+                db.execute(text("DROP TRIGGER refuse_host_facts ON monitor_host_facts"))
+                db.execute(text("DROP FUNCTION refuse_host_facts()"))
+            else:
+                db.execute(text("DROP TRIGGER refuse_host_facts"))
+            db.commit()
+
+
 def test_failed_host_facts_store_is_only_logged(client_db, caplog):
     # Like the liveness: its own commit, rolled back and logged on failure, so it
     # costs the report nothing — the same session still evaluates the checks after.
@@ -1377,16 +1412,10 @@ def test_failed_host_facts_store_is_only_logged(client_db, caplog):
 
     client, factory = client_db
     _add_resources_check(factory, consecutive_fails=1)
-    with factory() as db:
-        db.execute(
-            text(
-                "CREATE TRIGGER refuse_host_facts BEFORE INSERT ON monitor_host_facts "
-                "BEGIN SELECT RAISE(ABORT, 'refused'); END"
-            )
-        )
-        db.commit()
-
-    with caplog.at_level(logging.ERROR, logger="app.template_suggestions"):
+    with (
+        _refusing_host_facts(factory),
+        caplog.at_level(logging.ERROR, logger="app.template_suggestions"),
+    ):
         r = client.post("/agent/srv-1/report", json={**_report(cpu=5), "host": _host()})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "ok"

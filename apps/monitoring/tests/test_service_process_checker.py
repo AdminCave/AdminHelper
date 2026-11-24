@@ -15,9 +15,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.checkers.agent import (
     MAX_AGENT_TEXT,
@@ -28,7 +26,7 @@ from app.checkers.agent import (
 )
 from app.core.auth import require_agent
 from app.core.database import get_db
-from app.models import Base, MonitorCheck, MonitorObjectState, MonitorState
+from app.models import MonitorCheck, MonitorObjectState, MonitorState
 
 from ._helpers import assert_every_reader_reads
 
@@ -1059,17 +1057,13 @@ def test_list_mode_ignores_an_unusable_stored_reason(reason):
 
 
 @pytest.fixture()
-def client_db(monkeypatch):
-    """TestClient against the real app with sqlite, auth bypassed and
+def client_db(monkeypatch, db_engine):
+    """TestClient against the real app on `db_engine`, auth bypassed and
     VictoriaMetrics writes stubbed out (same pattern as test_agent_report)."""
     from app.core import victoria as victoria_mod
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()

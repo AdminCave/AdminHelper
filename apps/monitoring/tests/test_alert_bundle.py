@@ -16,9 +16,8 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from ah_common.ssrf import Target, UrlVerdict
 from app import alert_bundle, alerter, check_engine, scheduler
@@ -33,7 +32,6 @@ from app.alert_bundle import (
 )
 from app.core import database
 from app.models import (
-    Base,
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
@@ -54,17 +52,12 @@ _SINGLE_DOWN = "[AdminHelper Monitor] CRITICAL: Agent Heartbeat"
 
 
 @pytest.fixture()
-def db(monkeypatch):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
+def db(monkeypatch, db_engine):
     # The rule cooldown (_is_in_cooldown) reads the alerter's clock.
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
-    session = sessionmaker(bind=engine)()
+    session = sessionmaker(bind=db_engine)()
     yield session
     session.close()
-    engine.dispose()
 
 
 @pytest.fixture()

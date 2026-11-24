@@ -16,13 +16,11 @@ run of the fuzz job found /alerts and /status that way."""
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorState
+from app.models import MonitorAlertRule, MonitorCheck, MonitorState
 
 INVALID_QUERIES = ("limit=0", "limit=-1", "limit=1001", "offset=-1")
 
@@ -32,15 +30,11 @@ PAGINATED_PATHS = ("/checks", "/status", "/alerts")
 
 
 @pytest.fixture()
-def client_db():
-    """TestClient against the real app with sqlite, internal auth bypassed."""
+def client_db(db_engine):
+    """TestClient against the real app on `db_engine`, internal auth bypassed."""
     from app.main import app
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=db_engine)
 
     def override_get_db():
         db = factory()

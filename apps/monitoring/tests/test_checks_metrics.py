@@ -12,10 +12,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base, MonitorCheck
+from app.models import MonitorCheck
 from app.routers.checks import _escape_label
 
 
@@ -37,10 +36,10 @@ def test_escape_label_coerces_non_strings():
     assert _escape_label(42) == "42"
 
 
-def test_metrics_hold_no_pooled_connection_during_the_queries(monkeypatch, tmp_path):
+def test_metrics_hold_no_pooled_connection_during_the_queries(monkeypatch, pooled_engine):
     # R-0615: each query_range waits up to 10 s; the request's connection goes back to
-    # the pool before the first one. A file sqlite on the default QueuePool, so
-    # engine.pool.checkedout() counts what the request session holds.
+    # the pool before the first one. On `pooled_engine`, engine.pool.checkedout()
+    # counts what the request session holds.
     from fastapi.testclient import TestClient
 
     from app.core import victoria as victoria_mod
@@ -48,10 +47,7 @@ def test_metrics_hold_no_pooled_connection_during_the_queries(monkeypatch, tmp_p
     from app.core.database import get_db
     from app.main import app
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'monitor.db'}", connect_args={"check_same_thread": False}
-    )
-    Base.metadata.create_all(engine)
+    engine = pooled_engine
     factory = sessionmaker(bind=engine)
     with factory() as db:
         db.add(
@@ -85,10 +81,7 @@ def test_metrics_hold_no_pooled_connection_during_the_queries(monkeypatch, tmp_p
     monkeypatch.setattr(victoria_mod.victoria, "query_range", fake_query_range)
     monkeypatch.setitem(app.dependency_overrides, get_db, override_get_db)
     monkeypatch.setitem(app.dependency_overrides, require_internal, lambda: None)
-    try:
-        r = TestClient(app).get("/checks/chk-1/metrics")
-    finally:
-        engine.dispose()
+    r = TestClient(app).get("/checks/chk-1/metrics")
 
     assert r.status_code == 200, r.text
     assert held == [0, 0]

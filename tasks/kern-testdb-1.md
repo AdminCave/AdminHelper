@@ -27,8 +27,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py 
 Doku: → T6
 Abhängt von: T1
 
-### T3 — Monitoring: eigene Engines B (Agent, Router, Dienste)  [ ]
+### T3 — Monitoring: eigene Engines B (Agent, Router, Dienste)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_agent_ping_checker.py, apps/monitoring/tests/test_admin_router.py, apps/monitoring/tests/test_require_agent.py, apps/monitoring/tests/test_pagination.py, apps/monitoring/tests/test_checks_metrics.py, apps/monitoring/tests/test_checker_messages.py, apps/monitoring/tests/test_alert_secrets.py, apps/monitoring/tests/test_alert_bundle.py, apps/monitoring/tests/test_service_process_checker.py, apps/monitoring/tests/test_service_tables.py, apps/monitoring/tests/test_service_inventory.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9762c4f9b 2026-11-24T13:34:13+01:00
+Review: approve (.ah-out/review/kern-testdb-1/T3.verdict.json)
 Änderung: R-0700, wie T2 für diese Dateien. Zwölf Dateien: je Datei ein Engine-Block.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_agent_ping_checker.py tests/test_admin_router.py tests/test_require_agent.py tests/test_pagination.py tests/test_checks_metrics.py tests/test_checker_messages.py tests/test_alert_secrets.py tests/test_alert_bundle.py tests/test_service_process_checker.py tests/test_service_tables.py tests/test_service_inventory.py
 Doku: → T6
@@ -59,3 +61,4 @@ Task-Review: am Ende
 - 2026-11-24 (T1): `test_health` und `test_response_shapes` legen Alarm-Log-Zeilen in derselben Session wie ihre Regeln an; ohne ORM-Beziehung ordnet SQLAlchemy die Regel nicht zuerst ein, Postgres prüft den Fremdschlüssel. Die Tests flushen die Regeln vorher (Test-Annahme, kein Produktfehler).
 - 2026-11-24 (T2): Tests, die einen echten Pool brauchen (`engine.pool.checkedout()`, eine Verbindung je Session: R-0615-Pooltests, Glocken-Dispatch), laufen auf dem neuen Fixture `pooled_engine`: auf Postgres eine eigene Engine auf derselben Datenbank (eine von einem anderen Test offen gelassene Session zählt so nicht mit), ohne Postgres die bisherige Datei-SQLite mit QueuePool; die `StaticPool`-Rückfallebene zählt nichts.
 - 2026-11-24 (T2): Die Cooldown-Tests in `test_alerter` schrieben Log-Zeilen ohne die Check- und Regel-Zeilen, für die `make_check()`/`make_rule()` stehen; das Fixture legt sie jetzt an (Regel deaktiviert, damit `process_alert` nur die Regeln des Tests sieht). Sessions, die Tests offen ließen (`_HostDownDb`, Cooldown-Fixture, `test_only_enabled_rules…`), werden geschlossen, sonst wartet das `TRUNCATE` des nächsten Tests auf ihre Sperre. Kein Produktfehler.
+- 2026-11-24 (T3): `test_failed_host_facts_store_is_only_logged` erzwang den fehlschlagenden Flush mit einem SQLite-Trigger (`RAISE(ABORT)`). Auf Postgres legt der Helfer `_refusing_host_facts` eine Trigger-Funktion mit SQLSTATE 23000 an (dieselbe `IntegrityError`) und entfernt Trigger und Funktion danach wieder, weil `TRUNCATE` sie auf der geteilten Datenbank nicht abräumt; zwei Läufe nacheinander grün. Der R-0615-Pooltest in `test_checks_metrics` läuft auf `pooled_engine`.
