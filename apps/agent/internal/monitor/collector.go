@@ -114,15 +114,27 @@ type MemoryUsage struct {
 	MemoryUsedMB  int     `json:"memory_used_mb"`
 }
 
+// collectMemory reports the memory as gopsutil reads it (used = total - available), less the ZFS ARC
+// above c_min outside a container: gopsutil counts the ARC as used, though the kernel shrinks it to
+// c_min under pressure, so a ZFS host would sit at the memory threshold from its cache alone
+// (R-1760). In a container arcstats is the host's ARC, the total the container's limit. The figure
+// is therefore lower than "used" in free(1) on a ZFS host.
 func collectMemory() *MemoryUsage {
-	v, err := mem.VirtualMemory()
-	if err != nil {
+	v, err := resourceCalls.vmem()
+	if err != nil || v.Total == 0 {
 		return nil
 	}
+	used, pct := v.Used, v.UsedPercent
+	// Only a host with an ARC gets a figure of its own: elsewhere UsedPercent stays as gopsutil
+	// reads it, on Windows dwMemoryLoad, which is not Used/Total.
+	if arc := resourceCalls.arc(); arc > 0 && !inContainer() {
+		used -= min(used, arc)
+		pct = float64(used) / float64(v.Total) * 100
+	}
 	return &MemoryUsage{
-		MemoryPercent: round1(v.UsedPercent),
+		MemoryPercent: round1(pct),
 		MemoryTotalMB: int(v.Total / 1024 / 1024),
-		MemoryUsedMB:  int(v.Used / 1024 / 1024),
+		MemoryUsedMB:  int(used / 1024 / 1024),
 	}
 }
 
@@ -154,8 +166,9 @@ var resourceCalls = struct {
 	loopback func() (map[string]bool, error)
 	device   func(name string) bool
 	// arc is the ZFS ARC the kernel gives back under memory pressure (arcReclaimable).
-	arc func() uint64
-}{runtime.GOOS, mem.SwapMemory, cpu.Counts, gnet.IOCounters, loopbackNames, hasNetDevice, arcReclaimable}
+	arc  func() uint64
+	vmem func() (*mem.VirtualMemoryStat, error)
+}{runtime.GOOS, mem.SwapMemory, cpu.Counts, gnet.IOCounters, loopbackNames, hasNetDevice, arcReclaimable, mem.VirtualMemory}
 
 // loopbackNames are the interfaces flagged loopback. gopsutil names its counters like the standard
 // library on Windows and like /proc/net/dev on Linux, both the names net.Interfaces returns.

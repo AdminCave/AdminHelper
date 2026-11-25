@@ -327,6 +327,63 @@ func TestNewMTLSRejectsAServerCertTrustedDirectly(t *testing.T) {
 	}
 }
 
+// R-1769: NewGateway checks the server like NewMTLS and presents no client certificate.
+func TestNewGatewayAcceptsTheGatewayLeafWithoutAClientCert(t *testing.T) {
+	c := makeThreeTier(t, "AdminHelper Access Intermediate")
+	var presented int
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		presented = len(r.TLS.PeerCertificates)
+	}))
+	srv.TLS = &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{c.leafDER, c.interDER}, PrivateKey: c.leafKey}},
+		ClientAuth:   tls.RequestClientCert,
+	}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	_, _, caPath := writeMTLSFiles(t, c, c.rootDER)
+	client, err := NewGateway(caPath, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("the gateway leaf was refused: %v", err)
+	}
+	resp.Body.Close()
+	if presented != 0 {
+		t.Fatalf("presented %d client certificate(s), want none", presented)
+	}
+}
+
+func TestNewGatewayRejectsAServerLeafOfAnotherScope(t *testing.T) {
+	c := makeThreeTier(t, "AdminHelper Tunnel Intermediate")
+	srv, handled := serveChain(t, c.leafKey, c.leafDER, c.interDER)
+	_, _, caPath := writeMTLSFiles(t, c, c.interDER, c.rootDER)
+	client, err := NewGateway(caPath, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Get(srv.URL); err == nil || !strings.Contains(err.Error(), "not issued by the access intermediate") {
+		t.Fatalf("the tunnel intermediate's leaf passed as the gateway: %v", err)
+	}
+	if *handled {
+		t.Fatal("the request reached the handler despite the refusal")
+	}
+}
+
+func TestNewGatewayFailsClosedOnAMissingOrInvalidBundle(t *testing.T) {
+	if _, err := NewGateway("/nope/ca.pem", time.Second); err == nil {
+		t.Error("a missing CA bundle must error")
+	}
+	bad := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(bad, []byte("not a pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewGateway(bad, time.Second); err == nil {
+		t.Error("an invalid CA bundle must error")
+	}
+}
+
 // The agent's bundle is the chain of its last enroll or renew. In a root renewal (R-1021)
 // it is [T(R), R] before the stage, [T(R), N, R] after it, [T(N), R, N] after the switch
 // and [T(N), N] after finish or a switch with --compromised; the gateway presents

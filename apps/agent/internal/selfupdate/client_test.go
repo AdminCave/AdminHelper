@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,10 +32,16 @@ type gatewayPKI struct {
 
 func newGatewayPKI(t *testing.T) gatewayPKI {
 	t.Helper()
+	return newPKIOf(t, "AdminHelper Access Intermediate")
+}
+
+// newPKIOf is newGatewayPKI with a CA of the given common name.
+func newPKIOf(t *testing.T, caCN string) gatewayPKI {
+	t.Helper()
 	caKey := newKey(t)
 	now := time.Now()
 	caTmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "AdminHelper Access Intermediate"},
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: caCN},
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
 	}
@@ -155,4 +162,63 @@ func TestUpdateClientWithoutIdentityKeepsTheConfiguredTrust(t *testing.T) {
 		t.Fatalf("the configured cacert was not used: %v", err)
 	}
 	resp.Body.Close()
+}
+
+// enrolled writes p's agent identity and CA bundle as the enrollment leaves them.
+func enrolled(t *testing.T, p gatewayPKI) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, enroll.CertPath(dir), p.agentPEM)
+	writeFile(t, enroll.KeyPath(dir), p.agentKeyPEM)
+	writeFile(t, enroll.CAPath(dir), p.caPEM)
+	return dir
+}
+
+// R-1769: on an enrolled host only the enrolled CA counts; a configured insecure or cacert
+// must not open the update to another server.
+func TestUpdateClientOfAnEnrolledHostIgnoresInsecureAndCacert(t *testing.T) {
+	own, foreign := newGatewayPKI(t), newGatewayPKI(t)
+	ownURL, foreignURL := repoPlane(t, own), repoPlane(t, foreign)
+	dir := enrolled(t, own)
+	cacert := t.TempDir() + "/ca.crt"
+	writeFile(t, cacert, foreign.caPEM)
+
+	for _, tc := range []struct {
+		name     string
+		cacert   string
+		insecure bool
+	}{{"insecure", "", true}, {"cacert", cacert, false}, {"both", cacert, true}} {
+		client, err := updateClient(dir, tc.cacert, tc.insecure, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp, err := client.Get(foreignURL); err == nil {
+			resp.Body.Close()
+			t.Fatalf("%s: a server outside the enrolled CA was accepted", tc.name)
+		}
+		resp, err := client.Get(ownURL)
+		if err != nil {
+			t.Fatalf("%s: the enrolled gateway was refused: %v", tc.name, err)
+		}
+		resp.Body.Close()
+	}
+}
+
+// R-1769: a leaf that the enrolled bundle verifies but that is not issued by the access
+// intermediate (the frps leaf of the tunnel intermediate, say) is not the gateway.
+func TestUpdateClientOfAnEnrolledHostRefusesALeafOfAnotherIssuer(t *testing.T) {
+	p := newPKIOf(t, "AdminHelper Tunnel Intermediate")
+	url := repoPlane(t, p)
+	client, err := updateClient(enrolled(t, p), "", false, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Get(url)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("a leaf of the tunnel intermediate passed as the gateway")
+	}
+	if !strings.Contains(err.Error(), "not issued by the access intermediate") {
+		t.Fatalf("refused for another reason: %v", err)
+	}
 }

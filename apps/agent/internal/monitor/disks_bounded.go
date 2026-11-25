@@ -6,6 +6,7 @@ package monitor
 
 import (
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,10 +23,29 @@ func freebsdNetFS(fstype string) bool {
 	return fstype == "nfs" || fstype == "smbfs" || fstype == "fusefs" || strings.HasPrefix(fstype, "fusefs.")
 }
 
+// pendingStats holds the mounts whose stat has not come back yet, across runs: a hung mount keeps
+// one goroutine (and with it one OS thread) in the kernel, and a long-running agent must not add
+// one per run (R-1772).
+var pendingStats = struct {
+	sync.Mutex
+	mounts map[string]bool
+}{mounts: map[string]bool{}}
+
+// underNetMount says whether mount lies below one of the network mounts shares: resolving its path
+// walks through the share and hangs with it.
+func underNetMount(mount string, shares []string) bool {
+	for _, share := range shares {
+		if share != mount && strings.HasPrefix(mount, strings.TrimSuffix(share, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // boundedStats asks stat for every mount at once and waits for all of them until deadline fires:
 // a mount that has not answered by then is left out, in the order of mounts otherwise. The
 // goroutine of a hung mount stays in the kernel until the mount answers; the run does not wait
-// for it.
+// for it, and later runs do not ask that mount again until it has answered, so it stays left out.
 func boundedStats(mounts []string, deadline <-chan time.Time, stat func(string) (fsStat, error)) []fsStat {
 	type answer struct {
 		i  int
@@ -34,16 +54,27 @@ func boundedStats(mounts []string, deadline <-chan time.Time, stat func(string) 
 	}
 	answers := make(chan answer, len(mounts))
 	queued := afterAnswer
+	asked := 0
+	pendingStats.Lock()
 	for i, m := range mounts {
+		if pendingStats.mounts[m] {
+			continue
+		}
+		pendingStats.mounts[m] = true
+		asked++
 		go func() {
 			st, err := stat(m)
+			pendingStats.Lock()
+			delete(pendingStats.mounts, m)
+			pendingStats.Unlock()
 			answers <- answer{i, st, err == nil}
 			queued(m)
 		}()
 	}
+	pendingStats.Unlock()
 	got := make([]*fsStat, len(mounts))
 wait:
-	for range mounts {
+	for range asked {
 		select {
 		case a := <-answers:
 			if a.ok {

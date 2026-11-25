@@ -112,11 +112,8 @@ var readLoad = loadReadingOf
 // loadReadingOf reads the load gate's values from this run's resources block and the CPU counters of
 // the last and this run. The load per CPU is left out in a container, where load_1m is the host's and
 // cpu_count may be the container's (as the monitoring service rates agent_resources), and where there
-// is no load or CPU count (Windows). The available memory is 100 - memory_percent plus the ZFS ARC
-// above its minimum: gopsutil counts the available memory as unused on Linux, FreeBSD and Windows, but
-// the ARC as used, though the kernel shrinks it to c_min under pressure (R-1688). Not in a container:
-// arcstats there is the host's ARC, the total the container's limit. memory_percent in the report
-// stays as gopsutil reads it.
+// is no load or CPU count (Windows). The available memory is 100 - memory_percent, which collectMemory
+// has already cleared of the ZFS ARC above its minimum (R-1688, R-1760).
 func loadReadingOf(resources *Resources, prevCPU, curCPU *cpuSample) loadReading {
 	var r loadReading
 	if resources == nil {
@@ -128,11 +125,7 @@ func loadReadingOf(resources *Resources, prevCPU, curCPU *cpuSample) loadReading
 		r.LoadPerCPU = &v
 	}
 	if resources.MemoryUsage != nil {
-		avail := 100 - resources.MemoryPercent
-		if total := resources.MemoryTotalMB; total > 0 && !inContainer() {
-			avail += float64(resourceCalls.arc()) / (float64(total) * 1024 * 1024) * 100
-		}
-		v := round1(math.Min(100, avail))
+		v := round1(100 - resources.MemoryPercent)
 		r.MemAvailable = &v
 	}
 	r.Iowait = iowaitPercentSince(prevCPU, curCPU)
