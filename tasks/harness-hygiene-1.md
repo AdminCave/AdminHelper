@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-11-25: Harness-Funde aus der Durchsicht angenommen; „kümmere du dich um alles“.
 
-### T1 — roadmap.py stats: Verlauf in einem Lauf lesen (R-1721)  [ ]
+### T1 — roadmap.py stats: Verlauf in einem Lauf lesen (R-1721)  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dc75af869 2026-11-25T15:29:51+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T1.verdict.json)
 Änderung: `waits()` (`scripts/dev/roadmap.py:1247`) liest die Statuswechsel aus einem einzigen `git log -p`-Lauf
 statt einem `git show` je Commit; dieselben Werte wie bisher (Test vergleicht beide auf einem Fixture-Repo). Die
 tote Kennzahl `kevin-min/PR` (`:1283-1285`) fällt weg.
@@ -94,3 +96,4 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: Engpass war das Parsen (12 216 Fassungen × 10 ms), nicht `git show`; `waits()` liest jetzt nur die `+|`-Zeilen eines `git log -p -U0`. Gegenprobe auf dem privaten Repo: 400,4 s → 16,5 s, gleiche Werte bis auf drei Übergänge aus 67 alten Fassungen mit doppelter ID (R-0047, R-0084), deren Flip-Flop die alte Fassung zählte.
