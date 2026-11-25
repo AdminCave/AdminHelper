@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-17 — Betriebsskripte: Nachlese aus ops-16 — Task-Ledger
-Status: erledigt · Branch: feature/ops-17 · Review: pro Task
+Status: bereit · Branch: feature/ops-17 · Review: pro Task
 Spec: docs/features/ops-17.md (Roadmap R-1757, R-1761, R-1759, R-1765, R-1766)
 Heavy: linux-full — scripts/agent-install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -49,3 +49,11 @@ Review: approve (.ah-out/review/ops-17/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test init-secrets_test install_test update_test
 Doku: changelog.d/ops-17.md
 Abhängt von: T2
+
+### T5 — R-1759: Monitoring-Test von pg-backup kennt die Rollen-Passwörter  [x]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_catalog_adminhelper.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @087f641ca 2026-11-25T17:37:18+01:00
+Review: approve (.ah-out/review/ops-17/T5.verdict.json)
+Änderung: Die PR-CI (#672) war rot: test_catalog_adminhelper fährt scripts/pg-backup.sh mit Stub-pg_dump, kannte aber die seit T3 verlangten SERVER_DB_PASSWORD/MONITOR_DB_PASSWORD nicht. Der Helfer setzt sie; ein neuer Fall: ohne die Passwörter bricht das Skript ab und schreibt nichts.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_adminhelper.py
+Doku: keine (Test)
