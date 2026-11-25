@@ -85,6 +85,7 @@ _ALLOWED_PATH_PREFIXES = (
     "status",
     "templates",
     "maintenance",
+    "exceptions",
     "agent",
     "catalog",
     "discovery",

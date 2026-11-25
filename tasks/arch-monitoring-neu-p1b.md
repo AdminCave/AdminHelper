@@ -42,8 +42,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py 
 Doku: → T7
 Abhängt von: T1
 
-### T3 — `/exceptions`: Router, Schemas, Aufbewahrung, Proxy-Präfix (R-1636)  [ ]
+### T3 — `/exceptions`: Router, Schemas, Aufbewahrung, Proxy-Präfix (R-1636)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/exceptions.py, apps/monitoring/app/routers/__init__.py, apps/monitoring/app/schemas.py, apps/monitoring/app/scheduler.py, apps/monitoring/tests/test_exceptions_api.py, apps/monitoring/tests/openapi.snapshot.json, apps/server/app/modules/monitoring_proxy/router.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] monitoring server: 5 passed, 0 failed, 13 skipped @fe797f35f 2026-11-25T17:38:05+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1b/T3.verdict.json)
 Änderung: Router `routers/exceptions.py` (SPDX, `require_internal`): `GET /exceptions` (`include_ended`, Filter `server_id`/`check_id`), `POST` (201), `PUT` (404/409), `DELETE` (204, beendet; 404/409). Schemas `ExceptionInput` (Zeitfelder-Validierung wie `MaintenanceInput` `schemas.py:225`; 422 für jede Kombination außer `no_notify` × `check`/`check_type`/`server`/`all`, unbekannten Check oder Check-Typ, `reason` über 500) und `ExceptionOut` (camelCase, Spec). Tagesjob `_run_history_cleanup` (`scheduler.py:216`) löscht seit über 90 Tagen beendete Ausnahmen. Präfix `exceptions` in `_ALLOWED_PATH_PREFIXES` (`monitoring_proxy/router.py:82`) samt den vier Präfix-Listen der Entwickler-Doku, die `test_monitoring_proxy_allowlist.py` gegen die Router liest. Tests: CRUD, jede 422-Kombination, Beenden und 409, Liste mit/ohne beendete, Filter, Aufbewahrung, die Ausnahme schaltet über `muted_reason` stumm; OpenAPI-Snapshot. 11 Dateien: Route, Freigabe und die vier Doku-Listen müssen in einem Commit landen.
 Verify: bash scripts/dev/verify.sh monitoring server --strict
 Doku: Präfix-Listen in docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html; übrige Abschnitte → T7

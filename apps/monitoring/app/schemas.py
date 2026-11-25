@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
+from app.core.time import utcnow_naive
 
 # The recovery hold where nobody sets one: the default of the schemas below and,
 # for a stored template definition without the key, of template_sync. Has to match
@@ -222,6 +223,56 @@ class TemplateTagAssign(RequestModel):
         return v
 
 
+# The time fields of a maintenance window and of an exception: one set of rules, so a
+# window taken over as an exception is accepted exactly as before (R-1636).
+
+
+def _valid_weekdays(v: list[int]) -> list[int]:
+    if any(d < 0 or d > 6 for d in v):
+        raise ValueError("weekdays must be 0..6 (0 = Monday)")
+    return sorted(set(v))
+
+
+def _valid_timezone(v: str) -> str:
+    # Validate against real tzdata — without this the evaluator's UTC
+    # fallback would silently swallow typos (T23 review note).
+    try:
+        ZoneInfo(v)
+    except Exception:
+        raise ValueError(f"Unknown IANA timezone: {v}")
+    return v
+
+
+def _to_naive_utc(v: datetime | None) -> datetime | None:
+    # Service convention is tz-naive UTC; ISO strings with an offset are
+    # converted instead of rejected (the desktop client sends UTC ISO).
+    if v is not None and v.tzinfo is not None:
+        try:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        except OverflowError:
+            # Pydantic turns only ValueError/AssertionError into a 422; an offset
+            # at the calendar edge would otherwise reach the client as a 500.
+            raise ValueError("date is out of range once converted to UTC") from None
+    return v
+
+
+def _check_once(starts_at: datetime | None, ends_at: datetime | None) -> None:
+    if starts_at is None or ends_at is None:
+        raise ValueError("once windows need starts_at and ends_at")
+    if ends_at <= starts_at:
+        raise ValueError("ends_at must be after starts_at")
+
+
+def _check_weekly(weekdays: list[int], start_time: str | None, minutes: int | None) -> None:
+    if not weekdays:
+        raise ValueError("weekly windows need at least one weekday")
+    if not start_time or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", start_time):
+        raise ValueError("start_time must be HH:MM")
+    if not minutes or not (1 <= minutes <= 1440):
+        # Cap 24h: the evaluator's day_offset loop relies on it.
+        raise ValueError("duration_minutes must be 1..1440")
+
+
 class MaintenanceInput(RequestModel):
     """Create/full-update payload for a maintenance window. kind-dependent
     required fields are enforced in the model validator; aware datetimes are
@@ -248,50 +299,107 @@ class MaintenanceInput(RequestModel):
     @field_validator("weekdays")
     @classmethod
     def _weekdays_valid(cls, v: list[int]) -> list[int]:
-        if any(d < 0 or d > 6 for d in v):
-            raise ValueError("weekdays must be 0..6 (0 = Monday)")
-        return sorted(set(v))
+        return _valid_weekdays(v)
 
     @field_validator("timezone")
     @classmethod
     def _timezone_valid(cls, v: str) -> str:
-        # Validate against real tzdata — without this the evaluator's UTC
-        # fallback would silently swallow typos (T23 review note).
-        try:
-            ZoneInfo(v)
-        except Exception:
-            raise ValueError(f"Unknown IANA timezone: {v}")
-        return v
+        return _valid_timezone(v)
 
     @field_validator("starts_at", "ends_at")
     @classmethod
     def _naive_utc(cls, v: datetime | None) -> datetime | None:
-        # Service convention is tz-naive UTC; ISO strings with an offset are
-        # converted instead of rejected (the desktop client sends UTC ISO).
-        if v is not None and v.tzinfo is not None:
-            try:
-                return v.astimezone(timezone.utc).replace(tzinfo=None)
-            except OverflowError:
-                # Pydantic turns only ValueError/AssertionError into a 422; an offset
-                # at the calendar edge would otherwise reach the client as a 500.
-                raise ValueError("date is out of range once converted to UTC") from None
-        return v
+        return _to_naive_utc(v)
 
     @model_validator(mode="after")
     def _kind_fields(self):
         if self.kind == "once":
-            if self.starts_at is None or self.ends_at is None:
-                raise ValueError("once windows need starts_at and ends_at")
-            if self.ends_at <= self.starts_at:
-                raise ValueError("ends_at must be after starts_at")
+            _check_once(self.starts_at, self.ends_at)
         else:  # weekly
-            if not self.weekdays:
-                raise ValueError("weekly windows need at least one weekday")
-            if not self.start_time or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", self.start_time):
-                raise ValueError("start_time must be HH:MM")
-            if not self.duration_minutes or not (1 <= self.duration_minutes <= 1440):
-                # Cap 24h: the evaluator's day_offset loop relies on it.
-                raise ValueError("duration_minutes must be 1..1440")
+            _check_weekly(self.weekdays, self.start_time, self.duration_minutes)
+        return self
+
+
+# What an exception can be today (ADR 0004 §7, R-1636): any other scope or effect is a
+# 422, not a row that does nothing (Kevin 2026-11-25). skip and no_rating follow with
+# P1c (R-1637), the scopes object, rule, tag and cluster later.
+EXCEPTION_SCOPES = ("check", "check_type", "server", "all")
+EXCEPTION_EFFECTS = ("no_notify",)
+EXCEPTION_DURATIONS = ("permanent", "once", "weekly")
+
+
+class ExceptionInput(RequestModel):
+    """Create/full-update payload of an exception: where it applies (scope_kind with
+    scope_value: the check id, the check type or the server id; none for all), what it
+    does, for how long. The time fields follow MaintenanceInput, except that a once
+    without starts_at starts now; permanent takes none."""
+
+    scope_kind: str
+    scope_value: str | None = None
+    effect: str
+    duration_kind: str
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    weekdays: list[Weekday] = []
+    start_time: str | None = None
+    duration_minutes: WindowMinutes | None = None
+    timezone: str = "UTC"
+    reason: Annotated[str, Field(max_length=500)] | None = None
+    enabled: bool = True
+
+    @field_validator("scope_kind")
+    @classmethod
+    def _scope_valid(cls, v: str) -> str:
+        if v not in EXCEPTION_SCOPES:
+            raise ValueError(f"scope_kind must be one of {', '.join(EXCEPTION_SCOPES)}")
+        return v
+
+    @field_validator("effect")
+    @classmethod
+    def _effect_valid(cls, v: str) -> str:
+        if v not in EXCEPTION_EFFECTS:
+            raise ValueError(f"effect must be one of {', '.join(EXCEPTION_EFFECTS)}")
+        return v
+
+    @field_validator("duration_kind")
+    @classmethod
+    def _duration_valid(cls, v: str) -> str:
+        if v not in EXCEPTION_DURATIONS:
+            raise ValueError(f"duration_kind must be one of {', '.join(EXCEPTION_DURATIONS)}")
+        return v
+
+    @field_validator("weekdays")
+    @classmethod
+    def _weekdays_valid(cls, v: list[int]) -> list[int]:
+        return _valid_weekdays(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_valid(cls, v: str) -> str:
+        return _valid_timezone(v)
+
+    @field_validator("starts_at", "ends_at")
+    @classmethod
+    def _naive_utc(cls, v: datetime | None) -> datetime | None:
+        return _to_naive_utc(v)
+
+    @model_validator(mode="after")
+    def _scope_and_duration(self):
+        if self.scope_kind == "all":
+            if self.scope_value:
+                raise ValueError("scope all takes no scope_value")
+            self.scope_value = None
+        elif not self.scope_value:
+            raise ValueError(f"scope {self.scope_kind} needs a scope_value")
+        elif self.scope_kind == "check_type" and self.scope_value not in VALID_CHECK_TYPES:
+            raise ValueError("Unknown check type")
+        # Whether a check of that id exists is the router's question (it needs the database).
+        if self.duration_kind == "once":
+            if self.starts_at is None:
+                self.starts_at = utcnow_naive()
+            _check_once(self.starts_at, self.ends_at)
+        elif self.duration_kind == "weekly":
+            _check_weekly(self.weekdays, self.start_time, self.duration_minutes)
         return self
 
 
@@ -500,6 +608,36 @@ class MaintenanceOut(BaseModel):
     timezone: str
     enabled: bool | None
     createdAt: str | None
+
+
+class ExceptionOut(BaseModel):
+    """An exception as models.MonitorException.to_dict gives it. Data, not text: the
+    interface makes "unknown (migrated)" of origin migration without createdBy."""
+
+    id: str
+    scopeKind: str
+    scopeValue: str | None
+    serverId: str | None
+    effect: str
+    durationKind: str
+    startsAt: str | None
+    endsAt: str | None
+    weekdays: list[int]
+    startTime: str | None
+    durationMinutes: int | None
+    timezone: str
+    reason: str | None
+    enabled: bool
+    origin: str
+    createdAt: str | None
+    createdBy: str | None
+    createdById: str | None
+    updatedAt: str | None
+    updatedBy: str | None
+    updatedById: str | None
+    endedAt: str | None
+    endedBy: str | None
+    endedById: str | None
 
 
 class AgentKeyOut(BaseModel):
