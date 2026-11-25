@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1b — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-neu-p1b · Review: pro Task
+Status: erledigt · Branch: feature/arch-monitoring-neu-p1b · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1b.md (Roadmap R-1636)
 Heavy: linux-full — Server-Proxy (Präfix `exceptions`, Akteur-Header in `monitoring_proxy`) und eine Monitoring-Migration; kein Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
