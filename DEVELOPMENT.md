@@ -653,7 +653,8 @@ aendern kann. `scripts/dev/roadmap.py` (nur Python-Stdlib) liest den Kopf (`Stan
 und die Tabellenzeilen mit ihren zehn Spalten; alles andere, also Prosa und Leerzeilen, reicht
 es byte-gleich durch. Den Abschnitt „Als Naechstes" schreibt es bei jedem Schreiben neu aus den
 Zeilen, niemand pflegt ihn von Hand: was in Arbeit ist (`aktiv`, `bereit`, `pr` mit PR), je
-Stufe der naechste wartende Zug (Reihenfolge wie `zuege`), die offenen REL-Zeilen und die
+Stufe der naechste wartende Zug (Reihenfolge wie `zuege`), die offenen REL-Zeilen, die
+zurueckgestellten Zeilen, deren Weckbedingung erfuellt ist, als „Wieder faellig", und die
 `blockiert`-Zeilen als „Wartet auf Kevin"; Handarbeit fuer Kevin ist darum eine `blockiert`-Zeile. Zeilen legen Kevin und die Skripte an (`heavy.sh`, spaeter die Finder); `/roadmap`
 zeigt und triagiert sie (`.claude/skills/roadmap/SKILL.md`).
 
@@ -666,6 +667,7 @@ python3 scripts/dev/roadmap.py zuege [--stufe klein|kern]
 python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
     [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
 python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md] [--pr "#<n>"]
+python3 scripts/dev/roadmap.py status R-nnnn zurückgestellt --until R-mmmm|JJJJ-MM-TT [--note "…"]
 python3 scripts/dev/roadmap.py approve R-nnnn [--revoke]
 python3 scripts/dev/roadmap.py sync
 python3 scripts/dev/roadmap.py stats [--days 30]
@@ -674,8 +676,8 @@ python3 scripts/dev/roadmap.py stats [--days 30]
 - `lint` meldet je Fund eine Zeile mit ID und Zeilennummer: doppelte IDs, unbekannte Status
   (die Aliase `geparkt` und `erledigt` beim Namen), Zeilen im falschen Abschnitt, Zeilen ohne
   genau zehn Spalten (ein unmaskiertes `|` im Text macht eine elfte; `\|` ist erlaubt),
-  einen `Dedup-Key:`, den zwei offene Zeilen tragen, und einen WIP-Kopf, der nicht zu den
-  Zeilen passt. Exit 0 sauber, 1 Funde, 2 Aufruf falsch oder Datei fehlt.
+  einen `Dedup-Key:`, den zwei offene Zeilen tragen, eine zurueckgestellte Zeile ohne
+  Weckbedingung und einen WIP-Kopf, der nicht zu den Zeilen passt. Exit 0 sauber, 1 Funde, 2 Aufruf falsch oder Datei fehlt.
 - `show` liest nur: ohne Argument „Als Naechstes", wie das letzte Schreiben ihn hinterliess, die WIP-Zaehler aus den Zeilen,
   die offenen Abschnitte mit ihren Zeilen und die Historie als Anzahl; mit einer ID die Zeile
   Feld fuer Feld; mit `--wip` nur die Zaehler (die liest der Status-Hook).
@@ -725,6 +727,16 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   `changelog.d`-Fragment (R-1291); ohne `origin/main` prueft das Skript nichts. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
   die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
   ist Exit 2.
+  Wer nach `zurückgestellt` wechselt, nennt eine Weckbedingung: `--until R-mmmm` (die Zeile, auf
+  die sie wartet; sie muss in der Datei stehen und ist nicht die eigene) oder `--until JJJJ-MM-TT`
+  (nach heute), mehrfach kombinierbar. Sie steht in „Haengt ab von": R-IDs wie bisher, ein Datum
+  als `ab JJJJ-MM-TT`; neue IDs kommen dazu, ein neues Datum ersetzt das alte. Ohne Bedingung,
+  weder per `--until` noch schon in der Spalte, ist das Exit 2, ebenso `--until` bei einem
+  anderen Status. Erfuellt ist sie, wenn jede genannte Zeile geschlossen ist (`abgeschlossen`,
+  `abgelehnt` oder aus der Datei gefallen) und das Datum erreicht ist; dann nennt „Als
+  Naechstes" die Zeile unter „Wieder faellig" mit dem Grund. Der Status wechselt nicht von
+  selbst, die Entscheidung bleibt Kevins. Ein Datum sieht „Als Naechstes" erst beim naechsten
+  Schreiben der Datei.
 - `approve` ist `geplant` -> `freigegeben`, die Freigabe, die die Session nach dem Plan-Commit von `/feature-plan`
   setzt (CLAUDE.md §4); `--revoke` nimmt sie zurueck. Beide lassen die Notiz der Zeile stehen, anders als `status`
   ohne `--note`.

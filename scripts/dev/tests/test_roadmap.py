@@ -80,8 +80,11 @@ def clean_sections() -> dict[str, list[str]]:
             row("R-0005", "neu", "BUG", "Ein Fehler", "hunt 2026-09-18", ablauf="nie"),
         ],
         "Geplant (Stufen in Reihenfolge)": [row("R-0003", "geplant"), row("R-0007", "freigegeben")],
-        # R-0009 holds R-0001 in the archive (Roadmap.prune).
-        "Zurückgestellt": [row("R-0009", "zurückgestellt", "IDEE", depends="R-0001")],
+        # R-0009 holds R-0001 in the archive (Roadmap.prune); its date keeps it
+        # from waking (Roadmap.due).
+        "Zurückgestellt": [
+            row("R-0009", "zurückgestellt", "IDEE", depends="R-0001, ab 2026-12-01")
+        ],
         "Blockiert": [],
         "Abgeschlossen (letzte 7 Tage)": [
             row("R-0002", "abgeschlossen 2026-09-20 (PR #3, Merge abc1234)", "BUG"),
@@ -717,7 +720,8 @@ def test_an_allowed_transition_moves_the_row_home(
     tmp_path: pathlib.Path, old: str, new: str
 ) -> None:
     p = aged(write(tmp_path, with_probe(old)))
-    assert status(p, "R-0020", new) == 0
+    wake = ["--until", "2026-10-01"] if new == "zurückgestellt" else []
+    assert status(p, "R-0020", new, *wake) == 0
     section, r = placed(p, "R-0020")
     assert (section, r.status) == (roadmap.SECTION_OF[new], new)
     assert findings(p.read_text(encoding="utf-8")) == []
@@ -926,7 +930,7 @@ def test_status_pr_names_itself_in_the_commit(tmp_path: pathlib.Path) -> None:
 def test_a_table_emptied_by_a_move_takes_the_next_row(tmp_path: pathlib.Path) -> None:
     p = aged(write(tmp_path, CLEAN))
     assert status(p, "R-0009", "geplant") == 0  # "Zurückgestellt" keeps only its table head
-    assert status(p, "R-0003", "zurückgestellt") == 0
+    assert status(p, "R-0003", "zurückgestellt", "--until", "R-0004") == 0
     assert f"## Zurückgestellt\n{HEAD}\n{SEP}\n| R-0003 |" in p.read_text(encoding="utf-8")
 
 
@@ -1950,3 +1954,124 @@ def test_status_takes_any_ledger_without_origin_main(
     git(repo, "update-ref", "-d", "refs/remotes/origin/main")
     p = aged(write(tmp_path, CLEAN))
     assert status(p, "R-0005", "geplant", "--ledger", "tasks/alt.md") == 0
+
+
+# ── the wake condition of zurückgestellt (R-1780) ─────────────────────────────
+
+
+def deferred_doc(depends: str = "—", dep_status: str = "geplant") -> str:
+    """R-0030 is deferred and waits on R-0031 (or on nothing)."""
+    s = clean_sections()
+    s["Zurückgestellt"].append(row("R-0030", "zurückgestellt (wartet)", "FEAT", depends=depends))
+    home = "Geplant (Stufen in Reihenfolge)"
+    if dep_status in roadmap.CLOSED:
+        home = "Abgeschlossen (letzte 7 Tage)"
+        dep_status = f"{dep_status} 2026-09-24"
+    s[home].append(row("R-0031", dep_status, "FEAT", "Die Voraussetzung"))
+    return doc(s)
+
+
+def points(p: pathlib.Path) -> list[str]:
+    return roadmap.next_up(roadmap.Roadmap(p.read_text(encoding="utf-8")))
+
+
+def test_deferring_without_a_wake_condition_is_exit_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    before = p.read_text(encoding="utf-8")
+    assert status(p, "R-0003", "zurückgestellt", "--note", "später") == 2
+    assert "--until" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == before
+
+
+def test_until_a_row_and_a_date_land_in_haengt_ab_von(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    args = ("--until", "R-0004", "--until", "2026-10-15", "--note", "nach R-0004")
+    assert status(p, "R-0003", "zurückgestellt", *args) == 0
+    section, r = placed(p, "R-0003")
+    assert section == "Zurückgestellt"
+    assert r.cells[roadmap.DEPENDS] == "R-0004, ab 2026-10-15"
+    assert r.cells[roadmap.STATUS] == "zurückgestellt (nach R-0004)"
+    assert findings(p.read_text(encoding="utf-8")) == []
+
+
+def test_until_on_a_deferred_row_adds_rows_and_replaces_the_date(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0009", "zurückgestellt", "--until", "R-0004", "--until", "2026-11-01") == 0
+    assert placed(p, "R-0009")[1].cells[roadmap.DEPENDS] == "R-0001, R-0004, ab 2026-11-01"
+
+
+def test_a_deferred_row_with_a_condition_takes_a_new_note_alone(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0009", "zurückgestellt", "--note", "neu begründet") == 0
+    assert placed(p, "R-0009")[1].cells[roadmap.DEPENDS] == "R-0001, ab 2026-12-01"
+
+
+@pytest.mark.parametrize(
+    ("args", "says"),
+    [
+        (("R-0003", "zurückgestellt", "--until", "R-0099"), "no row R-0099"),
+        (("R-0003", "zurückgestellt", "--until", "R-0003"), "cannot wait for itself"),
+        (("R-0003", "zurückgestellt", "--until", "2026-09-25"), "not after today"),
+        (("R-0003", "zurückgestellt", "--until", "2026-02-30"), "R-nnnn or JJJJ-MM-TT"),
+        (("R-0003", "zurückgestellt", "--until", "bald"), "R-nnnn or JJJJ-MM-TT"),
+        (("R-0003", "blockiert", "--until", "R-0004"), "not of blockiert"),
+    ],
+    ids=["unknown-row", "itself", "today", "no-date", "no-form", "other-status"],
+)
+def test_a_wake_condition_that_cannot_be_checked_is_exit_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], args: tuple[str, ...], says: str
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    before = p.read_text(encoding="utf-8")
+    assert status(p, *args) == 2
+    assert says in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == before
+
+
+def test_until_names_itself_in_the_commit(tmp_path: pathlib.Path) -> None:
+    repo = fixture_repo(tmp_path)
+    p = aged(repo / "ROADMAP.md")
+    assert status(p, "R-0003", "zurückgestellt", "--until", "R-0004") == 0
+    subject = git(repo, "log", "--format=%s", "-1").strip()
+    assert subject == "roadmap: status R-0003 zurückgestellt --until R-0004"
+
+
+def test_a_closed_row_wakes_the_deferred_one_without_changing_it(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, deferred_doc("R-0031")))
+    assert status(p, "R-0031", "aktiv") == 0
+    assert not any("Wieder fällig" in line for line in points(p))
+    for step in ("bereit", "pr", "abgeschlossen"):
+        assert status(p, "R-0031", step) == 0
+    assert "2. Wieder fällig: R-0030 (R-0031 abgeschlossen)" in points(p)
+    assert placed(p, "R-0030")[1].cells[roadmap.STATUS] == "zurückgestellt (wartet)"
+
+
+def test_a_rejected_row_wakes_too(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, deferred_doc("R-0031", dep_status="abgelehnt")))
+    assert status(p, "R-0004", "aktiv", "--note", "T3/5") == 0
+    assert any(line.endswith("Wieder fällig: R-0030 (R-0031 abgelehnt)") for line in points(p))
+
+
+def test_a_date_wakes_once_it_is_reached(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, deferred_doc("ab 2026-10-01")))
+    assert run(p, "status", "R-0004", "aktiv", "--note", "T3/5", today="2026-09-30") == 0
+    assert not any("Wieder fällig" in line for line in points(p))
+    aged(p)
+    assert run(p, "status", "R-0004", "aktiv", "--note", "T4/5", today="2026-10-01") == 0
+    assert any(line.endswith("Wieder fällig: R-0030 (2026-10-01 erreicht)") for line in points(p))
+
+
+def test_a_row_and_a_date_both_have_to_hold(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, deferred_doc("R-0031, ab 2026-10-01", dep_status="abgeschlossen")))
+    assert run(p, "status", "R-0004", "aktiv", "--note", "T3/5", today="2026-09-30") == 0
+    assert not any("Wieder fällig" in line for line in points(p))
+
+
+def test_lint_names_a_deferred_row_without_a_wake_condition() -> None:
+    text = deferred_doc()
+    assert findings(text) == [
+        f"R-0030 line {line_of(text, '| R-0030 |')}: zurückgestellt without a wake condition "
+        "in 'Hängt ab von' (status … zurückgestellt --until R-nnnn|JJJJ-MM-TT)"
+    ]

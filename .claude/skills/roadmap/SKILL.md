@@ -80,7 +80,10 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
      (feature-plan 3a).
    - **Ablehnen** → `roadmap.py status R-nnnn abgelehnt --note "<Grund>"`. Ohne Grund
      kein Ablehnen: fehlt er in Kevins Antwort, einmal nachfragen.
-   - **Zurückstellen** → `roadmap.py status R-nnnn zurückgestellt [--note "<bis wann/warum>"]`.
+   - **Zurückstellen** → `roadmap.py status R-nnnn zurückgestellt --until <R-nnnn|JJJJ-MM-TT> [--note "<warum>"]`:
+     ohne Weckbedingung (eine Zeile, auf die sie wartet, oder ein Datum; mehrfach möglich) Exit 2. Ist die
+     Bedingung erfüllt, nennt „Als Nächstes“ (und der AH-STATUS) die Zeile unter „Wieder fällig“; der Status
+     bleibt, die Session legt sie Kevin in der nächsten Triage vor.
    - **REG**: die Annehmen-Option heißt „Annehmen, Regression bestätigt" und setzt
      `status R-nnnn geplant --note "Regression bestätigt"` — der Haken ist die Notiz.
      Hält Kevin sie für nicht reproduziert: Ablehnen mit diesem Grund.

@@ -182,6 +182,9 @@ DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 DEDUP = re.compile(r"Dedup-Key:\s*(\S+)")
 WIP_FIELD = re.compile(r"\b(aktiv|bereit|pr|neu)\s+(\d+)\s*/\s*\d+")
 ALT_FIELD = re.compile(r"\bALT:\s*(\d+)")
+# The date half of a wake condition in "Hängt ab von"; the row half is ROW_ID.
+WAKE_DATE = re.compile(r"\bab (\d{4}-\d{2}-\d{2})\b")
+DEFERRED = "zurückgestellt"
 
 
 class UsageError(Exception):
@@ -396,6 +399,7 @@ class Roadmap:
         today: dt.date,
         ledger: str | None = None,
         pr: str | None = None,
+        until: list[str] | None = None,
     ) -> None:
         section, row = self.find(rid)
         old = row.state
@@ -404,6 +408,14 @@ class Roadmap:
         if new != old and new not in TRANSITIONS[old]:
             allowed = ", ".join(sorted(TRANSITIONS[old])) or "nothing"
             raise UsageError(f"{rid}: {old} -> {new} is no transition (from {old}: {allowed})")
+        if until:
+            row.cells[DEPENDS] = self.wake_cell(rid, row, new, until, today)
+            row.raw = None
+        if new == DEFERRED and new != old and wake_of(row) == ([], []):
+            raise UsageError(
+                f"{rid}: zurückgestellt needs a wake condition that can be checked — "
+                "--until R-nnnn (the row it waits for) or --until JJJJ-MM-TT"
+            )
         if new != old or note is not None:
             # A closed row keeps the day it closed when only its note changes.
             kept = parse_day(row.cells[STATUS]) if new == old else None
@@ -426,6 +438,51 @@ class Roadmap:
         if not filed:
             self.remove(row)
             self.insert_row(home, row, top=home == "Abgeschlossen")
+
+    def wake_cell(self, rid: str, row: Row, new: str, until: list[str], today: dt.date) -> str:
+        """ "Hängt ab von" with the wake condition of --until: the rows it names
+        so far plus the new ones, and the new date in place of an old one."""
+        if new != DEFERRED:
+            raise UsageError(f"--until is the wake condition of zurückgestellt, not of {new}")
+        ids, dates = wake_of(row)
+        new_dates = []
+        for value in until:
+            if ROW_ID.fullmatch(value):
+                if value == rid:
+                    raise UsageError(f"{rid} cannot wait for itself")
+                self.find(value)
+                ids += [value] if value not in ids else []
+                continue
+            try:
+                day = dt.date.fromisoformat(value) if DATE.fullmatch(value) else None
+            except ValueError:
+                day = None
+            if day is None:
+                raise UsageError(f"--until takes R-nnnn or JJJJ-MM-TT: {value!r}")
+            if day <= today:
+                raise UsageError(f"--until {value} is not after today ({today.isoformat()})")
+            new_dates.append(day)
+        if new_dates:
+            dates = [max(new_dates)]
+        return ", ".join([*ids, *(f"ab {d.isoformat()}" for d in dates)])
+
+    def due(self, today: dt.date) -> list[tuple[Row, list[str]]]:
+        """The zurückgestellt rows whose wake condition holds: every row they
+        name is closed, every date reached. With what woke them."""
+        rows = [r for _, r in self.rows() if r.well_formed]
+        state = {r.id: r.state for r in rows}
+        found = []
+        for r in rows:
+            if r.state != DEFERRED:
+                continue
+            ids, dates = wake_of(r)
+            if (not ids and not dates) or any(state.get(i, "") not in CLOSED | {""} for i in ids):
+                continue
+            if any(d > today for d in dates):
+                continue
+            why = [f"{i} {state[i]}" if i in state else f"{i} nicht in der Datei" for i in ids]
+            found.append((r, why + [f"{d.isoformat()} erreicht" for d in dates]))
+        return found
 
     def prune(self, today: dt.date) -> int:
         """Closed rows more than KEEP_CLOSED_DAYS past their date leave the
@@ -465,13 +522,13 @@ class Roadmap:
     def next_id(self) -> str:
         return f"R-{self.highest() + 1:04d}"
 
-    def set_next_up(self) -> None:
+    def set_next_up(self, today: dt.date) -> None:
         """ "Als Nächstes" from the rows, between its heading and the next one."""
         try:
             start, end = self.section_bounds("Als Nächstes")
         except UsageError:
             return
-        self.items[start + 1 : end] = [*next_up_lines(self), ""]
+        self.items[start + 1 : end] = [*next_up_lines(self, today), ""]
 
     def set_header(self, today: dt.date) -> None:
         """`Stand: <today> · WIP: …` computed from the rows, above the first section."""
@@ -515,6 +572,18 @@ class Finding:
         return f"{self.who} line {self.lineno}: {self.reason}"
 
 
+def wake_of(row: Row) -> tuple[list[str], list[dt.date]]:
+    """The wake condition in "Hängt ab von": the rows and the dates."""
+    depends = row.cells[DEPENDS] if row.well_formed else ""
+    dates = []
+    for m in WAKE_DATE.finditer(depends):
+        try:
+            dates.append(dt.date.fromisoformat(m.group(1)))
+        except ValueError:
+            continue
+    return list(dict.fromkeys(ROW_ID.findall(depends))), dates
+
+
 def lint(roadmap: Roadmap, today: dt.date) -> list[Finding]:
     found: list[Finding] = []
     first_line: dict[str, int] = {}
@@ -551,6 +620,15 @@ def lint(roadmap: Roadmap, today: dt.date) -> list[Finding]:
                         row.lineno, who, f"status '{status}' belongs in '{home}', not '{where}'"
                     )
                 )
+        if row.state == DEFERRED and wake_of(row) == ([], []):
+            found.append(
+                Finding(
+                    row.lineno,
+                    who,
+                    "zurückgestellt without a wake condition in 'Hängt ab von' "
+                    "(status … zurückgestellt --until R-nnnn|JJJJ-MM-TT)",
+                )
+            )
         key = DEDUP.search(row.cells[QUELLE])
         if key and row.is_open:
             if key.group(1) in dedup_owner:
@@ -660,7 +738,7 @@ def write(
             commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
             raise
         pruned = roadmap.prune(today)
-        roadmap.set_next_up()
+        roadmap.set_next_up(today)
         roadmap.set_header(today)
         bak = sibling(path, ".bak")
         bak.write_bytes(before_text.encode("utf-8"))
@@ -752,11 +830,14 @@ def cmd_status(args: argparse.Namespace) -> int:
     def change(roadmap: Roadmap) -> str:
         if args.ledger and args.ledger != roadmap.find(args.id)[1].cells[LEDGER]:
             refuse_merged_ledger(args.ledger)
-        roadmap.set_status(args.id, args.value, args.note, args.today, args.ledger, args.pr)
+        roadmap.set_status(
+            args.id, args.value, args.note, args.today, args.ledger, args.pr, args.until
+        )
         return args.id
 
     detail = f" {args.value}" + (f" --ledger {args.ledger}" if args.ledger is not None else "")
     detail += f" --pr {args.pr}" if args.pr is not None else ""
+    detail += "".join(f" --until {u}" for u in args.until or ())
     path = roadmap_path(args.file)
     write(path, change, verb="status", delta=0, detail=detail, today=args.today)
     return 0
@@ -1038,7 +1119,7 @@ def short(title: str, width: int = 60) -> str:
     return title if len(title) <= width else title[: width - 1] + "…"
 
 
-def next_up_lines(roadmap: Roadmap) -> list[str]:
+def next_up_lines(roadmap: Roadmap, today: dt.date) -> list[str]:
     """The points of "Als Nächstes", one line each (the session-start hook
     prints every point as its line)."""
     rows = [r for _, r in roadmap.rows() if r.well_formed]
@@ -1060,6 +1141,11 @@ def next_up_lines(roadmap: Roadmap) -> list[str]:
     rel = [r for r in rows if r.is_open and r.cells[KLASSE] == "REL"]
     if rel:
         points.append("Vor dem Release: " + " · ".join(f"{r.id} {r.state}" for r in rel))
+    due = roadmap.due(today)
+    if due:
+        points.append(
+            "Wieder fällig: " + " · ".join(f"{r.id} ({', '.join(why)})" for r, why in due)
+        )
     blocked = [r for r in rows if r.state == "blockiert"]
     if blocked:
         points.append(
@@ -1282,6 +1368,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     st.add_argument(
         "--pr", help="the PR column that sync reads, e.g. '#42'; also on the same status"
+    )
+    st.add_argument(
+        "--until",
+        action="append",
+        metavar="R-nnnn|JJJJ-MM-TT",
+        help="zurückgestellt only: the wake condition in 'Hängt ab von' (repeatable); "
+        "'Als Nächstes' names the row once every row is closed and the date reached",
     )
     st.set_defaults(func=cmd_status)
     ap = sub.add_parser(
