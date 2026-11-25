@@ -245,9 +245,7 @@ def test_both_services_of_the_server_image_share_the_pool_knobs():
 
 # One Postgres role per service (apps/server/app/db_roles.py): only postgres and db-init see
 # the superuser's password, every other service connects with its own role, and waits for
-# db-init to have set the roles up. The one exception is pg-backup, which dumps both
-# databases as the superuser like scripts/backup.sh and runs only in the opt-in profile
-# `backup` (R-1713).
+# db-init to have set the roles up; pg-backup dumps each database as its role (R-1759).
 _DB_ROLES = {
     "server": "ah_server",
     "scheduler": "ah_scheduler",
@@ -265,8 +263,20 @@ def test_only_postgres_and_db_init_see_the_superuser_password():
             re.search(r"\$\{POSTGRES_PASSWORD\b", entry) for entry in spec.get("environment") or []
         )
     )
-    assert holders == ["db-init", "pg-backup", "postgres"]
-    assert services["pg-backup"]["profiles"] == ["backup"]
+    assert holders == ["db-init", "postgres"]
+
+
+def test_pg_backup_dumps_each_database_as_its_role():
+    services = yaml.safe_load(_COMPOSE.read_text(encoding="utf-8"))["services"]
+    env = dict(entry.split("=", 1) for entry in services["pg-backup"]["environment"])
+    assert env["SERVER_DB_PASSWORD"] == "${SERVER_DB_PASSWORD}"
+    assert env["MONITOR_DB_PASSWORD"] == "${MONITOR_DB_PASSWORD}"
+    assert "PGUSER" not in env and "PGPASSWORD" not in env
+    assert services["pg-backup"]["depends_on"]["db-init"] == {
+        "condition": "service_completed_successfully"
+    }
+    script = (_COMPOSE.parent / "scripts" / "pg-backup.sh").read_text(encoding="utf-8")
+    assert "PGUSER=ah_server " in script and "PGUSER=ah_monitor " in script
 
 
 def test_each_service_connects_with_its_role_after_db_init():

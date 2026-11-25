@@ -13,6 +13,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - 2026-11-25 Kevin: die Session merged ops-17 selbst (auch agent-install.sh/update.sh).
 - 2026-11-25 T2: die Rechte der Dumps setzt ein Wegwerf-Container des postgres-Images (nur backups/ gemountet, --network none, find -type f), nicht der Host: backups/ beschreibt ein Container, ein Host-chmod folgte dort angelegten Links (Prüfer-Fund). Ein Warnzweig für fremde Eigentümer entfällt damit.
+- 2026-11-25 T3/T4: scripts/tests/backup_restore_test.sh trägt den Live-Block für pg-backup (T3) und die Probe mit Typ und Funktion (T4); task-close stagt ganze Dateien, deshalb gehört die Datei zu T4 (Prüfer-Fund: an T3 allein wäre der Probe-Teil rot). Den Fix von T3 belegt test_env_parity.
 
 ### T1 — R-1757, R-1766, R-1765: agent-install.sh nach abgebrochener Provisionierung; Test-Nachlese  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-17.md
@@ -32,14 +33,16 @@ Beweis: Roadmap R-1761 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: changelog.d/ops-17.md (neutral)
 
-### T3 — R-1759: pg-backup sichert je Dienst-Rolle  [ ]
-Komponente: server · Dateien: scripts/pg-backup.sh, docker-compose.yml, apps/server/tests/test_env_parity.py, apps/server/tests/test_compose_hardening.py, scripts/tests/backup_restore_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-17.md
+### T3 — R-1759: pg-backup sichert je Dienst-Rolle  [x]
+Komponente: server · Dateien: scripts/pg-backup.sh, docker-compose.yml, apps/server/tests/test_env_parity.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-17.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @046301146 2026-11-25T16:39:21+01:00
+Review: approve (.ah-out/review/ops-17/T3.verdict.json)
 Änderung: pg-backup.sh dumpt `adminhelper` als `ah_server` und `adminhelper_monitor` als `ah_monitor` (Passwörter `SERVER_DB_PASSWORD`, `MONITOR_DB_PASSWORD` aus der Umgebung); der Dienst bekommt diese statt `POSTGRES_PASSWORD` und wartet auf db-init. test_env_parity: Superuser-Passwort wieder nur postgres/db-init. Live: backup_restore_test fährt pg-backup einmal im Profil und prüft beide Dumps (nur-Besitzer, nicht leer).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py tests/test_compose_hardening.py
 Doku: docs/admin/betrieb.html DE + docs/en/admin/operations.html · changelog.d/ops-17.md
 
 ### T4 — R-1765: restore.sh leert auch Routinen und Typen; Trap-Nachlese  [ ]
-Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, scripts/install.sh, scripts/update.sh, changelog.d/ops-17.md
+Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, scripts/install.sh, scripts/update.sh, changelog.d/ops-17.md, scripts/tests/backup_restore_test.sh
 Änderung: Das Leeren in restore_db entfernt auch Funktionen/Prozeduren/Aggregate und eigenständige Composite-/Range-Typen in public; scheitert das Leeren, läuft kein pg_restore (Test). Die EXIT-Traps über `ENV_TMPS` in init-secrets.sh, install.sh und update.sh vertragen ein leeres Array auch unter bash 4.2; der SIGTERM-Test prüft rc=143.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test init-secrets_test install_test update_test
 Doku: changelog.d/ops-17.md
