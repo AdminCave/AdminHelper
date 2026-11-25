@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - 2026-11-25 Kevin: die Session merged ops-17 selbst (auch agent-install.sh/update.sh).
 
-### T1 — R-1757, R-1766, R-1765: agent-install.sh nach abgebrochener Provisionierung; Test-Nachlese  [ ]
+### T1 — R-1757, R-1766, R-1765: agent-install.sh nach abgebrochener Provisionierung; Test-Nachlese  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-17.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ef493aacd 2026-11-25T15:38:41+01:00
+Review: approve (.ah-out/review/ops-17/T1.verdict.json)
 Änderung: Scheitert `adminhelper-agent provision`, schreibt agent-install.sh vor dem Abbruch die Repo-Konfiguration nach der vorhandenen Identitäts-CA (`write_repo_tls`). Tests: Provisionierung scheitert auf einem Host mit CA (apt und dnf) → Konfiguration wie vor dem Lauf; dnf-Fall `--server-id` mit alter CA; Fehlerpfad der CA-Kopie; die Token-Prüfungen suchen den ganzen Token statt `zz9`.
 Beweis: Roadmap R-1757 (Einzelheiten privat); scripts/tests/agent_install_test.sh:214,226 (R-1766)
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test

@@ -49,7 +49,12 @@
 set -euo pipefail
 
 _TMPROOT="$(mktemp -d)"
-trap 'rm -rf "$_TMPROOT"' EXIT
+# REPO_BOOTSTRAPPED=1 while this run holds an enrolled host in the bootstrap repo stance
+# (a provisioning run fetches the index that way, write_repo_tls). Whatever ends the
+# run before it pins again (a failed provision, a missing token, a failed package
+# install, a signal), the EXIT trap gives the host the stance of its CA back.
+REPO_BOOTSTRAPPED=0
+trap 'rm -rf "$_TMPROOT"; [ "$REPO_BOOTSTRAPPED" != 1 ] || [ ! -f "$IDENTITY_CA" ] || write_repo_tls' EXIT
 
 # The AdminCave release repo-signing key (OpenPGP fingerprint) — the published
 # value from docs/admin/agent-deployment.html. Key rotation must update both.
@@ -286,7 +291,9 @@ write_repo_tls() {
             # Scope is the PLAIN host — apt does not match a host:port scope key here
             # (verified against a real apt: the port-qualified form is silently ignored
             # and the handshake still fails).
+            [ ! -f "$IDENTITY_CA" ] || [ "${1:-}" != bootstrap ] || REPO_BOOTSTRAPPED=1
             if [ -f "$IDENTITY_CA" ] && [ "${1:-}" != bootstrap ]; then
+                REPO_BOOTSTRAPPED=0
                 install -D -m 0644 "$IDENTITY_CA" "$REPO_CA" || die "could not copy the internal CA to ${REPO_CA} for apt"
                 cat > "${APT_CONF_DIR}/99adminhelper-ca" <<EOF
 Acquire::https::${HOST}::CAInfo "${REPO_CA}";
@@ -298,7 +305,9 @@ EOF
             fi
             ;;
         dnf)
+            [ ! -f "$IDENTITY_CA" ] || [ "${1:-}" != bootstrap ] || REPO_BOOTSTRAPPED=1
             if [ -f "$IDENTITY_CA" ] && [ "${1:-}" != bootstrap ]; then
+                REPO_BOOTSTRAPPED=0
                 write_dnf_repo "sslcacert=${IDENTITY_CA}"
             else
                 write_dnf_repo "sslverify=0"
