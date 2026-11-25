@@ -126,6 +126,33 @@ grep -q 'bash heavy-fake.sh weekly' <<<"$(tail -n 1 "$FAKE_TMUX_LOG")" && ok "we
 AH_NIGHTLY_TODAY=2 AH_NIGHTLY_WEEKLY_DAY=2 n run
 grep -q 'bash heavy-fake.sh weekly' <<<"$(tail -n 1 "$FAKE_TMUX_LOG")" && ok "the weekly day is configurable" || bad "weekly day: $(tail -n 1 "$FAKE_TMUX_LOG")"
 
+echo "── old reports ──"
+W="$WORK/out/weekly"
+day() { date -d "-$1 days" +%Y-%m-%d; }
+mkrun() { mkdir -p "$W/$1"; printf '%s' "$2" >"$W/$1/report.md"; }
+for i in $(seq 1 30); do mkrun "$(day "$i")-0130" $'PASS\n'; done
+mkrun "$(day 31)-0130" $'PASS\n'                     # beyond the 30, green: goes
+mkrun "$(day 40)-0130" $'FAIL (2 steps)\n'           # red, 40 days: stays
+mkrun "$(day 50)-0130" ''                            # no verdict, 50 days: stays
+touch -d '2 days ago' "$W/$(day 50)-0130"
+mkrun "$(day 100)-0130" $'UNVERIFIED (infra)\n'      # not green, 100 days: goes
+mkrun "$(day 110)-0130" ''                           # no verdict, 110 days: goes
+touch -d '2 days ago' "$W/$(day 110)-0130"
+mkrun "$(day 120)-0130" ''                           # no verdict, written to today: stays
+mkdir -p "$W/notes"; touch -d '200 days ago' "$W/notes"
+before_runs="$(ls -1 "$W" | wc -l)"
+AH_NIGHTLY_TODAY=3 n run --dry-run
+[ "$(ls -1 "$W" | wc -l)" = "$before_runs" ] && ok "a dry run removes no report" || bad "dry run pruned: $(ls -1 "$W")"
+AH_NIGHTLY_TODAY=3 n run
+gone=(); for d in "$(day 31)-0130" "$(day 100)-0130" "$(day 110)-0130"; do [ -e "$W/$d" ] && gone+=("$d"); done
+[ $rc -eq 0 ] && [ "${#gone[@]}" = 0 ] && ok "beyond the 30 newest: green, and not green past 90 days, go" || bad "kept: rc=$rc ${gone[*]}"
+kept=1; for i in $(seq 1 30); do [ -d "$W/$(day "$i")-0130" ] || kept=0; done
+[ "$kept" = 1 ] && [ -d "$W/$(day 40)-0130" ] && [ -d "$W/$(day 50)-0130" ] \
+  && ok "the 30 newest stay, and a red run and one without verdict within 90 days" || bad "lost: $(ls -1 "$W")"
+[ -d "$W/$(day 120)-0130" ] && ok "a run without verdict written to within a day stays (it may still run)" || bad "a running directory was removed"
+[ -d "$W/notes" ] && ok "a directory heavy.sh did not name stays" || bad "notes removed"
+grep -q " all prune: 3 run(s) removed from $W$" "$WORK/out/nightly.log" && ok "the prune is logged with its count" || bad "log: $(tail -n 3 "$WORK/out/nightly.log")"
+
 echo "── fetch and fast-forward ──"
 printf 'three\n' >"$WORK/seed/f"; g "$WORK/seed" commit -qam three; g "$WORK/seed" push -q origin main
 before_head="$(git -C "$WORK/repo" rev-parse HEAD)"; before_starts="$(starts)"

@@ -20,7 +20,7 @@
     zuege [--stufe klein|kern|arch]  the trains: open rows grouped by their ledger, waiting ones
                                 first (highest class, then the fullest); exit 1 when none
     sync                        rows in `pr` whose PRs are merged (gh) -> abgeschlossen
-    stats [--days N]            tasks/day, Kevin-min/PR, wait per state, stale, dedup
+    stats [--days N]            tasks/day, wait per state, stale, dedup
 
 The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
@@ -1252,18 +1252,28 @@ def waits(path: pathlib.Path) -> dict[str, list[float]]:
     rel = str(path.resolve().relative_to(repo))
     since: dict[str, tuple[str, dt.datetime]] = {}
     out: dict[str, list[float]] = defaultdict(list)
-    for line in git_out(repo, "log", "--reverse", "--format=%H %cI", "--", rel).splitlines():
-        sha, when = line.split()
-        t = dt.datetime.fromisoformat(when)
-        for _, r in Roadmap(git_out(repo, "show", f"{sha}:{rel}")).rows():
-            if not r.well_formed:
-                continue
-            prev = since.get(r.id)
-            if prev is None:
-                since[r.id] = (r.state, t)
-            elif prev[0] != r.state:
-                out[prev[0]].append((t - prev[1]).total_seconds() / 86400)
-                since[r.id] = (r.state, t)
+    # One diff per commit, not the whole file: parsing every version of the
+    # file took two minutes on 12k commits (R-1721). A row changes state only
+    # by changing its own line, so the added lines are all that is needed.
+    # Unlike a parse of the whole file it also reads `|` lines above the first
+    # heading and no merge diff; the private repo has neither (2026-11-25).
+    log = git_out(repo, "log", "--reverse", "-p", "-U0", "--format=@@commit %cI", "--", rel)
+    t = None
+    for line in log.splitlines():
+        if line.startswith("@@commit "):
+            t = dt.datetime.fromisoformat(line.split()[1])
+            continue
+        if t is None or not line.startswith("+|") or SEPARATOR.match(line[1:]):
+            continue
+        r = Row(split_cells(line[1:]))
+        if not r.well_formed or r.id == "ID":
+            continue
+        prev = since.get(r.id)
+        if prev is None:
+            since[r.id] = (r.state, t)
+        elif prev[0] != r.state:
+            out[prev[0]].append((t - prev[1]).total_seconds() / 86400)
+            since[r.id] = (r.state, t)
     return out
 
 
@@ -1274,15 +1284,6 @@ def cmd_stats(args: argparse.Namespace) -> int:
     since = args.today - dt.timedelta(days=args.days - 1)
     n = tasks_closed(since, args.today)
     print(f"tasks/day: {n / args.days:.1f} ({n} closed in the last {args.days} days)")
-    mins = [
-        int(m.group(0))
-        for r in rows
-        if "#" in r.cells[PR] and (m := re.match(r"\d+", r.cells[KEVIN_MIN]))
-    ]
-    if mins:
-        print(f"kevin-min/PR: {sum(mins) / len(mins):.0f} ({len(mins)} PRs)")
-    else:
-        print("kevin-min/PR: — (no row with a PR carries minutes)")
     spent = waits(path)
     for state in [s for s in STATE_ORDER if s in spent]:
         days = spent[state]
@@ -1397,7 +1398,7 @@ def main(argv: list[str] | None = None) -> int:
     zu.add_argument("--stufe", choices=STAGES, help="only the trains of this session")
     zu.set_defaults(func=cmd_zuege)
     sub.add_parser("sync", help="close rows in pr whose PRs are merged").set_defaults(func=cmd_sync)
-    sa = sub.add_parser("stats", help="tasks/day, Kevin-min/PR, wait per state, stale, dedup")
+    sa = sub.add_parser("stats", help="tasks/day, wait per state, stale, dedup")
     sa.add_argument("--days", type=int, default=30, help="the window for tasks/day (default 30)")
     sa.set_defaults(func=cmd_stats)
     args = p.parse_args(argv)

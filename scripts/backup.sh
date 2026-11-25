@@ -48,8 +48,10 @@ fi
 
 TS=$(date +%Y-%m-%d_%H-%M-%S)
 STAGE=$(mktemp -d)
-PARTIAL=""
-trap 'rm -rf "$STAGE"; [ -z "$PARTIAL" ] || rm -f -- "$PARTIAL"' EXIT
+# The archive's own dir (below) is empty once the archive is renamed out of it or
+# removed; rmdir only by name, so a name that is no longer our dir is left alone.
+PART_DIR=""
+trap 'rm -rf "$STAGE"; [ -z "$PART_DIR" ] || rmdir -- "$PART_DIR" 2>/dev/null || true' EXIT
 
 mkdir -p "$OUT_DIR"
 
@@ -336,50 +338,79 @@ rotate intermediates.
 EOF
 
 ARCHIVE="$OUT_DIR/adminhelper-backup-$TS.tar.gz"
-# Write to a hidden temp file in the output dir, then rename: mktemp creates it 0600
-# whatever the umask, so the archive is never readable by others, not even while tar
-# writes it; and a failed or aborted write (disk full, Ctrl-C) leaves no truncated
-# archive under a name that restore.sh and the docs treat as valid. A rename within
-# the dir is atomic and keeps the mode (as in pg-backup.sh). -T: a directory under the
+# The archive is written in a directory of this run's own inside the output dir
+# (mktemp -d, 0700): nobody else can put a name into it, so every name opened there is
+# one this run made. The subshell checks it once, from inside: the directory it entered
+# (cd -P) is the one under the name it had before (no link followed: a link under the
+# name has an inode of its own), ours and 0700; from then on it works in the directory
+# itself, not through its name, and with relative names only. A target that does not
+# keep Unix owner and mode (as a CIFS, vfat or NTFS mount often does not) fails here.
+#
+# In it: a hidden temp file, then a rename into the output dir. mktemp creates it 0600
+# whatever the umask or a default ACL, so the archive is never readable by others, not
+# even while tar writes it; and a failed or aborted write (disk full, Ctrl-C) leaves no
+# truncated archive under a name that restore.sh and the docs treat as valid. A rename
+# keeps the mode (as in pg-backup.sh); `..` is the output dir: a directory that others
+# cannot write to cannot be moved by them into another one. -T: a directory under the
 # archive name fails the rename instead of taking the archive in, and a symlink there
 # (to a directory too) is replaced, its target left alone (as in update.sh). The
 # rename can reach the disk before the data does, and a power loss would then leave
 # the name on an empty or truncated file: sync the file before the rename and the
-# dir (its new entry) after it; only these two, a bare sync flushes every filesystem.
+# output dir (its new entry) after it; only these two, a bare sync flushes every
+# filesystem.
 #
-# tar writes only into the file mktemp created: it lies in the output dir itself, the
-# name is opened for reading only (no O_CREAT, so nothing new appears through a link
-# put there in between) and that same open file again for appending, without
-# truncating it, and the open descriptor is checked before the first byte (a
-# regular file of ours, 0600, one link, still empty, the same file as the name, which
-# is no link).
-# Anything else under that name (a link to a file or a FIFO elsewhere) aborts the
-# backup instead of taking the archive. The mode comes from mktemp and stays 0600 in a
-# dir with a default ACL; a target without Unix owner and mode fails the check.
-PARTIAL=$(mktemp "${OUT_DIR%/}/.adminhelper-backup-$TS.XXXXXX")
-archive_fd_ok() {
-    [ "${PARTIAL%/*}" = "${OUT_DIR%/}" ] && [ -f "$PARTIAL" ] && [ ! -L "$PARTIAL" ] || return 1
-    exec 4<"$PARTIAL" || return 1
-    exec 3>>/dev/fd/4 || return 1
-    # One comparison of the descriptor's inode with the name's own (lstat, no link
-    # followed): a link under the name has an inode of its own, so a name swapped
-    # between two separate tests cannot pass. With one link, the name is the file's
-    # only one.
-    [ "$(stat -L -c '%u %a %h %s' /dev/fd/3)" = "$(id -u) 600 1 0" ] \
-        && [ "$(stat -L -c '%d %i' /dev/fd/3)" = "$(stat -c '%d %i' -- "$PARTIAL")" ]
-}
-archive_fd_ok || {
-    echo "[backup] ERROR: $PARTIAL is not a file of its own that only you can read (owner, mode 600, one link, empty) — backup aborted." >&2
-    echo "[backup] A target that does not keep Unix owner and mode (as a CIFS, vfat or NTFS mount often does not) cannot hold the archive safely: back up to a local directory and copy the archive from there." >&2
-    exit 1
-}
-tar czf - -C "$STAGE" . >&3
-exec 3>&- 4<&-
-sync -- "$PARTIAL" \
-    || { echo "[backup] ERROR: could not flush the archive to disk — backup aborted." >&2; exit 1; }
-mv -fT -- "$PARTIAL" "$ARCHIVE" \
-    || { echo "[backup] ERROR: could not move the archive to $ARCHIVE (is a directory in the way?) — backup aborted." >&2; exit 1; }
-PARTIAL=""
+# tar writes only into the file mktemp created: the name is opened for reading only (no
+# O_CREAT, so nothing new appears through a link put there in between) and that same
+# open file again for appending, without truncating it, and the open descriptor is
+# checked before the first byte (a regular file of ours, 0600, one link, still empty,
+# the same file as the name, which is no link). Anything else under that name aborts
+# the backup instead of taking the archive.
+PART_DIR=$(mktemp -d "${OUT_DIR%/}/.adminhelper-backup-$TS.XXXXXX")
+write_archive() (
+    PARTIAL=""
+    trap '[ -z "$PARTIAL" ] || rm -f -- "$PARTIAL"' EXIT
+    local_hint="A target that does not keep Unix owner and mode (as a CIFS, vfat or NTFS mount often does not) cannot hold the archive safely: back up to a local directory and copy the archive from there."
+    dir_id=$(stat -c '%d %i' -- "$PART_DIR") || dir_id=""
+    { [ -n "$dir_id" ] && [ "${PART_DIR%/*}" = "${OUT_DIR%/}" ] && cd -P -- "$PART_DIR" \
+        && case "$(stat -c '%u %a %d %i' .)" in
+               # 2700: mktemp -d inherits the setgid bit of a shared output dir; kept, so
+               # the archive still takes that dir's group as before.
+               "$(id -u) 700 $dir_id" | "$(id -u) 2700 $dir_id") ;;
+               *) false ;;
+           esac; } || {
+        echo "[backup] ERROR: $PART_DIR is not a directory of its own that only you can enter (owner, mode 700) — backup aborted." >&2
+        echo "[backup] $local_hint" >&2
+        exit 1
+    }
+    PARTIAL=$(mktemp "./.adminhelper-backup-$TS.XXXXXX")
+    archive_fd_ok() {
+        [ "${PARTIAL%/*}" = . ] && [ -f "$PARTIAL" ] && [ ! -L "$PARTIAL" ] || return 1
+        exec 4<"$PARTIAL" || return 1
+        exec 3>>/dev/fd/4 || return 1
+        # One comparison of the descriptor's inode with the name's own (lstat, no link
+        # followed): a link under the name has an inode of its own, so a name swapped
+        # between two separate tests cannot pass. With one link, the name is the file's
+        # only one.
+        [ "$(stat -L -c '%u %a %h %s' /dev/fd/3)" = "$(id -u) 600 1 0" ] \
+            && [ "$(stat -L -c '%d %i' /dev/fd/3)" = "$(stat -c '%d %i' -- "$PARTIAL")" ]
+    }
+    archive_fd_ok || {
+        echo "[backup] ERROR: $PART_DIR/${PARTIAL#./} is not a file of its own that only you can read (owner, mode 600, one link, empty) — backup aborted." >&2
+        echo "[backup] $local_hint" >&2
+        exit 1
+    }
+    tar czf - -C "$STAGE" . >&3
+    exec 3>&- 4<&-
+    sync -- "$PARTIAL" \
+        || { echo "[backup] ERROR: could not flush the archive to disk — backup aborted." >&2; exit 1; }
+    mv -fT -- "$PARTIAL" "../${ARCHIVE##*/}" \
+        || { echo "[backup] ERROR: could not move the archive to $ARCHIVE (is a directory in the way?) — backup aborted." >&2; exit 1; }
+    PARTIAL=""
+)
+write_archive
+# Gone before the sync below, so the output dir reaches the disk as it stays.
+rmdir -- "$PART_DIR" 2>/dev/null || true
+PART_DIR=""
 sync -- "$OUT_DIR" \
     || { echo "[backup] ERROR: could not flush $OUT_DIR to disk — $ARCHIVE is written, but its name may not survive a power loss." >&2; exit 1; }
 

@@ -669,12 +669,12 @@ calls=$(cat "$WORK/bk/i/sync.log" 2>/dev/null)
 IFS='|' read -r args1 type1 _ <<<"$(sed -n 1p <<<"$calls")"
 IFS='|' read -r args2 type2 seen2 <<<"$(sed -n 2p <<<"$calls")"
 entries=$(ls -A "$WORK/bk/i/out" 2>/dev/null)
-case "$args1" in "-- $WORK/bk/i/out/.adminhelper-backup-"*) temp_synced=1 ;; *) temp_synced=0 ;; esac
+case "$args1" in "-- ./.adminhelper-backup-"*) temp_synced=1 ;; *) temp_synced=0 ;; esac
 { [ $rc -eq 0 ] && [ -n "$calls" ] && [ "$(wc -l <<<"$calls")" -eq 2 ] \
     && [ "$temp_synced" = 1 ] && [ "${type1% *}" = 'regular file' ] && [ "${type1##* }" -gt 0 ] \
     && [ "$args2" = "-- $WORK/bk/i/out" ] && [ "${type2% *}" = directory ] && [ "$seen2" = "$FIXED_NAME" ] \
     && [ "$entries" = "$FIXED_NAME" ]; } \
-  && ok "backup.sh syncs the full temp file before the rename, then the output dir with the archive" \
+  && ok "backup.sh syncs the full temp file before the rename, then the output dir with the archive alone" \
   || bad "sync calls: rc=$rc calls=[$calls] entries=[$entries] out=[$out]"
 
 mkdir -p "$WORK/bk/j"
@@ -735,11 +735,20 @@ fi
 # AH_TEST_MKTEMP_LINK set, the archive template gets a fresh name with a symlink to
 # that target under it; with AH_TEST_MKTEMP_MODE the real temp file gets that mode (a
 # mount without Unix mode shows its fixed one); with AH_TEST_MKTEMP_HARDLINK it gets a
-# second hard link at that path. Every other call goes to the real mktemp. Each run
-# under timeout 30, so a FIFO that would block the write shows as 124.
+# second hard link at that path. The archive's own dir (mktemp -d): with
+# AH_TEST_MKTEMP_DIRSWAP set, the real dir is made, moved to that path, and a symlink to
+# it is left under its name. Every other call goes to the real mktemp. Each run under
+# timeout 30, so a FIFO that would block the write shows as 124.
 AH_TEST_REAL_MKTEMP=$(command -v mktemp); export AH_TEST_REAL_MKTEMP
 cat > "$WORK/bk/bin/mktemp" <<'STUB'
 #!/usr/bin/env bash
+if [ "$#" -eq 2 ] && [ "$1" = -d ] && [ -n "${AH_TEST_MKTEMP_DIRSWAP:-}" ] \
+    && [[ "$2" == */.adminhelper-backup-*.XXXXXX ]]; then
+  name=$("$AH_TEST_REAL_MKTEMP" -d "$2") || exit
+  mv -- "$name" "$AH_TEST_MKTEMP_DIRSWAP" && ln -s -- "$AH_TEST_MKTEMP_DIRSWAP" "$name" || exit
+  printf '%s\n' "$name"
+  exit 0
+fi
 if [ "$#" -eq 1 ] && [[ "$1" == */.adminhelper-backup-*.XXXXXX ]]; then
   if [ -n "${AH_TEST_MKTEMP_LINK:-}" ]; then
     name=$("$AH_TEST_REAL_MKTEMP" -u "$1") || exit
@@ -880,6 +889,62 @@ entries=$(ls -A "$WORK/bk/w/out" 2>/dev/null)
     && [ ! -L "$WORK/bk/w/elsewhere/created" ] && [ -z "$entries" ] && grep -q '^\[backup\] ERROR: ' <<<"$out"; } \
   && ok "a temp name swapped for a dangling link before the open creates nothing there" \
   || bad "swap before the open: rc=$rc swapped=$([ -e "$WORK/bk/w/swapped" ] && echo y || echo n) created=$([ -e "$WORK/bk/w/elsewhere/created" ] && echo y || echo n) entries=[$entries] out=[$out]"
+
+# The archive's own dir under a name that is a link to a dir of ours and 0700 (the
+# mktemp stub with AH_TEST_MKTEMP_DIRSWAP): owner and mode pass, only the comparison of
+# the dir entered with the name's own inode stops it. Nothing is written there.
+mkdir -p "$WORK/bk/x" "$WORK/bk/x/elsewhere"
+out=$(bk_tmp_run "$WORK/bk/x" AH_TEST_MKTEMP_DIRSWAP="$WORK/bk/x/elsewhere/moved"); rc=$?
+entries=$(ls -A "$WORK/bk/x/out" 2>/dev/null)
+moved=$(ls -A "$WORK/bk/x/elsewhere/moved" 2>/dev/null)
+{ [ $rc -ne 0 ] && [ $rc -ne 124 ] && [ -d "$WORK/bk/x/elsewhere/moved" ] && [ -z "$moved" ] \
+    && [ "$(stat -c '%a' "$WORK/bk/x/elsewhere/moved")" = 700 ] \
+    && [ -L "$WORK/bk/x/out/$entries" ] && [ "$(wc -l <<<"$entries")" -eq 1 ] \
+    && grep -q '^\[backup\] ERROR: .*not a directory of its own' <<<"$out"; } \
+  && ok "a link under the name of the archive's own dir fails the backup, nothing is written there" \
+  || bad "link as the archive's dir: rc=$rc entries=[$entries] moved=[$moved] out=[$out]"
+
+# The archive's own dir renamed and its name taken by a link to another dir, right after
+# backup.sh entered it (a function named cd under BASH_ENV): from then on backup.sh works
+# in the dir itself, not through its name, so the archive still lands in the output dir
+# and nothing reaches the link's target. The target is 0500: a temp file made through
+# the name would fail there instead of passing through it unseen.
+cat > "$WORK/bk/cdswap-env.sh" <<'EOF'
+#!/usr/bin/env bash
+# Sourced through BASH_ENV: right after the script enters its own dir, that dir is
+# renamed within the output dir and its name becomes a link to another dir (once).
+cd() {
+  builtin cd "$@" || return
+  local name="${!#}"
+  if [[ -n "${AH_TEST_CDSWAP_TO:-}" && "$name" == */.adminhelper-* && ! -e "$AH_TEST_CDSWAP_MARK" ]]; then
+    : > "$AH_TEST_CDSWAP_MARK"
+    mv -- "$name" "${name%/*}/renamed" && ln -s -- "$AH_TEST_CDSWAP_TO" "$name"
+  fi
+}
+EOF
+mkdir -p "$WORK/bk/y" "$WORK/bk/y/elsewhere"
+chmod 500 "$WORK/bk/y/elsewhere"
+out=$(bk_tmp_run "$WORK/bk/y" BASH_ENV="$WORK/bk/cdswap-env.sh" AH_TEST_CDSWAP_TO="$WORK/bk/y/elsewhere" \
+    AH_TEST_CDSWAP_MARK="$WORK/bk/y/swapped"); rc=$?
+chmod 700 "$WORK/bk/y/elsewhere"
+elsewhere=$(ls -A "$WORK/bk/y/elsewhere" 2>/dev/null)
+renamed=$(ls -A "$WORK/bk/y/out/renamed" 2>/dev/null)
+members=$(tar tzf "$WORK/bk/y/out/$FIXED_NAME" 2>/dev/null)
+{ [ $rc -eq 0 ] && [ -e "$WORK/bk/y/swapped" ] && [ -z "$elsewhere" ] && [ -z "$renamed" ] \
+    && [ -f "$WORK/bk/y/out/$FIXED_NAME" ] && [ ! -L "$WORK/bk/y/out/$FIXED_NAME" ] \
+    && [ "$(stat -c '%a' "$WORK/bk/y/out/$FIXED_NAME")" = 600 ] && grep -qx './MANIFEST.txt' <<<"$members"; } \
+  && ok "the archive's own dir swapped for a link after it was entered: the archive still lands in the output dir" \
+  || bad "dir swapped after the cd: rc=$rc swapped=$([ -e "$WORK/bk/y/swapped" ] && echo y || echo n) elsewhere=[$elsewhere] renamed=[$renamed] out_dir=[$(ls -A "$WORK/bk/y/out" 2>/dev/null | tr '\n' ' ')] out=[$out]"
+
+# A shared output dir with the setgid bit: the archive's own dir inherits it (2700),
+# the backup still goes through and the archive takes the output dir's group.
+mkdir -p "$WORK/bk/z/out" && chmod 2775 "$WORK/bk/z/out"
+out=$(bk_tmp_run "$WORK/bk/z"); rc=$?
+entries=$(ls -A "$WORK/bk/z/out" 2>/dev/null)
+{ [ $rc -eq 0 ] && [ "$entries" = "$FIXED_NAME" ] \
+    && [ "$(stat -c '%a %g' "$WORK/bk/z/out/$FIXED_NAME")" = "600 $(stat -c %g "$WORK/bk/z/out")" ]; } \
+  && ok "a setgid output dir: the backup goes through, nothing else is left" \
+  || bad "setgid output dir: rc=$rc entries=[$entries] out=[$out]"
 
 # --- 21. backup.sh: the archive stays 0600 under a default ACL ──────────────
 # A default ACL on the output dir replaces the umask for new files there; the mode

@@ -1407,7 +1407,6 @@ def test_stats_on_a_repository_of_three_commits(
     assert run(repo / "ROADMAP.md", "stats", "--days", "10") == 0
     assert capsys.readouterr().out.splitlines() == [
         "tasks/day: 0.2 (2 closed in the last 10 days)",
-        "kevin-min/PR: 16 (2 PRs)",
         "wait neu: 2.0 d (1 rows)",
         "wait geplant: 2.0 d (2 rows)",
         "stale: 1/3 open rows past their Ablauf (33%)",

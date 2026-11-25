@@ -64,8 +64,9 @@ bleibt auf 0.38.0.
 
 Docker-Images schlüssellos via cosign (GitHub-OIDC). `SHA256SUMS` via minisign: das Secret `MINISIGN_SECRET_KEY` ist die
 **base64-Form** des Key-Files (`base64 -w0 minisign.key`); ein roher, mehrzeiliger Key wird verstümmelt
-(`base64 conversion failed`). Der Public Key steht als `MINISIGN_PUBKEY` in `scripts/install.sh` **und**
-`scripts/update.sh` — synchron halten, beide verifizieren fail-closed. Anleitung inkl. `cosign verify`:
+(`base64 conversion failed`). Der Public Key steht als `MINISIGN_PUBKEY` in `scripts/install.sh` und
+`scripts/update.sh` **und** als `ReleasePublicKey` in `apps/agent/internal/selfupdate/minisign.go` (Selbst-Update des
+Agents) — alle drei synchron halten, alle verifizieren fail-closed. Anleitung inkl. `cosign verify`:
 `docs/developer/cicd.html` „Release-Signatur".
 
 ## Ablauf und Kanäle

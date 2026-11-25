@@ -801,6 +801,13 @@ rreset; put "docs/a b.html"; r risk --staged
 rreset; put apps/agent/internal/httpclient/httpclient.go; r risk --staged
 [ $rc -eq 0 ] && grep -qx '  apps/agent/internal/httpclient/httpclient.go' <<<"$OUT" \
   && ok "the agent's cert pinning is a risk path" || bad "httpclient: rc=$rc out=$OUT"
+# R-0479, R-0481, R-0593, R-1265: paths with a security effect that the list once missed.
+for p in apps/server/app/core/config.py scripts/agent-install.sh apps/monitoring/app/checkers/http.py \
+         apps/agent/internal/probe/x.go apps/agent/internal/discovery/x.go apps/agent/internal/credentials/x.go; do
+  rreset; put "$p"; r risk --staged
+  [ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qxF "  $p" <<<"$OUT" \
+    && ok "$p is a risk path" || bad "$p: rc=$rc out=$OUT"
+done
 rreset; echo 'apps/agent/internal/newdir/' >> "$FIX/scripts/dev/review-risk.txt"; put apps/agent/internal/newdir/x.go
 r risk --staged
 [ $rc -eq 0 ] && grep -qx '  apps/agent/internal/newdir/x.go' <<<"$OUT" \

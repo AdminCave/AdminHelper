@@ -37,8 +37,8 @@ trap 'rm -rf "$WORK"' EXIT
 
 export HOME="$WORK/home"
 mkdir -p "$HOME/.cache"
-export PG_LOG="$WORK/pg.log" VM_LOG="$WORK/vm.log" REAP_LOG="$WORK/reap.log" LANE_LOG="$WORK/lane.log"
-: > "$PG_LOG"; : > "$VM_LOG"; : > "$REAP_LOG"; : > "$LANE_LOG"
+export PG_LOG="$WORK/pg.log" VM_LOG="$WORK/vm.log" REAP_LOG="$WORK/reap.log" LANE_LOG="$WORK/lane.log" DOCKER_LOG="$WORK/docker.log"
+: > "$PG_LOG"; : > "$VM_LOG"; : > "$REAP_LOG"; : > "$LANE_LOG"; : > "$DOCKER_LOG"
 
 # Recorders. createdb/dropdb log their arguments and the password they were handed,
 # and, with PROBE_WT set, what .vm/lane of that worktree held when they ran.
@@ -52,6 +52,26 @@ REC
 done
 printf 'if [ -n "${FAKE_CREATEDB_FAIL:-}" ]; then echo "database exists" >&2; exit 1; fi\n' >> "$WORK/bin/createdb"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$VM_LOG"\n' > "$WORK/bin/vm.py"
+# A stack test leaves paths owned by the container's UID, which this user cannot
+# create: with FAKE_FOREIGN set, find's search for another user's paths names
+# those. docker records its run and does the rm on the host path it was handed.
+REAL_FIND="$(command -v find)"
+cat > "$WORK/bin/find" <<STUB
+#!/usr/bin/env bash
+if [ -n "\${FAKE_FOREIGN:-}" ] && [[ " \$* " == *" -user "* ]]; then
+  for rel in \$FAKE_FOREIGN; do printf '%s/%s\0' "\$1" "\$rel"; done
+  exit 0
+fi
+exec "$REAL_FIND" "\$@"
+STUB
+cat > "$WORK/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >> "$DOCKER_LOG"
+[ -z "${FAKE_DOCKER_FAIL:-}" ] || exit 125
+host=""; prev=""
+for a in "$@"; do [ "$prev" = "-v" ] && host="${a%:/wt}"; prev="$a"; done
+rm -rf -- "$host/${a#/wt/}"
+STUB
 chmod +x "$WORK/bin/"*
 export PATH="$WORK/bin:$PATH" AH_VM_PY="$WORK/bin/vm.py"
 
@@ -392,7 +412,7 @@ grep -qx "dropdb pw=secret --if-exists --maintenance-db=postgresql://ah@localhos
   || bad "database calls: $(cat "$PG_LOG")"
 [ ! -e "$HOME/.cache/ah-venv-alpha" ] && [ -d "$HOME/.cache/ah-venv/bin" ] && [ -d "$HOME/.cache/ah-venv-kappa/bin" ] \
   && ok "the worktree's venv is gone, the main one and another worktree's stay" || bad "venvs: $(ls -A "$HOME/.cache")"
-! g show-ref --verify --quiet refs/heads/feature/alpha && grep -q "branch feature/alpha deleted (merged)" "$WORK/out.log" \
+! g show-ref --verify --quiet refs/heads/feature/alpha && grep -q "branch feature/alpha deleted (merged into main)" "$WORK/out.log" \
   && ok "the merged branch goes" || bad "branch alpha: $(out)"
 [ -x "$MAIN/apps/server/.venv/bin/ruff" ] && [ -f "$MAIN/$SIDECAR" ] && [ -f "$MAIN/apps/web/node_modules/pkg/index.js" ] \
   && [ ! -e "$MAIN/.vm" ] && ok "the main checkout's venv, sidecar and node_modules stay as they were" \
@@ -479,6 +499,53 @@ rc=0; teardown ../AdminHelper-psi psi || rc=$?
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 rc=0; teardown ../AdminHelper-psi psi || rc=$?
 [ "$rc" = 0 ] && [ ! -e "$WORK/AdminHelper-psi" ] && ok "with a usable URL the next teardown goes through" || bad "psi again: rc=$rc $(out)"
+
+echo "── teardown: paths of another user go first; database and venv even when they do not ──"
+new_wt rho
+WR="$WORK/AdminHelper-rho"
+setup ../AdminHelper-rho rho || bad "setup rho: $(out)"
+mkdir -p "$WR/.venv/data/db" "$HOME/.cache/ah-venv-rho/bin"
+clear_logs; : > "$DOCKER_LOG"
+rc=0; FAKE_FOREIGN=".venv/data" FAKE_DOCKER_FAIL=1 teardown ../AdminHelper-rho rho || rc=$?
+[ "$rc" = 1 ] && grep -q "^dropdb .* adminhelper_test_rho$" "$PG_LOG" && [ ! -e "$HOME/.cache/ah-venv-rho" ] \
+  && [ -d "$WR/.venv/data" ] && grep -qF "AdminHelper-rho" <<<"$(g worktree list --porcelain)" \
+  && g show-ref --verify --quiet refs/heads/feature/rho && grep -q "could not remove $WR/.venv/data" "$WORK/out.log" \
+  && ok "a remnant that will not go: exit 1, database and venv already gone, the worktree still registered" \
+  || bad "rho: rc=$rc pg=$(cat "$PG_LOG") docker=$(cat "$DOCKER_LOG") $(out)"
+clear_logs; : > "$DOCKER_LOG"
+rc=0; FAKE_FOREIGN=".venv/data" teardown ../AdminHelper-rho rho || rc=$?
+[ "$rc" = 0 ] && [ ! -e "$WR" ] && grep -q "^dropdb .*--if-exists .* adminhelper_test_rho$" "$PG_LOG" \
+  && grep -qxF "docker run --rm --network none -v $WR:/wt alpine rm -rf -- /wt/.venv/data" "$DOCKER_LOG" \
+  && [ "$(wc -l < "$DOCKER_LOG")" -eq 1 ] && grep -q "1 path(s) of another user removed: .venv/data" "$WORK/out.log" \
+  && ok "the second run removes it in a throwaway container, then the worktree" \
+  || bad "rho again: rc=$rc docker=$(cat "$DOCKER_LOG") $(out)"
+clear_logs; : > "$DOCKER_LOG"
+new_wt upsilon
+setup ../AdminHelper-upsilon upsilon || bad "setup upsilon: $(out)"
+rc=0; teardown ../AdminHelper-upsilon upsilon || rc=$?
+[ "$rc" = 0 ] && [ ! -s "$DOCKER_LOG" ] && ! grep -q "of another user" "$WORK/out.log" \
+  && ok "nothing of another user: no container" || bad "upsilon: rc=$rc docker=$(cat "$DOCKER_LOG") $(out)"
+
+echo "── teardown: merged means merged into origin/main ──"
+git init -q --bare "$WORK/origin.git"
+g remote add origin "$WORK/origin.git"
+g push -q origin main
+new_wt sigma
+setup ../AdminHelper-sigma sigma || bad "setup sigma: $(out)"
+git -C "$WORK/AdminHelper-sigma" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "sigma"
+g push -q origin feature/sigma:main
+rc=0; teardown ../AdminHelper-sigma sigma || rc=$?
+! g merge-base --is-ancestor feature/sigma main 2>/dev/null || bad "sigma: the local main already has it, the case proves nothing"
+[ "$rc" = 0 ] && ! g show-ref --verify --quiet refs/heads/feature/sigma \
+  && grep -q "branch feature/sigma deleted (merged into origin/main)" "$WORK/out.log" \
+  && ok "a branch the merge queue merged goes, though the local main lags behind" || bad "sigma: rc=$rc $(out)"
+new_wt tau
+setup ../AdminHelper-tau tau || bad "setup tau: $(out)"
+git -C "$WORK/AdminHelper-tau" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "tau"
+rc=0; teardown ../AdminHelper-tau tau || rc=$?
+[ "$rc" = 0 ] && g show-ref --verify --quiet refs/heads/feature/tau \
+  && grep -q "branch feature/tau kept, not merged into origin/main" "$WORK/out.log" \
+  && ok "one that origin/main does not hold stays" || bad "tau: rc=$rc $(out)"
 
 # In a variable first: under pipefail, grep -q may end the pipe before sed has written.
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh")"

@@ -21,6 +21,8 @@ apps/desktop/src-tauri/src/http_client.rs
 apps/server/app/core/auth.py
 apps/server/app/core/identity.py
 apps/server/app/core/rate_limit.py
+# The security defaults the server starts with (secret key, CORS, mTLS, cookies).
+apps/server/app/core/config.py
 apps/server/app/modules/api_keys/*
 apps/server/app/modules/users/*
 apps/monitoring/app/core/auth.py
@@ -38,6 +40,7 @@ apps/monitoring/app/check_engine.py
 apps/server/app/modules/hooks/script_worker.py
 apps/server/app/modules/provisioning/helpers.py
 apps/server/app/modules/servers/router.py
+apps/monitoring/app/checkers/http.py
 
 # FRP tunnels
 apps/frps/*
@@ -46,6 +49,11 @@ apps/agent/internal/frpc/*
 apps/agent/internal/provision/*
 apps/desktop/src-tauri/src/frpc.rs
 apps/desktop/src-tauri/src/tunnel.rs
+
+# The agent's probes and discovery run on the host, credentials hold its secrets
+apps/agent/internal/probe/*
+apps/agent/internal/discovery/*
+apps/agent/internal/credentials/*
 
 # Wire contracts: the schemas and the types on both sides of a boundary
 apps/server/app/modules/*/schemas.py
@@ -61,6 +69,7 @@ apps/monitoring/alembic/versions/*
 # CI, release and install
 .github/workflows/*
 scripts/install.sh
+scripts/agent-install.sh
 scripts/update.sh
 docker-compose*.yml
 

@@ -318,8 +318,23 @@ plant() {  # plant <part> <relative-path> <content>
   done
 }
 
-report_of() { cat "$AH_OUT_DIR"/weekly/*/report.md 2>/dev/null; }
-history_of() { cat "$AH_PRIVATE_DIR/history.csv" 2>/dev/null; }
+# Both always return 0: they feed `| grep -q`, and once grep has its match and exits,
+# cat's next write dies of SIGPIPE (141). Under pipefail that status would turn a
+# match into a miss — a positive assertion flakes red, a negative one (`… && bad ||
+# ok`) passes although the text is there (R-1347).
+report_of() { cat "$AH_OUT_DIR"/weekly/*/report.md 2>/dev/null; return 0; }
+history_of() { cat "$AH_PRIVATE_DIR/history.csv" 2>/dev/null; return 0; }
+
+# A report larger than a pipe buffer makes the SIGPIPE certain, not a 3 % event.
+mk_case
+mkdir -p "$AH_OUT_DIR/weekly/0000-sigpipe"
+{ echo 'needle'; head -c 300000 /dev/zero | tr '\0' 'x'; echo; } > "$AH_OUT_DIR/weekly/0000-sigpipe/report.md"
+report_of | grep -q '^needle' && ok "report_of | grep -q sees a match although cat dies of SIGPIPE" \
+  || bad "a match in a large report reads as a miss under pipefail"
+report_of | grep -q '^needle' && hit=1 || hit=0
+[ "$hit" = 1 ] && ok "a negative assertion on a large report does not pass by accident" \
+  || bad "negative assertion would have passed with the text present"
+rm -rf -- "$AH_OUT_DIR/weekly/0000-sigpipe"
 
 # ── 1: usage ─────────────────────────────────────────────────────────────────
 mk_case
@@ -479,6 +494,31 @@ report_of | grep -q 'red after retries' && bad "a fuzz find claims retries: $(re
 report_of | grep -q '1 fuzz find(s), not retried' && ok "the part detail counts the fuzz find" || bad "part detail: $(report_of)"
 [ -f "$AH_PRIVATE_DIR/seen.md" ] && bad "a fuzz find must not be quarantined" || ok "no quarantine for a fuzz find"
 [ "$(grep -c '^| R-' "$AH_PRIVATE_DIR/ROADMAP.md")" = 1 ] && ok "no REG row for a fuzz find" \
+  || bad "roadmap rows: $(grep '^| R-' "$AH_PRIVATE_DIR/ROADMAP.md")"
+
+# ── 4b3: a red step AND a fuzz find in one part: the detail names both ───────
+# The step is retried (three differing reds: fail), the fuzz find is not; the part
+# detail must count each under its own words, not fold the find into the retries.
+mk_case
+export SHIM_ITER_SEQ="1 1 1 1"
+export SHIM_ITER_OUT1="  FAIL  web vitest
+  FAIL  schemathesis
+  run.sh[all]: 39 passed, 2 failed, 3 skipped, 0 test-skips, 0 reruns"
+export SHIM_ITER_OUT2="  FAIL  web vitest (timeout)"
+export SHIM_ITER_OUT3="  FAIL  web vitest (connection reset)"
+export SHIM_ITER_OUT4="  FAIL  web vitest (out of memory)"
+artifact "web vitest:fail:19" "schemathesis:fail:1600"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "red step plus fuzz find -> exit 1" || bad "red + fund -> rc=$rc; $out"
+rep=$(report_of)
+grep -qF '1 step(s) red after retries; 1 fuzz find(s), not retried' <<<"$rep" \
+  && ok "the part detail names the red step and the fuzz find apart" || bad "part detail: $rep"
+grep -q -- '--step schemathesis' "$SHIM_STATE/iter.args" \
+  && bad "the fuzz find was retried: $(cat "$SHIM_STATE/iter.args")" || ok "only the red step was retried"
+hist=$(history_of)
+grep -q ',all,schemathesis,fund,' <<<"$hist" && grep -q ',all,web vitest,fail,' <<<"$hist" \
+  && ok "history.csv: fund and fail side by side" || bad "rows: $hist"
+[ "$(grep -c '^| R-' "$AH_PRIVATE_DIR/ROADMAP.md")" = 1 ] && ok "no REG row for a fuzz find beside a red step" \
   || bad "roadmap rows: $(grep '^| R-' "$AH_PRIVATE_DIR/ROADMAP.md")"
 
 # ── 4c: three reds with the same marker make a candidate ─────────────────────

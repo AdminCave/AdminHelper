@@ -68,9 +68,23 @@ for v in v1.2.3 1.2 01.2.3 1.2.3-beta ""; do
 done
 
 # R-1679: under a locale like de_DE.UTF-8, [0-9] in =~ also matches digits outside ASCII ("²").
-# Where that locale is missing (CI), the static check proves the script pins LC_ALL=C.
-if locale -a 2>/dev/null | grep -qix 'de_DE.utf8'; then
-    rc=0; LC_ALL=de_DE.UTF-8 build "$T/locver" "$T/test.key" "1.².3" || rc=$?
+# R-1683: the locale is compiled into $T, so the check runs live where de_DE.UTF-8 is not installed
+# (CI) too; the installed one is the fallback, and only without either does the static check remain.
+loc_path=""
+if command -v localedef >/dev/null 2>&1 && mkdir -p "$T/locale" \
+    && localedef -i de_DE -f UTF-8 "$T/locale/de_DE.UTF-8" >/dev/null 2>&1; then
+    loc_path="$T/locale"
+elif ! locale -a 2>/dev/null | grep -qix 'de_DE.utf8'; then
+    loc_path=none
+fi
+if [ "$loc_path" != none ]; then
+    # A locale that did not load would make the refusal below prove nothing.
+    if LOCPATH="$loc_path" LC_ALL=de_DE.UTF-8 bash -c '[[ ² =~ ^[0-9]$ ]]' 2>/dev/null; then
+        ok "de_DE.UTF-8 active (${loc_path:-installed}): [0-9] matches a non-ASCII digit"
+    else
+        bad "de_DE.UTF-8 did not load (LOCPATH='$loc_path')"
+    fi
+    rc=0; LOCPATH="$loc_path" LC_ALL=de_DE.UTF-8 build "$T/locver" "$T/test.key" "1.².3" || rc=$?
     if [ "$rc" -ne 0 ] && [ ! -e "$T/locver" ]; then ok "non-ASCII digit refused under de_DE.UTF-8"; else bad "VERSION '1.².3' accepted under de_DE.UTF-8 (rc=$rc)"; fi
 else
     grep -qx 'export LC_ALL=C' "$SCRIPT" && ok "script pins LC_ALL=C (de_DE.UTF-8 not installed)" \
