@@ -204,6 +204,24 @@ CI_NODE="$(sed -n 's/^ *node-version: "\([0-9]*\)"$/\1/p' "$ROOT/.github/workflo
   && ok "bootstrap_linux.sh installs Node $BOX_NODE, every node-version in ci.yml" \
   || bad "bootstrap_linux.sh NODE_MAJOR='$BOX_NODE', ci.yml node-version: $(tr '\n' ' ' <<<"$CI_NODE")"
 
+echo "── box python ──"
+# The boxes' python3.14 came from the deadsnakes PPA; a Launchpad outage failed
+# every fresh lease (R-1789). It comes pinned from python-build-standalone now.
+BOOT="$ROOT/scripts/vm/bootstrap_linux.sh"
+PPAS=$(grep -c 'add-apt-repository\|ppa:' "$BOOT")
+[ "$PPAS" -eq 0 ] && ok "bootstrap_linux.sh adds no PPA" \
+  || bad "bootstrap_linux.sh still adds a PPA ($PPAS lines)"
+BOX_PY="$(sed -n 's/^PY_VERSION="${AH_PY_VERSION:-\([0-9.]*\)}"$/\1/p' "$BOOT")"
+BOX_PY_REL="$(sed -n 's/^PY_PBS_RELEASE="${AH_PY_PBS_RELEASE:-\([0-9]*\)}"$/\1/p' "$BOOT")"
+BOX_PY_SHA="$(sed -n 's/^PY_SHA256_LINUX_AMD64="${AH_PY_SHA256:-\([0-9a-f]*\)}"$/\1/p' "$BOOT")"
+{ [ "${#BOX_PY_SHA}" -eq 64 ] && [ "${#BOX_PY_REL}" -eq 8 ] && [[ "$BOX_PY" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]]; } \
+  && ok "bootstrap_linux.sh pins python $BOX_PY (release $BOX_PY_REL) with a SHA-256" \
+  || bad "bootstrap_linux.sh python pin: version '$BOX_PY', release '$BOX_PY_REL', sha256 '$BOX_PY_SHA'"
+DOCKER_PY="$(sed -n 's/^FROM python:\([0-9]*\.[0-9]*\)-.*/\1/p' "$ROOT"/apps/*/Dockerfile | sort -u)"
+[ -n "$DOCKER_PY" ] && [ "$DOCKER_PY" = "${BOX_PY%.*}" ] \
+  && ok "box python $BOX_PY has the Dockerfiles' minor $DOCKER_PY" \
+  || bad "box python '$BOX_PY', Dockerfiles FROM python: $(tr '\n' ' ' <<<"$DOCKER_PY")"
+
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$ROOT/scripts/tests/run.sh")"
 grep -qw 'harness_consistency_test' <<<"$LIST" && ok "registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 # The tests under .github/scripts/ ran only as CI steps, so a task's evidence did not cover them (R-1352).
