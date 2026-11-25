@@ -1,5 +1,5 @@
 # kern-agent-24 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-24 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-24 · Review: pro Task
 Spec: docs/features/kern-agent-24.md (Roadmap R-1760, R-1769, R-1772)
 Heavy: linux-full — apps/agent (RAM-Wert des Reports, Self-Update-Client, Plattensammler FreeBSD)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,8 +29,10 @@ Review: approve (.ah-out/review/kern-agent-24/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T4
 
-### T4 — Doku: RAM ohne rückforderbaren ARC, Netz-Mounts unter FreeBSD  [ ]
+### T4 — Doku: RAM ohne rückforderbaren ARC, Netz-Mounts unter FreeBSD  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-agent-24.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c546177d5 2026-11-25T05:34:00+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `collectMemory` und das Last-Tor nennen die Bereinigung um den ARC über `c_min`. Die RAM-Schwelle von `agent_resources` nennt die Abweichung von `free`. Platten unter FreeBSD: eine Abfrage je Mount, lokale Mounts unter Netz-Mounts mit Frist. Changelog-Fragment ohne Umlaute.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/agent.html DE+EN · docs/admin/monitoring.html DE+EN · changelog.d/kern-agent-24.md
