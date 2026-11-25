@@ -21,11 +21,13 @@ notify hook (POST /templates/tag-sync after inventory changes) and by a
 from __future__ import annotations
 
 import logging
+import threading
 
 import httpx
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.bell_catch_up import AllClear, send_all_clears
 from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
 from app.models import MonitorTemplate, MonitorTemplateAssignment, MonitorTemplateTagAssignment
 from app.server_cleanup import cleanup_server, known_server_ids
@@ -152,10 +154,24 @@ def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> di
     return {"created": created, "removed": removed, "refreshed": refreshed}
 
 
+def _send_clears(clears: list[AllClear]) -> None:
+    try:
+        send_all_clears(clears)
+    except Exception:
+        logger.exception("Tag-sync: sending the all-clears of a deleted server failed")
+
+
+def _send_clears_in_background(clears: list[AllClear]) -> None:
+    # The sync must not wait for the hub: a deleted server with many open alarms would hold it
+    # up for one hub call each, as the route avoids with a background task (R-1622).
+    if clears:
+        threading.Thread(target=_send_clears, args=(clears,), daemon=True).start()
+
+
 def _cleanup_orphans(db: Session, orphans: set[str]) -> None:
     for server_id in sorted(orphans):
         try:
-            cleanup_server(db, server_id)
+            cleanup_server(db, server_id, send_clears=_send_clears_in_background)
             logger.info("Tag-sync: cleaned up monitoring data of deleted server %s", server_id)
         except Exception:
             db.rollback()

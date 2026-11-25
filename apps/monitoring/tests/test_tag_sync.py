@@ -325,10 +325,10 @@ def test_failed_orphan_cleanup_does_not_stop_the_next(db, monkeypatch, caplog):
     _apply(db, tid, "srv-8", "a.example", "A")
     _apply(db, tid, "srv-9", "b.example", "B")
 
-    def flaky(session, server_id):
+    def flaky(session, server_id, **kwargs):
         if server_id == "srv-8":
             raise RuntimeError("boom")
-        return cleanup_server(session, server_id)
+        return cleanup_server(session, server_id, **kwargs)
 
     monkeypatch.setattr(tag_sync_mod, "cleanup_server", flaky)
     with caplog.at_level(logging.ERROR, logger="monitor.tag_sync"):
@@ -336,6 +336,51 @@ def test_failed_orphan_cleanup_does_not_stop_the_next(db, monkeypatch, caplog):
 
     assert set(_assignments(db)) == {(tid, "srv-8")}
     assert "srv-8" in caplog.text
+
+
+def test_orphan_cleanup_does_not_wait_for_the_hub(db, monkeypatch):
+    """R-1763: the all-clears of a deleted server go to the hub without holding up the sync."""
+    import threading
+    from types import SimpleNamespace
+
+    import app.alerter as alerter
+    import app.server_cleanup as server_cleanup
+
+    tid = _template(db, defs=[PING_DEF])
+    _apply(db, tid, "srv-9", "old.example", "Old")
+    clear = SimpleNamespace(check=SimpleNamespace(id="c-9"), shown="critical", msg="gone")
+    monkeypatch.setattr(server_cleanup, "deleted_all_clear", lambda session, check: clear)
+    sync_returned = threading.Event()
+    hub_answered = threading.Event()
+    waited_for_the_sync: list[bool] = []
+
+    def hung_hub(*args, **kwargs):
+        # Without the fix the sync itself waits here, so the 30 s run out before it returns.
+        waited_for_the_sync.append(sync_returned.wait(30))
+        hub_answered.set()
+        return True
+
+    monkeypatch.setattr(alerter, "emit_to_hub", hung_hub)
+
+    sync_tag_assignments(db, [_srv("srv-1", [])])
+    sync_returned.set()
+
+    assert hub_answered.wait(30)
+    assert waited_for_the_sync == [True]
+    assert db.query(MonitorCheck).count() == 0
+
+
+def test_failed_all_clears_of_an_orphan_are_logged(monkeypatch, caplog):
+    import app.tag_sync as tag_sync_mod
+
+    def broken(clears):
+        raise RuntimeError("hub gone")
+
+    monkeypatch.setattr(tag_sync_mod, "send_all_clears", broken)
+    with caplog.at_level(logging.ERROR, logger="monitor.tag_sync"):
+        tag_sync_mod._send_clears([object()])
+
+    assert "all-clears of a deleted server failed" in caplog.text
 
 
 def test_unavailable_inventory_refreshes_nothing(db, monkeypatch):

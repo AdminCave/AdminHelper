@@ -55,6 +55,17 @@ def test_invalid_level_stops_the_start(monkeypatch):
         configure_logging()
 
 
+@pytest.mark.parametrize("name", ["TRACE", "WARN", "FATAL"])
+def test_a_registered_name_outside_the_five_stops_the_start(monkeypatch, name):
+    # uvicorn registers TRACE when it starts (uvicorn.config); done here with an undo.
+    monkeypatch.setitem(logging._nameToLevel, "TRACE", 5)
+    monkeypatch.setitem(logging._levelToName, 5, "TRACE")
+    assert isinstance(logging.getLevelName(name), int)
+    monkeypatch.setenv("LOG_LEVEL", name)
+    with pytest.raises(ConfigError, match=f"LOG_LEVEL='{name}'"):
+        configure_logging()
+
+
 def test_empty_level_means_info(monkeypatch):
     monkeypatch.setenv("LOG_LEVEL", "")
     configure_logging()

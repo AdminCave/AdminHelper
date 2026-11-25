@@ -650,7 +650,9 @@ class TestFailedRunsRingTheBell:
 
         rows = self._notices(db_session)
         assert [r.user_id for r in rows] == [admin_user.id]
-        assert "runner broke" in (rows[0].body or "")
+        # The type only: the message of an exception can carry internal details (R-1764).
+        assert "RuntimeError" in (rows[0].body or "")
+        assert "runner broke" not in (rows[0].body or "")
 
     def test_a_failed_notice_does_not_raise_after_the_rollback(self, caplog):
         """The rollback expires the hook: reading its name afterwards would load it again,
@@ -681,6 +683,64 @@ class TestFailedRunsRingTheBell:
             notify_hook_failure(_GoneDb(), hook, "Timeout nach 30s")
 
         assert "nightly-backup" in caplog.text
+
+    def test_two_failures_at_once_ring_once(self, monkeypatch):
+        """The check for a recent notice and the write are one step per hook: a second failure
+        that arrives while the first one writes must find that notice, not ring again."""
+        import threading
+
+        import app.modules.notifications.service as service
+        from app.modules.hooks.script_runner import notify_hook_failure
+
+        written: list[str] = []
+        first_writes = threading.Event()
+        release = threading.Event()
+
+        class _Query:
+            def filter(self, *args):
+                return self
+
+            def order_by(self, *args):
+                return self
+
+            def first(self):
+                return written[0] if written else None
+
+            def all(self):
+                return []
+
+        class _Db:
+            def query(self, *args):
+                return _Query()
+
+            def rollback(self):
+                pass
+
+        def slow_notify(db, users, event):
+            first_writes.set()
+            assert release.wait(30)
+            written.append(event.body)
+            return 1
+
+        monkeypatch.setattr(service, "notify_users", slow_notify)
+
+        class _Hook:
+            id = name = "h-race"
+
+        first = threading.Thread(target=notify_hook_failure, args=(_Db(), _Hook(), "one"))
+        first.start()
+        assert first_writes.wait(30)
+        first_writes.clear()
+        second = threading.Thread(target=notify_hook_failure, args=(_Db(), _Hook(), "two"))
+        second.start()
+        # Without the lock the second one reaches the write while the first one still waits. The
+        # 0.5 s only bounds how long the negative probe waits; it cannot make the test fail.
+        first_writes.wait(0.5)
+        release.set()
+        first.join(30)
+        second.join(30)
+
+        assert written == ["one"]
 
 
 class TestHookWorkerRobustness:

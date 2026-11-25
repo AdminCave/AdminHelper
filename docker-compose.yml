@@ -388,12 +388,13 @@ services:
       # keeps the certificate register (device lines, issued certificates); it reads
       # identity revocations and never mints a token.
       - DATABASE_URL=postgresql+psycopg://ah_ca:${CA_DB_PASSWORD}@postgres:5432/adminhelper
+    # No proxy, as for the server's check.
     healthcheck:
       test:
         - "CMD"
         - "python"
         - "-c"
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz').read()"
+        - "import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://127.0.0.1:8090/healthz').read()"
       interval: 10s
       timeout: 3s
       retries: 5
@@ -604,11 +605,12 @@ services:
       # A wedged-but-running monitoring shows unhealthy, not just Up (4.49). An HTTP GET on
       # /health (app.main), not a TCP connect: the kernel completes a connect from the listen
       # backlog even while the process hangs, only a running process answers the request.
+      # No proxy, as for the server's check.
       test:
         - "CMD"
         - "python"
         - "-c"
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()"
+        - "import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://127.0.0.1:8080/health', timeout=2).read()"
       interval: 10s
       timeout: 3s
       retries: 12

@@ -356,10 +356,27 @@ def failed_run_error(result: dict) -> str | None:
     return error
 
 
+def raised_run_error(exc: BaseException) -> str:
+    """The bell text for a hook run that raised: the type only. The message can carry paths
+    or connection details from a library; it stays in the log."""
+    return f"{type(exc).__name__} (details in the server log)"
+
+
 HOOK_FAILED_EVENT = "lifecycle.hook.failed"
 # A hook that fails every five minutes would otherwise ring the bell every five minutes;
 # a nightly one still rings once a night.
 _FAILURE_NOTICE_EVERY = timedelta(hours=12)
+# One lock per hook around the check for a recent notice and the write: two event runs of the
+# same hook failing at once in one process would otherwise both pass the check. A hook is either
+# scheduled (scheduler process, one run at a time) or event-driven (web worker), so only
+# WEB_CONCURRENCY > 1 leaves a rare second notice, from another worker.
+_failure_notice_locks: dict[str, threading.Lock] = {}
+_failure_notice_locks_guard = threading.Lock()
+
+
+def _failure_notice_lock(hook_id: str) -> threading.Lock:
+    with _failure_notice_locks_guard:
+        return _failure_notice_locks.setdefault(hook_id, threading.Lock())
 
 
 def notify_hook_failure(db: "Session", hook: "Hook", error: str) -> None:
@@ -375,33 +392,34 @@ def notify_hook_failure(db: "Session", hook: "Hook", error: str) -> None:
     # database gone would raise out of here.
     hook_id, hook_name = hook.id, hook.name
     try:
-        since = datetime.now(timezone.utc) - _FAILURE_NOTICE_EVERY
-        recent = (
-            db.query(Notification.id)
-            .filter(
-                Notification.event_type == HOOK_FAILED_EVENT,
-                Notification.source_type == "hook",
-                Notification.source_id == hook_id,
-                Notification.notified_at >= since,
+        with _failure_notice_lock(hook_id):
+            since = datetime.now(timezone.utc) - _FAILURE_NOTICE_EVERY
+            recent = (
+                db.query(Notification.id)
+                .filter(
+                    Notification.event_type == HOOK_FAILED_EVENT,
+                    Notification.source_type == "hook",
+                    Notification.source_id == hook_id,
+                    Notification.notified_at >= since,
+                )
+                .first()
             )
-            .first()
-        )
-        if recent is not None:
-            return
-        admins = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id).all()
-        notify_users(
-            db,
-            admins,
-            IncomingEvent(
-                event_type=HOOK_FAILED_EVENT,
-                severity="warning",
-                category="hooks",
-                title=f"Hook failed: {hook_name}"[:512],
-                body=error,
-                source_type="hook",
-                source_id=hook_id,
-            ),
-        )
+            if recent is not None:
+                return
+            admins = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id).all()
+            notify_users(
+                db,
+                admins,
+                IncomingEvent(
+                    event_type=HOOK_FAILED_EVENT,
+                    severity="warning",
+                    category="hooks",
+                    title=f"Hook failed: {hook_name}"[:512],
+                    body=error,
+                    source_type="hook",
+                    source_id=hook_id,
+                ),
+            )
     except Exception:
         db.rollback()
         logger.exception("Bell notice for the failed hook %r could not be written", hook_name)
