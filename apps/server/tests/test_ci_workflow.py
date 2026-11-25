@@ -415,6 +415,38 @@ def _steps():
                 yield f"{path.name}:{job_name}", step
 
 
+def test_only_the_signing_step_of_the_release_sees_the_pkg_signing_key():
+    """Building pkg from outside sources and fetching frpc run without the signing key; the
+    next step, which checks the key and signs, gets it (R-1452)."""
+    steps = [step for where, step in _steps() if where.startswith("release.yml:")]
+    holders = [
+        s
+        for s in steps
+        if "PKG_REPO_SIGNING_KEY" in str(s.get("env") or {})
+        or "PKG_REPO_SIGNING_KEY" in str(s.get("with") or {})
+    ]
+    assert [s["name"] for s in holders] == [
+        "Build signed FreeBSD pkg repo (agent + OPNsense plugin)"
+    ]
+    signer = holders[0]["run"]
+    assert "build-pkg-tool.sh" not in signer and "curl " not in signer and "apt-get" not in signer
+    names = [s.get("name") for s in steps]
+    builder = steps[names.index("Build the pkg tool and fetch the FreeBSD frpc")]
+    assert "secrets." not in str(builder)
+    assert (
+        "build-pkg-tool.sh" in builder["run"]
+        and "frp_${FRP_VERSION}_freebsd_amd64" in builder["run"]
+    )
+    assert names.index("Build the pkg tool and fetch the FreeBSD frpc") < names.index(
+        holders[0]["name"]
+    )
+    assert (
+        '"$RUNNER_TEMP/frp-freebsd"' in builder["run"]
+        and 'FRP_DIR="$RUNNER_TEMP/frp-freebsd"' in signer
+    )
+    assert '"$RUNNER_TEMP/pkg-tool"' in builder["run"] and "$RUNNER_TEMP/pkg-tool/sbin" in signer
+
+
 def test_every_workflow_is_seen():
     assert {p.name for p in _WORKFLOWS} >= {
         "ci.yml",

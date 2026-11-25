@@ -485,6 +485,20 @@ jobs:
       # installation trusts. The key's public part must be apps/agent/freebsd/adminhelper-pkg.pub
       # (SHA-256 of its DER form in docs/developer/cicd). The output goes to pkg-out/ and
       # joins the agent repo bundle in the next step (build-repo.sh clears its OUT_DIR).
+      # Building pkg from outside sources and fetching frpc run in a step of their own
+      # without the signing key (R-1452): only the step that signs sees the secret.
+      - name: Build the pkg tool and fetch the FreeBSD frpc
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            $(bash scripts/release/build-pkg-tool.sh --deps) openssl
+          bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
+          FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
+          curl -fsSL -o "$FRP_DIR/frpc.tar.gz" \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
+          echo "${FRP_SHA256_FREEBSD_AMD64}  $FRP_DIR/frpc.tar.gz" | sha256sum -c -
+          tar xzf "$FRP_DIR/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
       - name: Build signed FreeBSD pkg repo (agent + OPNsense plugin)
         env:
           PKG_REPO_SIGNING_KEY: ${{ secrets.PKG_REPO_SIGNING_KEY }}
@@ -495,15 +509,7 @@ jobs:
             exit 1
           fi
           TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            $(bash scripts/release/build-pkg-tool.sh --deps) openssl
-          bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
-          FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
-          curl -fsSL -o "$FRP_DIR/frpc.tar.gz" \
-            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
-          echo "${FRP_SHA256_FREEBSD_AMD64}  $FRP_DIR/frpc.tar.gz" | sha256sum -c -
-          tar xzf "$FRP_DIR/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
+          FRP_DIR="$RUNNER_TEMP/frp-freebsd"
           # The signing key lives here only while this step runs, even on failure.
           KEYDIR="$(mktemp -d)"
           trap 'rm -rf -- "$KEYDIR"' EXIT
