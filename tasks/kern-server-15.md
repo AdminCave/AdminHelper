@@ -1,5 +1,5 @@
 # kern-server-15 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-15 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-15 · Review: pro Task
 Spec: docs/features/kern-server-15.md (Roadmap R-1758, R-1763, R-1764, R-1773)
 Heavy: linux-full — docker-compose.yml (Healthchecks von monitoring und ca-issuer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -47,8 +47,10 @@ Review: approve (.ah-out/review/kern-server-15/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: → T6
 
-### T6 — Doku: Hook-Notiz, Changelog  [ ]
+### T6 — Doku: Hook-Notiz, Changelog  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, changelog.d/kern-server-15.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eae6e06e8 2026-11-25T06:09:34+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Hook-Seite nennt Kategorie `hooks` und den Fehlertext der Notiz (nur der Typ einer Ausnahme). Changelog-Fragment ohne Umlaute, neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/hooks.html DE+EN · changelog.d/kern-server-15.md
