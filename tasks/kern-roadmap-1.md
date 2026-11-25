@@ -16,8 +16,10 @@ automatischen Statuswechsel, und (3) eine einmalige Durchsicht der zurückgestel
 `roadmap.py` in der privaten Roadmap und ist keine Task hier. Anlass: R-1636 (Monitoring P1b) stand zurückgestellt,
 ohne dass irgendetwas meldete, dass seine Voraussetzung längst gemergt war.
 
-### T1 — roadmap.py: `status … zurückgestellt --until`, „Wieder fällig“, Lint ohne Bedingung  [ ]
+### T1 — roadmap.py: `status … zurückgestellt --until`, „Wieder fällig“, Lint ohne Bedingung  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ce3230fbf 2026-11-25T12:41:29+01:00
+Review: am Ende (Branch-Review)
 Änderung: `status` nimmt `--until R-nnnn|JJJJ-MM-TT` (mehrfach). Die Weckbedingung steht in der Spalte „Hängt ab von“:
 R-IDs wie bisher, ein Datum als `ab JJJJ-MM-TT`. `prune` hält eine dort genannte geschlossene Zeile schon im Archiv,
 und `next` liest nur die R-IDs. Der Wechsel nach `zurückgestellt` verlangt eine Weckbedingung (`--until` oder eine
@@ -27,7 +29,7 @@ Punkt „Wieder fällig: R-x (R-y abgeschlossen) · …“ für jede zurückgest
 und deren Datum erreicht ist. Der Status bleibt, die Entscheidung trifft Kevin. `lint` meldet eine zurückgestellte
 Zeile ohne Weckbedingung. Bestehende Tests, die ohne Bedingung zurückstellen, bekommen `--until`: gewollte
 Verhaltensänderung, gleiche Prüfung.
-Verify: bash scripts/dev/verify.sh scripts --strict -- scripts/dev/tests/test_roadmap.py
+Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T2
 
 ### T2 — Doku: Skill und DEVELOPMENT.md; Ledger-Kopf kern-config-1  [ ]
@@ -36,7 +38,7 @@ Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, DEVELOPMENT.md,
 beschreibt `--until`, die Spalte und den neuen Lint-Fund im Abschnitt `status`. Aufräumen: `tasks/kern-config-1.md`
 steht auf `main` noch auf `Status: bereit` (T7 kam nach „erledigt“), deshalb zeigt der AH-STATUS den Zug als laufend;
 der Kopf wird `erledigt`.
-Verify: bash scripts/dev/verify.sh scripts --strict -- scripts/dev/tests/test_roadmap.py
+Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T1
