@@ -5,8 +5,10 @@ Heavy: none — nur der Event-Bus im Server-Prozess, kein Stack-, Gateway-, PKI-
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Verworfene Events: Sammelzeile und Glocke je Ansturm (R-1732)  [ ]
+### T1 — Verworfene Events: Sammelzeile und Glocke je Ansturm (R-1732)  [x]
 Komponente: server · Dateien: apps/server/app/core/events.py, apps/server/tests/test_events_after_commit.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @16b30878a 2026-11-25T04:38:07+01:00
+Review: am Ende (Branch-Review)
 Änderung: `fire_event` zählt verworfene Events je Fenster (60 s ab dem ersten) und loggt nur das erste; ein Timer
 schreibt danach eine Sammelzeile mit Anzahl und Typen und eine Glocken-Notiz an alle Admins (höchstens eine je
 15 min, `server.events.dropped`); `shutdown_events` schreibt eine offene Sammelzeile sofort.
