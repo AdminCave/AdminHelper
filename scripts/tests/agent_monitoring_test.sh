@@ -50,7 +50,7 @@ for i in $(seq 1 "$AGENTS"); do
     docker run --rm --network host -v "$AGENT_BIN:/agent:ro" debian:bookworm-slim \
         sh -c "/agent provision --url '$AGENT_URL' --token '$PTOK' --server-id '$SID' --insecure; /agent run --once" \
         > "$E2E_WORK/agent-$i.log" 2>&1
-    if grep -q "mTLS-Client-Zertifikat enrollt" "$E2E_WORK/agent-$i.log" \
+    if grep -q "mTLS client certificate enrolled" "$E2E_WORK/agent-$i.log" \
         && grep -q "Report gesendet" "$E2E_WORK/agent-$i.log"; then
         ok "agent $i enrolled (mTLS) + pushed a report"
     else
