@@ -1,5 +1,5 @@
 # Box-Python ohne PPA — Task-Ledger
-Status: bereit · Branch: feature/kern-pybox-1 · Review: am Ende
+Status: erledigt · Branch: feature/kern-pybox-1 · Review: am Ende
 Spec: Roadmap R-1789
 Heavy: linux-full — der Beweis ist eine frische Box aus der alten Vorlage (ohne python3.14), die per `warm.sh desktop` bootstrappt und `run.sh all --strict --step agent_monitoring` fährt; vor dem Merge, weil der Fix die Box-Leases selbst betrifft
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
