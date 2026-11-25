@@ -1,0 +1,96 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Harness-Hygiene 1 — Task-Ledger
+Status: geplant · Branch: feature/harness-hygiene-1 · Review: pro Task
+Spec: docs/features/harness-hygiene-1.md (Roadmap R-1721, R-1722, R-1723, R-1768, R-0479, R-0481, R-0593, R-1265, R-0914, R-1024, R-1347, R-1408, R-1680, R-1683)
+Heavy: linux-full — T5 ändert `scripts/backup.sh`, dessen Beweis `backup-restore` (echter Stack) nur der Sammellauf fährt; alles andere ist hermetisch
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+Kevin 2026-11-25: Harness-Funde aus der Durchsicht angenommen; „kümmere du dich um alles“.
+
+### T1 — roadmap.py stats: Verlauf in einem Lauf lesen (R-1721)  [ ]
+Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py
+Änderung: `waits()` (`scripts/dev/roadmap.py:1247`) liest die Statuswechsel aus einem einzigen `git log -p`-Lauf
+statt einem `git show` je Commit; dieselben Werte wie bisher (Test vergleicht beide auf einem Fixture-Repo). Die
+tote Kennzahl `kevin-min/PR` (`:1283-1285`) fällt weg.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: → T10
+
+### T2 — worktree-teardown.sh: gemergt gegen origin/main, Reste fremder UID (R-1722, R-1768)  [ ]
+Komponente: scripts · Dateien: scripts/dev/worktree-teardown.sh, scripts/tests/worktree_setup_test.sh
+Änderung: `dropdb` und Venv vor `git worktree remove`; Reste unter dem Worktree, die dem Nutzer nicht gehören, räumt
+ein Wegwerf-Container (ohne Docker: klarer Fehlertext). Der Branch gilt als gemergt, wenn er nach `git fetch`
+Vorfahr von `origin/main` ist (dann `git branch -D`). Tests: ein Branch, der nur in `origin/main` gemergt ist, geht;
+ein Lauf mit fremd-eigenem Rest (Fixture per Stub) räumt DB und Venv trotzdem.
+Beweis: worktree-teardown.sh:110-117 (branch -d gegen lokalen main); ops-16 Teardown 2026-11-24
+Verify: bash scripts/dev/verify.sh scripts --strict -- worktree_setup_test
+Doku: → T10
+
+### T3 — nightly.sh: alte Berichte aufräumen (R-1723)  [ ]
+Komponente: scripts · Dateien: scripts/tests/nightly.sh, scripts/tests/nightly_test.sh
+Änderung: Vor jedem Start löscht `nightly.sh` unter `.ah-out/weekly/` alle Läufe außer den 30 neuesten; Läufe, deren
+erste Berichtszeile nicht `PASS` ist, bleiben 90 Tage. Gelöscht wird nur mit vollem Pfad je Verzeichnis, nie ein
+laufender (ohne `report.md`-Urteil und jünger als ein Tag).
+Verify: bash scripts/dev/verify.sh scripts --strict -- nightly_test
+Doku: → T10
+
+### T4 — review-risk.txt: fehlende Risikopfade (R-0479, R-0481, R-0593, R-1265)  [ ]
+Komponente: scripts · Dateien: scripts/dev/review-risk.txt, scripts/tests/review_scripts_test.sh
+Änderung: Aufnehmen: `apps/server/app/core/config.py`, `scripts/agent-install.sh`,
+`apps/monitoring/app/checkers/http.py`, `apps/agent/internal/probe/`, `apps/agent/internal/discovery/`,
+`apps/agent/internal/credentials/`; ein Test je Pfad, dass `review.sh risk` ihn als Risikopfad meldet.
+Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
+Doku: keine (die Liste ist ihre eigene Doku)
+
+### T5 — backup.sh/diagnostics.sh: Zwischendatei-Handling härten (R-0914)  [ ]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+Änderung: Nach dem Plan in `tasks/private/` (Roadmap-Zeile R-0914); das Archiv entsteht und heißt wie bisher.
+`security` prüft die Task.
+Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
+Doku: → T10 (CHANGELOG neutral)
+
+### T6 — run.sh: Test-Venvs nach dem Lock (R-1024)  [ ]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Änderung: Die Python-Schritte installieren `requirements-dev.txt` mit dem Lock der Komponente als Constraint, so dass
+die Venv die Lock-Versionen trägt (Belegt: `~/.cache/ah-venv` sqlalchemy 2.1.9, Lock 2.1.8). Ob pip den gehashten
+Lock als Constraint nimmt, wird zuerst belegt; sonst ein hash-freier Auszug in `AH_OUT_DIR`.
+Beweis: `~/.cache/ah-venv/bin/python -c 'import sqlalchemy;print(sqlalchemy.__version__)'` → 2.1.9; `apps/server/requirements.txt:883` 2.1.8
+Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
+Doku: → T10
+
+### T7 — heavy_test.sh: Negativ-Assertionen ohne pipefail-Falle, Fall rot + Fuzz (R-1347)  [ ]
+Komponente: scripts · Dateien: scripts/tests/heavy_test.sh, .claude/skills/test/SKILL.md, .claude/skills/feature-build/SKILL.md
+Änderung: Negativ-Assertionen auf `report_of` (`heavy_test.sh:478` und gleichartige) erst in eine Variable, dann
+prüfen; ein Fall „roter Schritt plus Fuzz-Fund im Teil-Detail“; die zwei überlangen Skill-Zeilen umbrechen. Der
+CLAUDE.md-Teil des Nits fährt nicht mit.
+Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
+Doku: keine (Test und Zeilenumbruch)
+
+### T8 — cache_settings.sh: compose-build-Formen (R-1408)  [ ]
+Komponente: scripts · Dateien: .github/scripts/cache_settings.sh, .github/scripts/cache_settings_test.sh
+Änderung: `docker compose -f x.yml build`, `docker compose --file …  build` und `docker-compose build` in einem
+`run:`-Schritt sind Verstöße wie `docker build`; der Kopfkommentar (`cache_settings.sh:24`) nennt sie; Test je Form.
+Verify: bash scripts/dev/verify.sh scripts --strict -- .github/scripts/cache_settings_test
+Doku: keine (Kopfkommentar)
+
+### T9 — windows_update_set_test: de_DE ohne installierte Locale (R-1683)  [ ]
+Komponente: scripts · Dateien: scripts/tests/windows_update_set_test.sh, .claude/rules/release.md
+Änderung: Fehlt `de_DE.UTF-8`, erzeugt der Test sie per `localedef` in ein eigenes Verzeichnis (`LOCPATH`) und prüft
+das Verhalten echt; nur ohne `localedef` bleibt die statische Prüfung. Dazu R-1680: `release.md:66` nennt
+`ReleasePublicKey` (`apps/agent/internal/selfupdate/minisign.go:22`) als dritte Pin-Stelle.
+Verify: bash scripts/dev/verify.sh scripts --strict -- windows_update_set_test
+Doku: diese Task (release.md)
+
+### T10 — Doku: DEVELOPMENT.md und Changelog  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md, changelog.d/harness-hygiene-1.md
+Änderung: DEVELOPMENT.md: Teardown (gemergt gegen `origin/main`, Reste), Aufräumen der Berichte, `stats` ohne
+`kevin-min`. Changelog-Fragment (ae/oe/ue) unter Entwickler-Werkzeuge, Backup/Diagnose neutral.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: diese Task
+Task-Review: am Ende
+
+## Entscheidungen
