@@ -1,5 +1,5 @@
 # kern-server-15 — Task-Ledger
-Status: bereit · Branch: feature/kern-server-15 · Review: pro Task
+Status: erledigt · Branch: feature/kern-server-15 · Review: pro Task
 Spec: docs/features/kern-server-15.md (Roadmap R-1758, R-1763, R-1764, R-1773)
 Heavy: linux-full — docker-compose.yml (Healthchecks von monitoring und ca-issuer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
