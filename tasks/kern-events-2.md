@@ -1,5 +1,5 @@
 # Verworfene Events sichtbar machen — Task-Ledger
-Status: bereit · Branch: feature/kern-events-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-events-2 · Review: am Ende
 Spec: docs/features/kern-events-2.md (Roadmap R-1732)
 Heavy: none — nur der Event-Bus im Server-Prozess, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -24,5 +24,11 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Dateien dieser Task
 Task-Review: am Ende
 Abhängt von: T1
+
+### T3 — Fund der Abschlussprüfung: Timer-Test wartet mindestens 30 s  [ ]
+Komponente: server · Dateien: apps/server/tests/test_events_after_commit.py
+Änderung: `test_the_burst_is_summed_up_after_the_window` wartet mit `timer.join(timeout=30)` statt 5 s (testing.md, Fristen); `join` kehrt mit dem Timer zurück.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_events_after_commit.py
+Doku: keine (nur Test)
 
 ## Entscheidungen
