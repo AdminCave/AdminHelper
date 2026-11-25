@@ -56,8 +56,9 @@ rot ist, bricht dort den Draft ab.
 **Bewusst versionsunabhängig:** Install-Snippets in `README.md` und `docs/*/admin/installation.html` zeigen auf
 `main/scripts/install.sh` (löst `releases/latest` selbst auf, minisign-verifiziert, fail-closed); `apps/desktop/ui/package.json`
 bleibt auf 0.38.0.
-**Separat gepinnt:** `FRP_VERSION` an vier Stellen (`ci.yml`, `release.yml`, `docker-compose.yml`,
-`scripts/vm/bootstrap_linux.sh`) — der CI-Job `frp-consistency` prüft Gleichstand.
+**Separat gepinnt:** `FRP_VERSION` an sechs Stellen (`ci.yml`, `release.yml`, `apps/frps/Dockerfile`,
+`scripts/vm/bootstrap_linux.sh`, `scripts/tests/freebsd_box.sh`, `PinnedVersion` in
+`apps/agent/internal/frpc/frpcpin.go`) — der CI-Job `frp-consistency` prüft Gleichstand.
 
 ## Signatur
 

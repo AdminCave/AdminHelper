@@ -24,7 +24,7 @@ die Seite dadurch benutzbar bleibt:
 - **`docs/`** — Produkt- **und** Entwickler-Doku als zweisprachiges HTML (`docs/…` DE, `docs/en/…` EN): Bedienung,
   Installation, Betrieb, Monitoring, FRP, Troubleshooting, Architektur, Komponenten-Grenzen, Datenflüsse,
   Wire-Protokolle und Auth, Plattform-Verhalten; `docs/developer/cicd.html` dazu CI, Release, Signatur und die
-  Prüfwerkzeuge (bei Workflow-Änderungen mitziehen; der CI-Job `frp-consistency` prüft die vier `FRP_VERSION`-Pins).
+  Prüfwerkzeuge (bei Workflow-Änderungen mitziehen; der CI-Job `frp-consistency` prüft die sechs `FRP_VERSION`-Pins).
   Im Zweifel über Soll-Verhalten zuerst hier nachschlagen.
 - **`README.md`** — Einstieg: Install, Build, Usage, Features, CLI-Flags, Voraussetzungen, Troubleshooting.
 - **`DEVELOPMENT.md`** — Dev-Setup (`.devenv.sh`), lokale Workflows und Werkzeuge, neue Abhängigkeiten oder
