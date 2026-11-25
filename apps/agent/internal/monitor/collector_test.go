@@ -126,6 +126,66 @@ func stubResources(t *testing.T, goos string) *resourceStub {
 	return s
 }
 
+// R-1760: the ZFS ARC above c_min is memory the kernel gives back, so collectMemory reports it as
+// free; in a container arcstats is the host's ARC and stays out.
+func TestCollectMemoryLeavesTheReclaimableARCOut(t *testing.T) {
+	stubReportHost(t)
+	s := stubResources(t, "linux")
+	vm := &mem.VirtualMemoryStat{Total: 64 * 1024 * mib, Used: 60 * 1024 * mib, UsedPercent: 93.75}
+	resourceCalls.vmem = func() (*mem.VirtualMemoryStat, error) { return vm, nil }
+
+	s.arc = 24 * 1024 * mib
+	got := collectMemory()
+	want := &MemoryUsage{MemoryPercent: 56.3, MemoryTotalMB: 64 * 1024, MemoryUsedMB: 36 * 1024}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("with 24 GiB reclaimable ARC = %+v, want %+v", got, want)
+	}
+
+	s.arc = 0
+	want = &MemoryUsage{MemoryPercent: 93.8, MemoryTotalMB: 64 * 1024, MemoryUsedMB: 60 * 1024}
+	if got := collectMemory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("without ARC = %+v, want %+v", got, want)
+	}
+
+	s.arc = 80 * 1024 * mib // more than is used: never below 0
+	want = &MemoryUsage{MemoryPercent: 0, MemoryTotalMB: 64 * 1024, MemoryUsedMB: 0}
+	if got := collectMemory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ARC above used = %+v, want %+v", got, want)
+	}
+
+	stubVirtualization(t, "lxc", "guest")
+	s.arc = 24 * 1024 * mib
+	want = &MemoryUsage{MemoryPercent: 93.8, MemoryTotalMB: 64 * 1024, MemoryUsedMB: 60 * 1024}
+	if got := collectMemory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("in a container = %+v, want %+v", got, want)
+	}
+}
+
+// Without an ARC the percentage stays as gopsutil reads it: on Windows that is dwMemoryLoad,
+// which Windows works out itself and which is not Used/Total.
+func TestCollectMemoryWithoutARCKeepsTheReadPercent(t *testing.T) {
+	stubResources(t, "windows")
+	resourceCalls.vmem = func() (*mem.VirtualMemoryStat, error) {
+		return &mem.VirtualMemoryStat{Total: 16 * 1024 * mib, Used: 12 * 1024 * mib, UsedPercent: 81}, nil
+	}
+	want := &MemoryUsage{MemoryPercent: 81, MemoryTotalMB: 16 * 1024, MemoryUsedMB: 12 * 1024}
+	if got := collectMemory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("= %+v, want %+v (not recomputed as 75)", got, want)
+	}
+}
+
+func TestCollectMemoryWithoutAReading(t *testing.T) {
+	stubResources(t, "linux")
+	resourceCalls.vmem = func() (*mem.VirtualMemoryStat, error) { return nil, errors.New("no meminfo") }
+	if got := collectMemory(); got != nil {
+		t.Fatalf("on a failed read = %+v, want nil", got)
+	}
+	resourceCalls.vmem = func() (*mem.VirtualMemoryStat, error) { return &mem.VirtualMemoryStat{}, nil }
+	if got := collectMemory(); got != nil {
+		t.Fatalf("with a total of 0 = %+v, want nil", got)
+	}
+}
+
 func TestResourcesNetwork(t *testing.T) {
 	container := []gnet.IOCountersStat{
 		{Name: "lo", BytesRecv: 7000, BytesSent: 7000},

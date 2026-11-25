@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (RAM-Wert des Reports, Self-Update-Client, Plat
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1760: memory_percent ohne den ARC über c_min  [ ]
+### T1 — R-1760: memory_percent ohne den ARC über c_min  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/loadgate_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @52d77b102 2026-11-25T05:08:12+01:00
+Review: approve (.ah-out/review/kern-agent-24/T1.verdict.json)
 Änderung: `collectMemory` zieht unter Linux und FreeBSD außerhalb eines Containers `resourceCalls.arc()` von `Used` ab (höchstens bis 0) und rechnet `memory_percent` daraus. `loadReadingOf` nimmt `100 - memory_percent` ohne zweiten ARC-Zuschlag. Tests: ZFS-Host bereinigt, Container und Windows unverändert, ARC größer als Used, Last-Tor ohne Doppelzählung. Der R-1688-Test in `loadgate_test.go` zieht mit der gewollten Verhaltensänderung um (Kevin 2026-11-25).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T4
@@ -32,3 +34,6 @@ Task-Review: am Ende
 Abhängt von: T1, T3
 
 ## Entscheidungen
+- 2026-11-25 T1 (R-1760): `collectMemory` rechnet `memory_percent` nur neu, wenn ARC abgezogen wird; sonst bleibt `UsedPercent` von gopsutil (Windows: `dwMemoryLoad`, nicht Used/Total). Fund des Task-Pruefers.
+- 2026-11-25 T2 (R-1769): Hinweis zu `reprovisionHelps` (`apps/agent/internal/frpc/sync.go:603`) gesichtet, bleibt wie gebaut: `stopFrpc` deaktiviert den Dienst und loescht `frpc.toml` zusammen; ein Dienst ohne Config traegt keinen Tunnel, eine Dienstpruefung aenderte die Entscheidung nicht.
+- 2026-11-25 T2 (R-1769): neuer `httpclient.NewGateway` (CA-Bundle ohne System-Roots, `verifyGatewayIssuer`, kein Client-Zertifikat) teilt `gatewayTLS` mit `NewMTLS`; der Self-Update-Client eines enrollten Hosts nimmt ihn statt `New`.
