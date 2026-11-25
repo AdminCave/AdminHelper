@@ -211,6 +211,15 @@ describe('categoriesOf', () => {
     ];
     expect(categoriesOf(items).map((c) => c.category)).toEqual(['agent', 'alpha', 'zeta']);
   });
+
+  it('lists hooks as a known category after the sessions, before an unknown one', () => {
+    const items = [
+      item({ category: 'alpha' }),
+      item({ category: 'hooks' }),
+      item({ category: 'session' }),
+    ];
+    expect(categoriesOf(items).map((c) => c.category)).toEqual(['session', 'hooks', 'alpha']);
+  });
 });
 
 describe('labels', () => {
@@ -220,6 +229,8 @@ describe('labels', () => {
     const tr = get(t);
     expect(categoryLabel('agent', tr)).toBe('Agent & Updates');
     expect(categoryLabel('security', tr)).toBe('Sicherheit');
+    expect(categoryLabel('hooks', tr)).toBe('Hooks');
+    expect(tr('notifications.category.hooks')).not.toBe('notifications.category.hooks');
     expect(categoryLabel('zeta', tr)).toBe('zeta');
     expect(channelLabel('email', tr)).toBe('E-Mail');
     expect(channelLabel('bell', tr)).toBe('Glocke');

@@ -31,8 +31,10 @@ Review: approve (.ah-out/review/kern-server-15/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py tests/test_events_after_commit.py
 Doku: → T6
 
-### T4 — R-1763: Kategorie hooks im Desktop  [ ]
+### T4 — R-1763: Kategorie hooks im Desktop  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/notifications.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @58e49bad5 2026-11-25T05:56:57+01:00
+Review: approve (.ah-out/review/kern-server-15/T4.verdict.json)
 Änderung: `hooks` kommt in `NOTIFICATION_CATEGORIES` (nach `session`), mit Label DE „Hooks“ und EN „Hooks“; der Test prüft Label und Reihenfolge.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts
 Doku: keine (Vokabular der Oberfläche, nicht dokumentiert)

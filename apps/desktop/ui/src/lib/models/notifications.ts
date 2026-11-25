@@ -22,6 +22,7 @@ export const NOTIFICATION_CATEGORIES = [
   'ansible',
   'agent',
   'session',
+  'hooks',
 ] as const;
 
 /**
