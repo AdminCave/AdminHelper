@@ -14,7 +14,9 @@ import pytest
 from sqlalchemy import event
 
 from app import alerter
-from app.models import MonitorCheck, MonitorMaintenance, MonitorState
+from app.models import MonitorCheck, MonitorException, MonitorState
+
+from ._helpers import maintenance_window
 
 _NOW = datetime(2026, 10, 20, 12, 0)
 
@@ -58,13 +60,25 @@ def _add(
 
 
 def _window(server_id):
-    return MonitorMaintenance(
+    return maintenance_window(
         id=f"mw-{server_id}",
         server_id=server_id,
         kind="once",
         starts_at=_NOW - timedelta(hours=1),
         ends_at=_NOW + timedelta(hours=1),
         enabled=True,
+    )
+
+
+def _exception(id, scope_kind, **kw):
+    """A permanent no_notify exception, not a maintenance window (R-1636)."""
+    return MonitorException(
+        id=id,
+        scope_kind=scope_kind,
+        effect="no_notify",
+        duration_kind="permanent",
+        origin="api",
+        **kw,
     )
 
 
@@ -109,6 +123,21 @@ def _scenario(db):
     # No server, no state.
     _add(db, "free", "http", None, server=None)
     db.add(_window("srv-mw"))
+    # R-1636: exceptions other than windows. A check exception beats the window of its
+    # server (narrowest wins) and comes before host down; check type and a permanent
+    # server exception mute as "exception"; an ended one mutes nothing.
+    _add(db, "mw-chk", "agent_resources", "critical", server="srv-mw")
+    _add(db, "hp-chk", "agent_resources", "critical", server="srv-hp")
+    _add(db, "ex-dns", "dns", "critical", server="srv-ex")
+    _add(db, "ex-res", "agent_resources", "critical", server="srv-ex")
+    _add(db, "ex-ended", "agent_resources", "critical", server="srv-ex")
+    _add(db, "perm-res", "agent_resources", "critical", server="srv-perm")
+    db.flush()
+    db.add(_exception("e-mw-chk", "check", check_id="mw-chk", server_id="srv-mw"))
+    db.add(_exception("e-hp-chk", "check", check_id="hp-chk", server_id="srv-hp"))
+    db.add(_exception("e-dns", "check_type", check_type="dns"))
+    db.add(_exception("e-ended", "check", check_id="ex-ended", server_id="srv-ex", ended_at=_NOW))
+    db.add(_exception("e-perm", "server", server_id="srv-perm"))
     db.commit()
 
 
@@ -135,6 +164,12 @@ _EXPECTED_AT_NOW = {
     "mw-res": "maintenance window",
     "mw-silent": "silent check",
     "free": None,
+    "mw-chk": "exception",
+    "hp-chk": "exception",
+    "ex-dns": "exception",
+    "ex-res": None,
+    "ex-ended": None,
+    "perm-res": "exception",
 }
 
 
@@ -189,7 +224,7 @@ class TestMutedReasons:
         assert bulk == {c.id: alerter.muted_reason(db, c, at) for c in checks}
         # Not in step by both answering None: every reason shows up on the page.
         if not global_window:
-            assert {"silent check", "host down", None} <= set(bulk.values())
+            assert {"silent check", "host down", "exception", None} <= set(bulk.values())
 
     def test_after_the_window_the_host_ping_mutes_the_server(self, db):
         _scenario(db)
@@ -199,6 +234,7 @@ class TestMutedReasons:
             "mw-hp": None,
             "mw-res": "host down",
             "mw-silent": "silent check",
+            "mw-chk": "exception",
         }
 
     def test_the_same_two_queries_for_any_page(self, db, statements):
@@ -232,6 +268,7 @@ class TestStatusRoutes:
         r = client.get("/status/server/srv-hp")
         assert r.status_code == 200, r.text
         assert {c["id"]: c["mutedReason"] for c in r.json()} == {
+            "hp-chk": "exception",
             "hp-hb": "host down",
             "hp-hp": None,
             "hp-res": "host down",

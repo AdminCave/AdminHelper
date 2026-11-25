@@ -101,7 +101,11 @@ def maintenance_intervals(
     """(start, end, note) in naive UTC of every enabled window of this server (or of all
     servers) that overlaps start..end, cut to it and sorted by start. A weekly
     occurrence ends at the wall-clock time _weekly_active uses, so the bands show
-    exactly when alerts were muted, across DST too."""
+    exactly when alerts were muted, across DST too.
+
+    It matches on server_id alone: hand it maintenance windows only (scope server or
+    all, exception_scope.is_maintenance_shaped). A check exception carries the server
+    of its check and would come out as a window of the whole server."""
     out = []
     for window in windows:
         if not window.enabled:
@@ -131,7 +135,11 @@ def maintenance_intervals(
 
 
 def is_in_maintenance(windows: list[Window], server_id: str | None, now_utc: datetime) -> bool:
-    """True when any enabled window covers this server (or all servers) now."""
+    """True when any enabled window covers this server (or all servers) now.
+
+    No reader of the service asks it since R-1636 (they ask exception_scope.narrowest);
+    it stays the semantics of the frozen monitor_maintenance rows, which the migration
+    test and the tests of maintenance_intervals compare against."""
     for window in windows:
         if not window.enabled:
             continue

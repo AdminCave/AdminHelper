@@ -16,7 +16,7 @@ from app import alerter, bell_catch_up
 from app.bell_catch_up import CATCH_UP_MAX, catch_up_bell
 from app.check_engine import dispatch_alert_bg
 
-from ._helpers import bell_record, seed_bell_check
+from ._helpers import bell_record, maintenance_window, seed_bell_check
 from .test_check_engine_concurrency import DB_URL, pg_sessionmaker  # noqa: F401
 
 _NOW = datetime(2026, 10, 20, 12, 0)
@@ -203,12 +203,10 @@ def test_a_refused_catch_up_hands_the_slot_back(bell_db, hub):
 
 
 def test_a_muted_check_waits(bell_db, hub):
-    from app.models import MonitorMaintenance
-
     cid = seed(bell_db, 0, status="critical", notified="critical")
     with bell_db() as db:
         db.add(
-            MonitorMaintenance(
+            maintenance_window(
                 id="mw-1",
                 server_id="srv-1",
                 kind="once",

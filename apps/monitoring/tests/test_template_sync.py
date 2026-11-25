@@ -348,7 +348,9 @@ def test_remove_template_deletes_only_this_assignment(db):
 def test_cleanup_server_removes_everything_for_server(db):
     from datetime import datetime
 
-    from app.models import MonitorAgentLiveness, MonitorMaintenance
+    from app.models import MonitorAgentLiveness, MonitorException, MonitorMaintenance
+
+    from ._helpers import maintenance_window
 
     tpl = _template(db, [PING_DEF], [{"def_id": "a1", "name": "A", "channel": "webhook"}])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
@@ -359,7 +361,12 @@ def test_cleanup_server_removes_everything_for_server(db):
         )
     )
     # T42: server-scoped maintenance + liveness must go with the server; a
-    # GLOBAL window (server_id NULL) must survive.
+    # GLOBAL window (server_id NULL) must survive. R-1636: so do the server's exceptions,
+    # an ended one too; the frozen maintenance rows of the server still go.
+    db.add(maintenance_window(id="m1", server_id="srv-1"))
+    db.add(maintenance_window(id="m-global"))
+    db.add(maintenance_window(id="m-ended", server_id="srv-1", ended_at=datetime(2026, 1, 1)))
+    db.add(maintenance_window(id="m-other", server_id="srv-2"))
     db.add(MonitorMaintenance(id="m1", server_id="srv-1", kind="once", enabled=True))
     db.add(MonitorMaintenance(id="m-global", server_id=None, kind="once", enabled=True))
     db.add(MonitorAgentLiveness(server_id="srv-1", last_report_at=datetime(2026, 1, 1)))
@@ -376,6 +383,7 @@ def test_cleanup_server_removes_everything_for_server(db):
     assert db.query(MonitorTemplateAssignment).count() == 0
     assert db.query(MonitorAgentKey).count() == 0
     assert db.query(MonitorAgentLiveness).count() == 0
+    assert sorted(e.id for e in db.query(MonitorException)) == ["m-global", "m-other"]
     assert [m.id for m in db.query(MonitorMaintenance).all()] == ["m-global"]
 
 

@@ -14,9 +14,10 @@ from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
-    MonitorMaintenance,
     MonitorStatusChange,
 )
+
+from ._helpers import maintenance_window
 
 NOW = 1_799_999_970  # 30 s before a minute: the grid ends at the full minute after
 END = 1_800_000_000
@@ -489,7 +490,7 @@ def test_a_change_in_maintenance_is_an_event(engine_change):
     with engine_change.history.factory() as db:
         db.add(MonitorAlertRule(id="r1", name="R", channel="webhook", channel_config="{}"))
         db.add(
-            MonitorMaintenance(
+            maintenance_window(
                 id="m1",
                 server_id="srv-1",
                 kind="once",
@@ -511,7 +512,7 @@ def test_maintenance_bands_cover_this_server_and_all_servers(history):
     with history.factory() as db:
         db.add_all(
             [
-                MonitorMaintenance(
+                maintenance_window(
                     id="mine",
                     server_id="srv-1",
                     kind="once",
@@ -520,7 +521,7 @@ def test_maintenance_bands_cover_this_server_and_all_servers(history):
                     ends_at=_at(END + 3600),
                     enabled=True,
                 ),
-                MonitorMaintenance(
+                maintenance_window(
                     id="all",
                     server_id=None,
                     kind="once",
@@ -529,7 +530,7 @@ def test_maintenance_bands_cover_this_server_and_all_servers(history):
                     ends_at=_at(start + 600),
                     enabled=True,
                 ),
-                MonitorMaintenance(
+                maintenance_window(
                     id="other",
                     server_id="srv-2",
                     kind="once",
@@ -537,7 +538,7 @@ def test_maintenance_bands_cover_this_server_and_all_servers(history):
                     ends_at=_at(END),
                     enabled=True,
                 ),
-                MonitorMaintenance(
+                maintenance_window(
                     id="off",
                     server_id="srv-1",
                     kind="once",
@@ -565,7 +566,7 @@ def test_weekly_bands_arrive_in_unix_seconds(history):
     begin = (end_utc - timedelta(hours=3)).strftime("%H:%M")
     with history.factory() as db:
         db.add(
-            MonitorMaintenance(
+            maintenance_window(
                 id="w",
                 server_id=None,
                 kind="weekly",

@@ -110,3 +110,75 @@ def test_a_naive_year_one_stays_valid(client_db):
     created = client.post("/maintenance", json=_once(starts_at="0001-01-01T00:00:00"))
     assert created.status_code == 201
     assert created.json()["startsAt"] == "0001-01-01T00:00:00Z"
+
+
+# --- facade over the exceptions (R-1636) ------------------------------------------------
+
+
+def _exception(factory, mid):
+    from app.models import MonitorException
+
+    with factory() as db:
+        return db.get(MonitorException, mid)
+
+
+def test_a_window_is_stored_as_an_exception(client_db):
+    client, factory = client_db
+    server = client.post("/maintenance", json=_once(server_id="srv-1", note="disk swap"))
+    every = client.post("/maintenance", json=_weekly())
+    assert server.status_code == every.status_code == 201
+
+    row = _exception(factory, server.json()["id"])
+    assert (row.scope_kind, row.server_id, row.effect, row.reason, row.origin) == (
+        "server",
+        "srv-1",
+        "no_notify",
+        "disk swap",
+        "maintenance",
+    )
+    row = _exception(factory, every.json()["id"])
+    assert (row.scope_kind, row.server_id, row.duration_kind) == ("all", None, "weekly")
+
+    # PUT moves a window between a server and all servers.
+    moved = client.put(f"/maintenance/{every.json()['id']}", json=_weekly(server_id="srv-2"))
+    assert moved.status_code == 200 and moved.json()["serverId"] == "srv-2"
+    row = _exception(factory, every.json()["id"])
+    assert (row.scope_kind, row.server_id) == ("server", "srv-2")
+    assert row.updated_at is not None
+
+
+def test_delete_ends_the_window_and_keeps_the_row(client_db):
+    client, factory = client_db
+    mid = client.post("/maintenance", json=_once(server_id="srv-1")).json()["id"]
+
+    assert client.delete(f"/maintenance/{mid}").status_code == 204
+
+    row = _exception(factory, mid)
+    assert row is not None and row.ended_at is not None
+    assert client.get("/maintenance").json() == []
+    assert client.put(f"/maintenance/{mid}", json=_once()).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"scope_kind": "check_type", "check_type": "ping", "duration_kind": "once"},
+        {"scope_kind": "server", "server_id": "srv-1", "duration_kind": "permanent"},
+        {"scope_kind": "server", "server_id": None, "duration_kind": "once"},
+        {"scope_kind": "all", "duration_kind": "once", "effect": "skip"},
+    ],
+    ids=["check_type", "permanent", "server_without_server", "other_effect"],
+)
+def test_other_exceptions_are_no_windows(client_db, fields):
+    from app.models import MonitorException
+
+    client, factory = client_db
+    with factory() as db:
+        db.add(MonitorException(id="e1", origin="api", **{"effect": "no_notify", **fields}))
+        db.commit()
+
+    assert client.get("/maintenance").json() == []
+    assert client.put("/maintenance/e1", json=_once()).status_code == 404
+    assert client.delete("/maintenance/e1").status_code == 404
+    row = _exception(factory, "e1")
+    assert row.ended_at is None and row.scope_kind == fields["scope_kind"]

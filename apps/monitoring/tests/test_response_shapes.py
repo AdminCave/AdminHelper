@@ -22,14 +22,17 @@ from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorException,
     MonitorHostFacts,
-    MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
 )
 from app.routers import templates as templates_router
+from app.routers.maintenance import as_maintenance
+
+from ._helpers import maintenance_window
 
 
 def _response_schema(path: str, method: str) -> dict:
@@ -467,17 +470,18 @@ class TestAlertShape:
 
 def _maintenance(factory, maintenance_id: str) -> dict:
     with factory() as db:
-        return jsonable_encoder(db.get(MonitorMaintenance, maintenance_id).to_dict())
+        return jsonable_encoder(as_maintenance(db.get(MonitorException, maintenance_id)))
 
 
 class TestMaintenanceShape:
     def test_list_equals_the_producer(self, client_db):
         # m-weekly: every weekly column set; m-sparse: a once window with the nullable columns
-        # NULL, weekdays NULL handed out as [].
+        # NULL, weekdays NULL handed out as []. enabled is NOT NULL since R-1636 (the
+        # migration makes NULL false, test_migrations_smoke), so m-sparse is switched off.
         client, factory = client_db
         with factory() as db:
             db.add(
-                MonitorMaintenance(
+                maintenance_window(
                     id="m-weekly",
                     server_id="srv-1",
                     note="patch night",
@@ -491,25 +495,21 @@ class TestMaintenanceShape:
                 )
             )
             db.add(
-                MonitorMaintenance(
+                maintenance_window(
                     id="m-sparse",
                     kind="once",
                     starts_at=datetime(2026, 10, 5, 1, 0, 0),
                     ends_at=datetime(2026, 10, 5, 3, 0, 0),
+                    enabled=False,
                     created_at=datetime(2026, 10, 2, 12, 0, 0),
                 )
-            )
-            db.commit()
-            db.execute(
-                update(MonitorMaintenance)
-                .where(MonitorMaintenance.id == "m-sparse")
-                .values(enabled=None)
             )
             db.commit()
         r = client.get("/maintenance")
         assert r.status_code == 200, r.text
         assert r.json() == [_maintenance(factory, "m-weekly"), _maintenance(factory, "m-sparse")]
-        assert r.json()[1]["weekdays"] == [] and r.json()[1]["enabled"] is None
+        assert r.json()[1]["weekdays"] == [] and r.json()[1]["enabled"] is False
+        assert r.json()[1]["serverId"] is None and r.json()[1]["timezone"] == "UTC"
 
     def test_writes_answer_as_the_producer(self, client_db):
         client, factory = client_db

@@ -45,10 +45,11 @@ def covers(
 
 
 def is_maintenance_shaped(exc: MonitorException) -> bool:
-    """The rows the /maintenance facade shows: server or all, no_notify, once or weekly,
-    not ended."""
+    """The rows the /maintenance facade shows: server (with one) or all, no_notify, once
+    or weekly, not ended. A server exception without a server is none: as a window it
+    would read as one of all servers."""
     return (
-        exc.scope_kind in ("server", "all")
+        (exc.scope_kind == "all" or (exc.scope_kind == "server" and exc.server_id is not None))
         and exc.effect == "no_notify"
         and exc.duration_kind in ("once", "weekly")
         and exc.ended_at is None

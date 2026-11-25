@@ -37,11 +37,17 @@ from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
-    MonitorMaintenance,
     MonitorState,
 )
 
-from ._helpers import _CapturingDb, make_check, make_msg, make_rule, no_env_proxy
+from ._helpers import (
+    _CapturingDb,
+    maintenance_window,
+    make_check,
+    make_msg,
+    make_rule,
+    no_env_proxy,
+)
 
 _NOW = datetime(2026, 10, 20, 12, 0)
 # Public on purpose where the real guard checks it: RFC 5737 addresses count as private.
@@ -1160,7 +1166,7 @@ class TestHostPingRankOrder:
     def test_a_maintenance_window_mutes_the_host_ping_too(self, db):
         host_ping = self._add(db, "hp", "ping", "critical", template_def_id="host-ping")
         db.add(
-            MonitorMaintenance(
+            maintenance_window(
                 id="mw-1",
                 server_id="srv-1",
                 kind="once",
@@ -1199,8 +1205,6 @@ class TestMaintenanceSuppression:
     def _window(**kw):
         from datetime import datetime, timedelta
 
-        from app.models import MonitorMaintenance
-
         now = datetime(2026, 7, 19, 12, 0)
         defaults = dict(
             id="mw-1",
@@ -1211,7 +1215,7 @@ class TestMaintenanceSuppression:
             enabled=True,
         )
         defaults.update(kw)
-        return MonitorMaintenance(**defaults)
+        return maintenance_window(**defaults)
 
     def _now(self, monkeypatch):
         from datetime import datetime
@@ -1243,6 +1247,29 @@ class TestMaintenanceSuppression:
         process_alert(db, make_check(server_id="srv-1"), "ok", "critical")
         assert dispatched["n"] == 1
         assert emitted["n"] == 1
+
+    def test_an_exception_of_the_check_mutes_it_alone(self, monkeypatch):
+        # R-1636: a no_notify exception of one check, not a window of its server.
+        from app.models import MonitorException
+
+        dispatched, emitted = self._spies(monkeypatch)
+        self._now(monkeypatch)
+        exc = MonitorException(
+            id="e1",
+            scope_kind="check",
+            check_id="check-1",
+            server_id="srv-1",
+            effect="no_notify",
+            duration_kind="permanent",
+            enabled=True,
+            origin="api",
+        )
+        db = _CapturingDb([make_rule()], maintenance=[exc])
+        process_alert(db, make_check(), "ok", "critical")
+        assert (dispatched["n"], emitted["n"]) == (0, 0)
+
+        process_alert(db, make_check(id="check-2"), "ok", "critical")
+        assert (dispatched["n"], emitted["n"]) == (1, 1)
 
     def test_expired_window_does_not_mute(self, monkeypatch):
         from datetime import datetime, timedelta

@@ -361,7 +361,8 @@ class MonitorCheckOut(BaseModel):
 
 
 class MonitorCheckStatusOut(MonitorCheckOut):
-    # alerter.muted_reasons: "silent check" | "maintenance window" | "host down" | None.
+    # alerter.muted_reasons: "silent check" | "maintenance window" | "exception" | "host down"
+    # | None.
     mutedReason: str | None
 
 

@@ -44,12 +44,12 @@ from app.core.config import (
     SMTP_USER,
 )
 from app.core.time import utcnow_naive
-from app.maintenance import is_in_maintenance
+from app.exception_scope import is_maintenance_shaped, load_no_notify, narrowest
 from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
-    MonitorMaintenance,
+    MonitorException,
     MonitorState,
 )
 
@@ -282,10 +282,10 @@ def _claim_transition(
             db.flush()
         return None
 
-    # Maintenance windows and host-down (muted_reason): the state transition has
-    # already been persisted by the caller — only notifications are muted, and
-    # notified_status stays untouched for the catch-up. No alert-log entry
-    # either: the log records SENT notifications.
+    # no_notify exceptions (maintenance windows among them) and host-down
+    # (muted_reason): the state transition has already been persisted by the caller —
+    # only notifications are muted, and notified_status stays untouched for the
+    # catch-up. No alert-log entry either: the log records SENT notifications.
     reason = muted_reason(db, check, utcnow_naive())
     if reason is not None:
         logger.debug("Alert for check %s suppressed (%s)", check.id, reason)
@@ -372,23 +372,35 @@ def muted_reason(db: Session, check: MonitorCheck, now: datetime) -> str | None:
     """Why the notifications of the check are muted at ``now``; None when they
     are not.
 
-    "maintenance window" — a window of the check's server or of all servers is
-    active (collect-but-mute, T25); it mutes every check, the heartbeat and the
-    Host Ping included.
+    "maintenance window" — the narrowest no_notify exception in force over the
+    check is a maintenance window, of the check's server or of all servers
+    (collect-but-mute, T25); it mutes every check, the heartbeat and the Host
+    Ping included.
+    "exception" — the narrowest one is any other no_notify exception: of the
+    check, of its check type, or a server or all exception without a window
+    (exception_scope.narrowest, ADR 0004 §7).
     "host down" — the server's heartbeat or Host Ping stands critical
     (_host_is_down): one incident, one notification.
     "silent check" — a module check a catalog update added and the admin has not
     adopted yet (module_sync): evaluated and shown, alerted only once adopted."""
     if check.silent:
         return "silent check"
-    windows = (
-        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
-    )
-    if windows and is_in_maintenance(windows, check.server_id, now):
-        return "maintenance window"
+    excepted = _exception_reason(load_no_notify(db), check, now)
+    if excepted:
+        return excepted
     if _host_is_down(db, check):
         return "host down"
     return None
+
+
+def _exception_reason(
+    exceptions: Sequence[MonitorException], check: MonitorCheck, now: datetime
+) -> str | None:
+    """The muted reason of the narrowest no_notify exception over the check, or None."""
+    hit = narrowest(exceptions, check.id, check.check_type, check.server_id, now)
+    if hit is None:
+        return None
+    return "maintenance window" if is_maintenance_shaped(hit) else "exception"
 
 
 # def_id of the check in the built-in template "Host Ping" (builtin_templates.py).
@@ -441,15 +453,13 @@ def _host_is_down(db: Session, check: MonitorCheck) -> bool:
 def muted_reasons(
     db: Session, checks: Sequence[MonitorCheck], now: datetime
 ) -> dict[str, str | None]:
-    """muted_reason for every check of a status page, by check id: the windows and the
+    """muted_reason for every check of a status page, by check id: the exceptions and the
     critical host-down signals of the page's servers load once per call, not once per
     check (R-1225). Same order and rank as muted_reason and _host_is_down; a test holds
     the two in step over every reason."""
     if not checks:
         return {}
-    windows = (
-        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
-    )
+    exceptions = load_no_notify(db)
     server_ids = {c.server_id for c in checks if c.server_id}
     # server_id -> which signals stand critical there: "agent_ping", "host_ping".
     down: dict[str, set[str]] = {}
@@ -477,8 +487,9 @@ def muted_reasons(
     def reason(check: MonitorCheck) -> str | None:
         if check.silent:
             return "silent check"
-        if windows and is_in_maintenance(windows, check.server_id, now):
-            return "maintenance window"
+        excepted = _exception_reason(exceptions, check, now)
+        if excepted:
+            return excepted
         signals = down.get(check.server_id, set()) if check.server_id else set()
         if check.check_type == "ping" and check.template_def_id == HOST_PING_DEF_ID:
             signals = set()

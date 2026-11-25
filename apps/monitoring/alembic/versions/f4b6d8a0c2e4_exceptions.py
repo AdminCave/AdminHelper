@@ -20,8 +20,8 @@ R-1636 (docs/features/arch-monitoring-neu-p1b.md, ADR 0004 §7):
 
 The downgrade writes the facade's state back: it empties
 ``monitor_maintenance`` and inserts every maintenance-shaped exception (scope
-server or all, no_notify, once or weekly, not ended), then drops the column and
-the table. Exceptions of any other shape are lost on that way; the full way back
+server with a server_id, or all; no_notify, once or weekly, not ended), then
+drops the column and the table. Exceptions of any other shape are lost on that way; the full way back
 is restore.sh (ADR 0004 §10).
 """
 
@@ -102,7 +102,8 @@ def downgrade() -> None:
         " duration_kind, starts_at, ends_at, weekdays, start_time, duration_minutes,"
         " timezone, enabled, created_at"
         " FROM monitor_exceptions"
-        " WHERE scope_kind IN ('server', 'all') AND effect = 'no_notify'"
+        " WHERE (scope_kind = 'all' OR (scope_kind = 'server' AND server_id IS NOT NULL))"
+        " AND effect = 'no_notify'"
         " AND duration_kind IN ('once', 'weekly') AND ended_at IS NULL"
     )
     op.drop_column("monitor_object_state", "excluded")

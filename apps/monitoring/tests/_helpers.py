@@ -69,6 +69,25 @@ def make_msg(**kw):
     return defaults
 
 
+def maintenance_window(*, id, server_id=None, kind="once", note=None, enabled=True, **times):
+    """A maintenance window as the /maintenance facade stores it since R-1636: an exception
+    of scope server (all without a server), effect no_notify. Takes the fields of the
+    frozen MonitorMaintenance, so a test reads as before."""
+    from app.models import MonitorException
+
+    return MonitorException(
+        id=id,
+        scope_kind="all" if server_id is None else "server",
+        server_id=server_id,
+        effect="no_notify",
+        duration_kind=kind,
+        reason=note,
+        enabled=enabled,
+        origin="maintenance",
+        **times,
+    )
+
+
 class _ListQuery:
     """query(Model)-shim returning a fixed list (filter chainable)."""
 
@@ -113,7 +132,7 @@ class _CapturingDb:
     """Fake DB for process_alert: provides the rules list, collects add()
     and flush()/commit() calls. process_alert commits the sent-state claim
     itself (claim-then-dispatch) and flushes the alert-log rows for the
-    caller's commit. Maintenance-window queries are
+    caller's commit. Exception queries (maintenance windows) are
     answered model-aware (default: none active)."""
 
     def __init__(self, rules, maintenance=None, state=None):
@@ -130,9 +149,9 @@ class _CapturingDb:
         self.committed = False
 
     def query(self, *args, **kwargs):
-        from app.models import MonitorMaintenance, MonitorState
+        from app.models import MonitorException, MonitorState
 
-        if args and args[0] is MonitorMaintenance:
+        if args and args[0] is MonitorException:
             return _ListQuery(self._maintenance)
         if args and args[0] is MonitorState:
             return _FirstQuery(self._state)

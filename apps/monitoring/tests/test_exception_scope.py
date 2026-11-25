@@ -158,8 +158,9 @@ class TestMaintenanceShaped:
             once(NOW, NOW, scope_kind="check_type", check_type="ping"),
             once(NOW, NOW, scope_kind="all", effect="skip"),
             once(NOW, NOW, scope_kind="all", ended_at=NOW),
+            once(NOW, NOW, scope_kind="server", server_id=None),
         ],
-        ids=["permanent", "check", "check_type", "other_effect", "ended"],
+        ids=["permanent", "check", "check_type", "other_effect", "ended", "server_without_server"],
     )
     def test_not(self, e):
         assert not is_maintenance_shaped(e)

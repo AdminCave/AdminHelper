@@ -551,8 +551,9 @@ def _time_grid():
 def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
     # Kevin 2026-11-25: the windows move 1:1 and an equivalence test accepts them. For
     # every window and server over the grid, the old evaluator on the old row and the
-    # exception scope on the new row agree; the columns carry over; the way back writes
-    # the facade's state into monitor_maintenance, and the way up again takes it over.
+    # exception scope on the new row agree; the columns carry over; GET /maintenance
+    # answers what it answered before (T2); the way back writes the facade's state into
+    # monitor_maintenance, and the way up again takes it over.
     from datetime import datetime
 
     from alembic import command
@@ -562,6 +563,7 @@ def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
     from app.exception_scope import covers, in_force, narrowest
     from app.maintenance import is_in_maintenance
     from app.models import MonitorException, MonitorMaintenance
+    from app.routers.maintenance import list_maintenance
 
     with scratch_db(monkeypatch, "exceptions") as (cfg, engine):
         command.upgrade(cfg, "e3a5c7e9f1b2")  # just before the exceptions
@@ -579,6 +581,10 @@ def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
             old_rows = [tuple(r) for r in conn.execute(select_old)]
         db = sessionmaker(bind=engine)()
         old = {w.id: w for w in db.query(MonitorMaintenance).all()}
+        answered = [
+            w.to_dict()
+            for w in db.query(MonitorMaintenance).order_by(MonitorMaintenance.created_at)
+        ]
         db.close()
         assert len(old) == len(_WINDOWS)
 
@@ -613,6 +619,9 @@ def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
         ]
         db = sessionmaker(bind=engine)()
         new = {e.id: e for e in db.query(MonitorException).all()}
+        # The facade answers as the old router did; enabled NULL is false now.
+        assert list_maintenance(db) == [dict(w, enabled=bool(w["enabled"])) for w in answered]
+        assert any(w["enabled"] is None for w in answered)
         db.close()
 
         servers = ["srv-1", "srv-2", "srv-3", None]
@@ -651,6 +660,16 @@ def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
                     {"id": "on-c2", "scope": "check", "check": "c2"},
                     {"id": "srv1-permanent", "scope": "server", "check": None},
                 ],
+            )
+            # A server exception without a server is no window: written back it would
+            # read as one of all servers.
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_exceptions"
+                    " (id, scope_kind, effect, duration_kind, starts_at, ends_at, origin)"
+                    " VALUES ('srv-null', 'server', 'no_notify', 'once', :at, :at, 'api')"
+                ),
+                {"at": datetime(2026, 11, 25, 10, 0)},
             )
             # Ended through the facade: gone from its list, and so from the way back.
             conn.execute(

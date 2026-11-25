@@ -29,10 +29,9 @@ from sqlalchemy.orm import Session
 from app import alerter, check_engine
 from app.core import database
 from app.core.time import utcnow_naive
-from app.maintenance import is_in_maintenance
+from app.exception_scope import load_no_notify, narrowest
 from app.models import (
     MonitorCheck,
-    MonitorMaintenance,
     MonitorState,
     MonitorTemplateAssignment,
 )
@@ -190,8 +189,8 @@ def _reportable(db: Session, check: MonitorCheck, state: MonitorState, now: date
 
 def _awaits_check(db: Session, check: MonitorCheck, state: MonitorState) -> bool:
     """True while the status of a heartbeat not muted now may still be the one it
-    was checked with under a muting that is over: its last evaluation fell into a
-    maintenance window of its server, or a Host Ping of its server changed its
+    was checked with under a muting that is over: its last evaluation fell under a
+    no_notify exception over it (a maintenance window of its server, say), or a Host Ping of its server changed its
     status after it (T19, branch review). Reported from it, a host back after an
     outage, or an agent back at the end of a window, got a CRITICAL, and the
     all-clear only after the hold. The next evaluation decides instead: still
@@ -200,15 +199,13 @@ def _awaits_check(db: Session, check: MonitorCheck, state: MonitorState) -> bool
 
     A Host Ping's since is the time of its last change, back to ok after its hold
     when it muted the heartbeat. What it changed from is not stored, so any change
-    after the heartbeat's last check holds it back, for one evaluation at most. A
-    window deleted or disabled is not seen."""
+    after the heartbeat's last check holds it back, for one evaluation at most. An
+    exception ended or disabled is not seen."""
     # last_check is empty only on a row no evaluation wrote. since is never later
     # than it, so counting from since holds back at least as much.
     checked = state.last_check or state.since
-    windows = (
-        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
-    )
-    if windows and is_in_maintenance(windows, check.server_id, checked):
+    exceptions = load_no_notify(db)
+    if narrowest(exceptions, check.id, check.check_type, check.server_id, checked) is not None:
         return True
     if not check.server_id:
         return False
