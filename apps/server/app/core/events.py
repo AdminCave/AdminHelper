@@ -13,8 +13,10 @@ fire_event() dispatches at once, for sources without a transaction.
 import json
 import logging
 import threading
+from collections import Counter
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import event
@@ -30,6 +32,16 @@ MAX_PENDING = 1000
 SHUTDOWN_TIMEOUT = 10.0
 _pending: set[Future] = set()
 _pending_lock = threading.Lock()
+
+# A burst of dropped events is logged once at its first event and summed up DROP_WINDOW
+# later, with a bell notice to the admins at most every DROP_NOTICE_EVERY (Kevin 2026-11-25):
+# one line per dropped event would flood the log in exactly the burst that fills the queue.
+DROP_WINDOW = 60.0
+DROP_NOTICE_EVERY = timedelta(minutes=15)
+DROPPED_EVENT = "server.events.dropped"
+_DROP_TYPES_SHOWN = 10
+_dropped: Counter[str] = Counter()
+_drop_timer: threading.Timer | None = None
 
 _QUEUED_KEY = "ah_queued_events"
 
@@ -98,13 +110,90 @@ def fire_event(event_type: str, event_data: Any) -> None:
 
     Only for sources without a transaction; a handler that commits uses queue_event.
     """
+    global _drop_timer
     with _pending_lock:
         if len(_pending) >= MAX_PENDING:
-            logger.warning("Event queue full (%d), event %s dropped", MAX_PENDING, event_type)
+            first = not _dropped
+            _dropped[event_type] += 1
+            if first:
+                logger.warning("Event queue full (%d), event %s dropped", MAX_PENDING, event_type)
+                _drop_timer = threading.Timer(DROP_WINDOW, _report_dropped)
+                _drop_timer.daemon = True
+                _drop_timer.start()
             return
         future = _executor.submit(_run_event, event_type, event_data)
         _pending.add(future)
     future.add_done_callback(_release)
+
+
+def _take_dropped() -> Counter[str]:
+    global _drop_timer
+    with _pending_lock:
+        dropped = _dropped.copy()
+        _dropped.clear()
+        if _drop_timer is not None:
+            _drop_timer.cancel()
+            _drop_timer = None
+    return dropped
+
+
+def _dropped_summary(dropped: Counter[str]) -> tuple[int, str]:
+    common = dropped.most_common()
+    types = ", ".join(f"{name} x{count}" for name, count in common[:_DROP_TYPES_SHOWN])
+    if len(common) > _DROP_TYPES_SHOWN:
+        types += f", {len(common) - _DROP_TYPES_SHOWN} more"
+    return sum(dropped.values()), types
+
+
+def _report_dropped() -> None:
+    """Sum up the burst that began DROP_WINDOW ago: one log line, and a bell notice to
+    the admins unless one went out within DROP_NOTICE_EVERY. Never raises."""
+    dropped = _take_dropped()
+    if not dropped:
+        return
+    total, types = _dropped_summary(dropped)
+    logger.warning("Event queue full: %d event(s) dropped (%s)", total, types)
+    _notify_dropped(total, types)
+
+
+def _notify_dropped(total: int, types: str) -> None:
+    from app.core.database import SessionLocal
+    from app.modules.notifications.models import Notification
+    from app.modules.notifications.schemas import IncomingEvent
+    from app.modules.notifications.service import notify_users
+    from app.modules.users.models import User
+
+    db = SessionLocal()
+    try:
+        since = datetime.now(timezone.utc) - DROP_NOTICE_EVERY
+        recent = (
+            db.query(Notification.id)
+            .filter(Notification.event_type == DROPPED_EVENT, Notification.notified_at >= since)
+            .first()
+        )
+        if recent is not None:
+            return
+        admins = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id).all()
+        notify_users(
+            db,
+            admins,
+            IncomingEvent(
+                event_type=DROPPED_EVENT,
+                severity="warning",
+                category="hooks",
+                title="Events dropped: event queue full",
+                body=(
+                    f"{total} event(s) dropped, their event hooks and notifications did not "
+                    f"run: {types}"
+                ),
+                source_type="events",
+            ),
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Bell notice for %d dropped event(s) could not be written", total)
+    finally:
+        db.close()
 
 
 def queue_event(db: Session, event_type: str, event_data: Any) -> None:
@@ -148,6 +237,10 @@ def shutdown_events(timeout: float = SHUTDOWN_TIMEOUT) -> None:
         pending = set(_pending)
     _, not_done = wait_futures(pending, timeout=timeout)
     dropped = sum(1 for future in not_done if future.cancel())
+    # Log only: at shutdown the database may already be gone.
+    burst = _take_dropped()
+    if burst:
+        logger.warning("Event queue full: %d event(s) dropped (%s)", *_dropped_summary(burst))
     if not_done:
         logger.warning(
             "Shutdown: %d event(s) unfinished after %g s, %d dropped",

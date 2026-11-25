@@ -9,12 +9,15 @@ The pool is bounded (MAX_PENDING) and shutdown_events waits a bounded time for i
 
 import logging
 import threading
+from collections import Counter
 from concurrent.futures import Future
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.core import events
 from app.core.auth import hash_password
+from app.modules.notifications.models import Notification
 from app.modules.users import router as users_router
 from app.modules.users.models import User
 from tests.test_users_promotion_event import _headers
@@ -56,7 +59,19 @@ def stalled(monkeypatch):
     yield recorder
     for future in recorder.futures:
         future.cancel()
+    # A burst this test left open must not fire its summary into the next one.
+    events._take_dropped()
     assert events._pending == set()
+
+
+@pytest.fixture()
+def no_drop_notice(monkeypatch):
+    # The bell of a burst, recorded instead of written.
+    calls = []
+    monkeypatch.setattr(
+        events, "_notify_dropped", lambda total, types: calls.append((total, types))
+    )
+    yield calls
 
 
 def test_commit_fires_the_queued_event_once(db_session, executor):
@@ -107,19 +122,134 @@ def test_a_failed_dispatch_leaves_the_commit_standing(db_session, monkeypatch, c
     assert db_session.info.get(events._QUEUED_KEY) is None
 
 
-def test_past_max_pending_an_event_is_dropped_with_a_warning(stalled, caplog):
+def test_past_max_pending_an_event_is_dropped_with_one_warning_per_burst(
+    stalled, no_drop_notice, caplog
+):
     with caplog.at_level(logging.WARNING, logger=events.__name__):
-        for _ in range(events.MAX_PENDING + 2):
+        for _ in range(events.MAX_PENDING + 3):
             events.fire_event(EVENT, None)
+        events.fire_event("test.other", None)
 
     assert len(stalled.calls) == events.MAX_PENDING
     assert [r.getMessage() for r in caplog.records] == [
         f"Event queue full ({events.MAX_PENDING}), event {EVENT} dropped"
-    ] * 2
+    ]
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=events.__name__):
+        events._report_dropped()
+    assert [r.getMessage() for r in caplog.records] == [
+        f"Event queue full: 4 event(s) dropped ({EVENT} x3, test.other x1)"
+    ]
+    assert no_drop_notice == [(4, f"{EVENT} x3, test.other x1")]
 
     stalled.futures[0].set_result(None)
     events.fire_event(EVENT, None)
     assert len(stalled.calls) == events.MAX_PENDING + 1
+
+
+def test_the_burst_is_summed_up_after_the_window(stalled, no_drop_notice, monkeypatch, caplog):
+    monkeypatch.setattr(events, "DROP_WINDOW", 0.05)
+    with caplog.at_level(logging.WARNING, logger=events.__name__):
+        for _ in range(events.MAX_PENDING + 2):
+            events.fire_event(EVENT, None)
+        timer = events._drop_timer
+        assert timer is not None
+        timer.join(timeout=30)
+
+    assert not timer.is_alive()
+    assert no_drop_notice == [(2, f"{EVENT} x2")]
+    assert events._dropped == {} and events._drop_timer is None
+
+
+def test_a_summary_names_at_most_ten_event_types():
+    dropped = Counter({f"test.e{i:02d}": 12 - i for i in range(12)})
+    total, types = events._dropped_summary(dropped)
+
+    assert total == sum(dropped.values())
+    assert types.split(", ")[0] == "test.e00 x12"
+    assert types.endswith("test.e09 x3, 2 more")
+
+
+def test_the_bell_tells_every_admin_once_per_quarter_hour(
+    db_session, admin_user, scope_session_on_test_db
+):
+    other = User(username="admin2", hashed_password=hash_password("pw-admin2"), is_admin=True)
+    viewer = User(username="viewer", hashed_password=hash_password("pw-viewer"))
+    db_session.add_all([other, viewer])
+    db_session.commit()
+
+    events._notify_dropped(5, f"{EVENT} x5")
+    events._notify_dropped(7, f"{EVENT} x7")
+
+    rows = db_session.query(Notification).filter_by(event_type=events.DROPPED_EVENT).all()
+    assert sorted(r.user_id for r in rows) == sorted([admin_user.id, other.id])
+    assert {(r.severity, r.category, r.title, r.body, r.source_type) for r in rows} == {
+        (
+            "warning",
+            "hooks",
+            "Events dropped: event queue full",
+            f"5 event(s) dropped, their event hooks and notifications did not run: {EVENT} x5",
+            "events",
+        )
+    }
+
+
+def test_a_bell_notice_older_than_a_quarter_hour_lets_the_next_one_through(
+    db_session, admin_user, scope_session_on_test_db
+):
+    events._notify_dropped(5, f"{EVENT} x5")
+    old = datetime.now(timezone.utc) - events.DROP_NOTICE_EVERY - timedelta(seconds=1)
+    db_session.query(Notification).filter_by(event_type=events.DROPPED_EVENT).update(
+        {"notified_at": old}
+    )
+    db_session.commit()
+
+    events._notify_dropped(7, f"{EVENT} x7")
+
+    bodies = [
+        r.body for r in db_session.query(Notification).filter_by(event_type=events.DROPPED_EVENT)
+    ]
+    assert len(bodies) == 2 and any(b.startswith("7 event(s)") for b in bodies)
+
+
+def test_a_failed_bell_notice_does_not_raise(monkeypatch, caplog):
+    from app.core import database
+
+    class _Broken:
+        def query(self, *_):
+            raise RuntimeError("database gone")
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(database, "SessionLocal", _Broken)
+    with caplog.at_level(logging.ERROR, logger=events.__name__):
+        events._notify_dropped(3, f"{EVENT} x3")
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "Bell notice for 3 dropped event(s) could not be written"
+    ]
+
+
+def test_shutdown_logs_an_open_burst_without_the_bell(stalled, no_drop_notice, caplog):
+    for _ in range(events.MAX_PENDING + 1):
+        events.fire_event(EVENT, None)
+    for future in stalled.futures:
+        future.set_result(None)
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING, logger=events.__name__):
+        events.shutdown_events(timeout=1)
+
+    assert [r.getMessage() for r in caplog.records] == [
+        f"Event queue full: 1 event(s) dropped ({EVENT} x1)"
+    ]
+    assert no_drop_notice == []
+    assert events._drop_timer is None
 
 
 def test_shutdown_waits_for_a_running_event(stalled, caplog):
