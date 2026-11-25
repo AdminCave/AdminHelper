@@ -1,5 +1,5 @@
 # Verworfene Events sichtbar machen — Task-Ledger
-Status: aktiv · Branch: feature/kern-events-2 · Review: am Ende
+Status: bereit · Branch: feature/kern-events-2 · Review: am Ende
 Spec: docs/features/kern-events-2.md (Roadmap R-1732)
 Heavy: none — nur der Event-Bus im Server-Prozess, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -15,8 +15,10 @@ schreibt danach eine Sammelzeile mit Anzahl und Typen und eine Glocken-Notiz an 
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_events_after_commit.py
 Doku: → T2
 
-### T2 — Doku: Warteschlange, Logger, Changelog (R-1732)  [ ]
+### T2 — Doku: Warteschlange, Logger, Changelog (R-1732)  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-events-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @496f772af 2026-11-25T04:49:42+01:00
+Review: am Ende (Branch-Review)
 Änderung: Absatz zur Warteschlange und Logger-Liste beschreiben Sammelzeile und Glocken-Notiz; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Dateien dieser Task
