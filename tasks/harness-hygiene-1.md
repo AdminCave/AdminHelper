@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Hygiene 1 — Task-Ledger
-Status: bereit · Branch: feature/harness-hygiene-1 · Review: pro Task
+Status: aktiv · Branch: feature/harness-hygiene-1 · Review: pro Task
 Spec: docs/features/harness-hygiene-1.md (Roadmap R-1721, R-1722, R-1723, R-1768, R-0479, R-0481, R-0593, R-1265, R-0914, R-1024, R-1347, R-1408, R-1680, R-1683)
 Heavy: linux-full — T5 ändert `scripts/backup.sh`, dessen Beweis `backup-restore` (echter Stack) nur der Sammellauf fährt; alles andere ist hermetisch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -109,6 +109,15 @@ Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c06dbf531 2026-1
 Review: am Ende (nur Doku, Branch-Review)
 Änderung: DEVELOPMENT.md: Teardown (gemergt gegen `origin/main`, Reste), Aufräumen der Berichte, `stats` ohne
 `kevin-min`. Changelog-Fragment (ae/oe/ue) unter Entwickler-Werkzeuge, Backup/Diagnose neutral.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: diese Task
+Task-Review: am Ende
+
+### T11 — Doku: Test-Venvs pinnen auf den Lock (Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, docs/features/harness-hygiene-1.md, tasks/harness-hygiene-1.md
+Änderung: reviewer branch (wichtig, DEVELOPMENT.md:80): `run.sh` (lokal und der Schemathesis-Job) installiert
+`requirements-dev.txt` mit dem Lock-Auszug als Constraint; nur die übrigen `ci.yml`-Jobs installieren lose. Dazu
+cicd.html DE+EN und das Nicht-Ziel der Spec (Nit).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
