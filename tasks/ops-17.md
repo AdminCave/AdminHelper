@@ -12,6 +12,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Entscheidungen
 - 2026-11-25 Kevin: die Session merged ops-17 selbst (auch agent-install.sh/update.sh).
+- 2026-11-25 T2: die Rechte der Dumps setzt ein Wegwerf-Container des postgres-Images (nur backups/ gemountet, --network none, find -type f), nicht der Host: backups/ beschreibt ein Container, ein Host-chmod folgte dort angelegten Links (Prüfer-Fund). Ein Warnzweig für fremde Eigentümer entfällt damit.
 
 ### T1 — R-1757, R-1766, R-1765: agent-install.sh nach abgebrochener Provisionierung; Test-Nachlese  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-17.md
@@ -22,8 +23,10 @@ Beweis: Roadmap R-1757 (Einzelheiten privat); scripts/tests/agent_install_test.s
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: changelog.d/ops-17.md (neutral)
 
-### T2 — R-1761, R-1765: update.sh setzt ältere Dumps auf nur-Besitzer; Test-Nachlese  [ ]
+### T2 — R-1761, R-1765: update.sh setzt ältere Dumps auf nur-Besitzer; Test-Nachlese  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-17.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3a9dafcaa 2026-11-25T16:17:23+01:00
+Review: approve (.ah-out/review/ops-17/T2.verdict.json)
 Änderung: update.sh setzt Dump-Dateien in `backups/` (`*.dump`) auf nur-Besitzer, soweit es ihr Eigentümer ist; andere nennt es mit einer Warnung. Der Snapshot-Test prüft positiv statt mit `grep -qv`.
 Beweis: Roadmap R-1761 (Einzelheiten privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test

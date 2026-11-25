@@ -128,6 +128,11 @@ case "$*" in
   "compose rm -f -s postgres") [ -z "${AH_TEST_VOLS:-}" ] || rm -f "$AH_TEST_VOLS/.pg18-up"; exit 0 ;;
   "exec "*" psql "*) echo "${AH_TEST_PG_SIZE:-1000}"; exit 0 ;;
   "info -f "*) pwd; exit 0 ;;
+  # The owner-only pass over backups/*.dump: the stub runs the same find on the host
+  # directory the -v maps to /b (R-1761).
+  "run --rm --network none -v "*":/b --entrypoint find "*)
+    [ -z "${AH_TEST_CHMOD_FAIL:-}" ] || exit 125
+    src=${6%:/b}; shift 10; exec find "$src" "$@" ;;
   "run --rm --network container:"*)
     [ "${AH_TEST_DUMP_FAIL:-}" != 1 ] || { echo "stub: pg_dumpall failed" >&2; exit 1; }
     printf '%s\n' '-- PostgreSQL database cluster dump' 'CREATE ROLE adminhelper;' \
@@ -530,8 +535,35 @@ for n in 1 2 3; do : > "$INST/backups/runtime-prev-2099010${n}T000000Z.tar.gz"; 
 out=$(run_update "$INST" 2>&1); rc=$?
 left=$(cd "$INST/backups" && find . -maxdepth 1 -name 'runtime-prev-*' -printf '%f\n' | sort | tr '\n' ' ')
 { [ $rc -eq 0 ] && [ "$(wc -w <<<"$left")" = 3 ] && grep -q 'runtime-prev-20990102T' <<<"$left" \
-  && grep -q 'runtime-prev-20990103T' <<<"$left" && grep -qv 'runtime-prev-2099' <<<"$(tr ' ' '\n' <<<"$left")"; } \
+  && grep -q 'runtime-prev-20990103T' <<<"$left" && grep -qE 'runtime-prev-20[0-8]' <<<"$left"; } \
   && ok "this run's snapshot stays even when older ones carry newer names" || bad "future-dated snapshots: rc=$rc $left"
+
+# Dumps an older pg-backup left readable beyond their owner become owner-only (R-1761);
+# a dump that is owner-only already stays as it is.
+INST="$WORK/inst7d"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"
+: > "$INST/backups/adminhelper-2026-01-01_00-00.dump"; chmod 644 "$INST/backups/adminhelper-2026-01-01_00-00.dump"
+: > "$INST/backups/adminhelper_monitor-2026-01-01_00-00.dump"; chmod 600 "$INST/backups/adminhelper_monitor-2026-01-01_00-00.dump"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(stat -c %a "$INST/backups/adminhelper-2026-01-01_00-00.dump")" = 600 ] \
+  && [ "$(stat -c %a "$INST/backups/adminhelper_monitor-2026-01-01_00-00.dump")" = 600 ]; } \
+  && ok "older dumps in backups/ become owner-only" \
+  || bad "dump modes: rc=$rc $(stat -c '%n %a' "$INST"/backups/*.dump | tr '\n' ' ')"
+# The owner-only pass that cannot run (no image, docker run fails) warns, the update goes on.
+INST="$WORK/inst7f"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"; : > "$INST/backups/adminhelper-2026-01-01_00-00.dump"
+out=$(AH_TEST_CHMOD_FAIL=1 run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'could not make the dumps in backups/ owner-only' <<<"$out"; } \
+  && ok "a failed owner-only pass warns and the update goes on" || bad "owner-only pass failure: rc=$rc"
+# A link named like a dump is no dump: its target keeps its mode (the pass touches
+# regular files only).
+INST="$WORK/inst7e"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"; : > "$WORK/outside-7e"; chmod 644 "$WORK/outside-7e"
+ln -s "$WORK/outside-7e" "$INST/backups/link.dump"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(stat -c %a "$WORK/outside-7e")" = 644 ]; } \
+  && ok "a link in backups/ named like a dump leaves its target alone" \
+  || bad "link target: rc=$rc mode $(stat -c %a "$WORK/outside-7e")"
 
 # ── 8. self-update: on-disk update.sh differs → re-exec into the release's one ─
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"

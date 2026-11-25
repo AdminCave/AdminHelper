@@ -879,6 +879,17 @@ done
 if [ "${#OTHERS[@]}" -gt 2 ]; then
     for old in "${OTHERS[@]:0:${#OTHERS[@]}-2}"; do rm -f -- "$old" || log "WARNING: could not delete ${old}"; done
 fi
+# Dumps an older pg-backup wrote kept wider modes (R-1761): owner-only now. A container
+# writes backups/, so the change runs in a throwaway container of the postgres image, on
+# regular files only: a link there resolves inside that container, never on this host,
+# and dumps the container's root owns get fixed even without root here.
+if compgen -G 'backups/*.dump' >/dev/null; then
+    PG_IMG=$(docker compose config --images postgres 2>/dev/null) || PG_IMG=""
+    if [ -z "$PG_IMG" ] || ! docker run --rm --network none -v "$(pwd)/backups:/b" --entrypoint find "$PG_IMG" \
+            /b -maxdepth 1 -type f -name '*.dump' -perm /077 -exec chmod go= {} +; then
+        log "WARNING: could not make the dumps in backups/ owner-only; check their modes (ls -l backups/)"
+    fi
+fi
 # .env as it was, for both rollbacks below: all of it goes back while no container
 # has been touched, only its image pins once containers may have started. Kept in $TMP
 # (0700, removed on exit), not in the snapshot, which both restore in whole.
