@@ -186,6 +186,23 @@ ensure_venv() {
   . "$AH_VENV/bin/activate"
 }
 
+# pip_dev — install the component's requirements-dev.txt (run in its directory) at the
+# versions of its lock, requirements.txt. requirements-dev.txt pulls the loose
+# requirements.in, so without the lock pip takes the newest release and the tests run
+# against versions production never sees (R-1024). The lock itself cannot be the
+# constraint: pip rejects extras and hashes there, so the constraint is a plain
+# name==version extract of it under AH_OUT_DIR.
+pip_dev() {
+  local c="$AH_OUT_DIR/constraints-${PWD##*/}.txt"
+  mkdir -p "$AH_OUT_DIR" \
+    && LC_ALL=C sed -nE 's/^([A-Za-z0-9._-]+)(\[[^]]*\])?==([^ ;\\]+).*/\1==\3/p' requirements.txt > "$c" \
+    || { echo "  (${PWD##*/}: no constraints from requirements.txt)"; return 1; }
+  # An empty extract would install unpinned again, the very drift this guards against.
+  [ -s "$c" ] || { echo "  (${PWD##*/}: requirements.txt pins nothing)"; return 1; }
+  python3 -m pip install -q -r requirements-dev.txt -c "$c"
+}
+export -f pip_dev  # the run_py_step `bash -c` subshells call it
+
 # Auto-debug: e2e specs (wdio afterTest) drop screenshots here on failure, and the
 # finalizer below runs the on-box collector when AH_CAPTURE=1. iter.sh pulls
 # this dir back via -artifact-glob. No effect on plain dev/CI runs (AH_CAPTURE unset).
@@ -766,13 +783,13 @@ layer_unit() {
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if ! only monitoring; then skip monitoring-pytest "monitoring pytest" "AH_ONLY"
   elif have python3; then
-    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/monitoring-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && pip_dev && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/monitoring-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip monitoring-pytest "monitoring pytest" "python3 not installed"; fi
 
   # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
   if ! only ca-issuer; then skip ca-issuer-pytest "ca-issuer pytest" "AH_ONLY"
   elif have python3 && [ -d apps/ca-issuer/tests ]; then
-    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/ca-issuer-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { pip_dev 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/ca-issuer-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip ca-issuer-pytest "ca-issuer pytest" "python3 missing or no tests"; fi
 
   # Server pytest — needs a Postgres: testcontainers (docker) or an injected
@@ -780,7 +797,7 @@ layer_unit() {
   # without the fallback the step skipped there silently, every single run.
   if ! only server; then skip server-pytest "server pytest" "AH_ONLY"
   elif have python3 && { [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker; }; then
-    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/server-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && pip_dev && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/server-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Schemathesis — each service's API fuzzed against its OWN OpenAPI schema. A step
@@ -826,7 +843,7 @@ layer_unit() {
             unset DATABASE_URL
           fi
           # Exit 1, whatever pip returned: its code must not pass for pytest 5.
-          python3 -m pip install -q -r requirements-dev.txt \
+          pip_dev \
             || { echo "  ($d: pip install -r requirements-dev.txt failed)"; exit 1; }
           # No $AH_ARGS: this step selects by marker, and a targeted run never gets
           # here (the elif above skips it), so there is nothing to forward.

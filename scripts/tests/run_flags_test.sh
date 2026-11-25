@@ -466,6 +466,41 @@ seq_got=$(awk '/-m pip install .*-r requirements-dev\.txt/ { sub(/:.*/, ""); pri
   && ok "schemathesis installs each service's dev packages before its suite" \
   || bad "schemathesis install order: rc=$rc seq='$seq_got'"
 
+# Each install takes the versions of the component's lock (R-1024): requirements-dev.txt
+# pulls the loose requirements.in, and without a constraint pip took newer releases than
+# production runs. The constraint is a name==version extract of requirements.txt: every
+# pinned line of the lock, nothing else, no hashes and no extras (pip refuses both there).
+lock_ok=1 lock_why=""
+for svc in server monitoring ca-issuer; do
+  cfile="$WORK/out/constraints-$svc.txt"
+  grep -qE "^$svc: .*-m pip install -q -r requirements-dev\.txt -c $cfile\$" "$CALLS" \
+    || { lock_ok=0; lock_why+=" $svc:no-c"; continue; }
+  want=$(LC_ALL=C grep -cE '^[A-Za-z0-9._-]+(\[[^]]*\])?==' "$REPO_ROOT/apps/$svc/requirements.txt")
+  got=$(LC_ALL=C grep -cE '^[A-Za-z0-9._-]+==[^ ]+$' "$cfile")
+  [ "$want" -gt 0 ] && [ "$got" -eq "$want" ] && [ "$(wc -l < "$cfile")" -eq "$want" ] \
+    || { lock_ok=0; lock_why+=" $svc:lines=$got/$want"; }
+  while IFS= read -r pin; do
+    n=${pin%%==*} v=${pin#*==}
+    LC_ALL=C grep -qE "^${n//./\\.}(\[[^]]*\])?==${v//./\\.} " "$REPO_ROOT/apps/$svc/requirements.txt" \
+      || { lock_ok=0; lock_why+=" $svc:$pin"; break; }
+  done < "$cfile"
+done
+sa_lock=$(sed -nE 's/^sqlalchemy==([^ ]+).*/\1/Ip' "$REPO_ROOT/apps/server/requirements.txt")
+[ -n "$sa_lock" ] && grep -qixF "sqlalchemy==$sa_lock" "$WORK/out/constraints-server.txt" \
+  || { lock_ok=0; lock_why+=" sqlalchemy:[$sa_lock]"; }
+[ "$lock_ok" -eq 1 ] && ok "each dev install is pinned to its component's lock" \
+  || bad "lock constraints:$lock_why calls: $(tr '\n' '|' < "$CALLS")"
+
+# A lock that pins nothing fails the install instead of quietly installing unpinned.
+PIPDEV_DIR="$WORK/pipdev/apps/x"; mkdir -p "$PIPDEV_DIR"
+printf '# no pins\n' > "$PIPDEV_DIR/requirements.txt"; : > "$PIPDEV_DIR/requirements-dev.txt"
+: > "$CALLS"
+out=$(cd "$PIPDEV_DIR" && PATH="$PYSHIM" AH_OUT_DIR="$WORK/pipdev-out" SHIM_CALL_LOG="$CALLS" \
+      "$PYSHIM/bash" -c "$(sed -n '/^pip_dev() {/,/^}/p' "$RUN")"'; pip_dev' 2>&1); rc=$?
+[ $rc -ne 0 ] && [ ! -s "$CALLS" ] && grep -qF 'x: requirements.txt pins nothing' <<<"$out" \
+  && ok "a lock without pins fails the install, pip never runs" \
+  || bad "empty lock: rc=$rc calls=[$(tr '\n' '|' < "$CALLS")] out=[$out]"
+
 # A failed install is a FAIL, without --strict too: a run that never fuzzed an
 # API may not read as one that did, and no suite starts in a venv that lacks
 # its packages.

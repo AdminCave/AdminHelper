@@ -63,8 +63,10 @@ Review: approve (.ah-out/review/harness-hygiene-1/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
 Doku: → T10 (CHANGELOG neutral)
 
-### T6 — run.sh: Test-Venvs nach dem Lock (R-1024)  [ ]
+### T6 — run.sh: Test-Venvs nach dem Lock (R-1024)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @140832048 2026-11-25T16:57:49+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T6.verdict.json)
 Änderung: Die Python-Schritte installieren `requirements-dev.txt` mit dem Lock der Komponente als Constraint, so dass
 die Venv die Lock-Versionen trägt (Belegt: `~/.cache/ah-venv` sqlalchemy 2.1.9, Lock 2.1.8). Ob pip den gehashten
 Lock als Constraint nimmt, wird zuerst belegt; sonst ein hash-freier Auszug in `AH_OUT_DIR`.
@@ -109,3 +111,4 @@ Task-Review: am Ende
 - T3: Aufräumen läuft in `run` direkt vor dem tmux-Start (nicht im Dry-Run, nicht bei übersprungener Nacht); Alter aus dem Verzeichnisnamen, „läuft noch“ = kein Urteil und mtime jünger als ein Tag. Gegenprobe: alte Fassung 2 failed.
 - T4: Die drei Agent-Pakete als eigener Block (Proben und Discovery laufen auf dem Host, credentials trägt Geheimnisse), `config.py` bei Auth, `checkers/http.py` bei SSRF, `agent-install.sh` bei Install. Gegenprobe: alte Liste 6 failed.
 - T5: Das Archiv entsteht in einem eigenen 0700-Verzeichnis im Ausgabeordner (`mktemp -d`), das Skript arbeitet darin über relative Namen und prüft Eigentümer, Mode und Inode vor dem Schreiben; kein zusätzliches `chmod 600` (Mode kommt von `mktemp`, die fd-Prüfung verlangt 600, auch unter Default-ACL). Das leere Verzeichnis räumt der EXIT-trap per `rmdir` nur über den Namen. Gegenprobe: alter Stand restore_guard 3 failed, diagnostics 6 Meldungen; je ein Mutant (ohne Inode-Vergleich, Zwischendatei über den Namen) rot. Runde 2 (security, wichtig): ein setgid-Ausgabeordner vererbt das Bit, `2700` gilt als eigen; das Bit bleibt, damit das Archiv wie bisher die Gruppe des Ordners trägt (Gegenprobe ohne `2700`: je 1 rot).
+- T6: pip nimmt den gehashten Lock nicht als Constraint („Constraints cannot have extras“, Hashes ebenso); `pip_dev` in `run.sh` zieht je Komponente einen `name==version`-Auszug nach `AH_OUT_DIR/constraints-<komp>.txt` und installiert `requirements-dev.txt -c` darauf, ein leerer Auszug bricht ab. Beleg: Worktree-Venv danach sqlalchemy 2.1.8 = Lock. Gegenprobe: alter `run.sh` 2 failed, Mutant „Extras im Auszug“ 1 failed.
