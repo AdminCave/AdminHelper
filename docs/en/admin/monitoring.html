@@ -222,7 +222,7 @@
           <table>
             <thead><tr><th>Check</th><th>stays silent while … stands at <code>critical</code> on the same server</th></tr></thead>
             <tbody>
-              <tr><td>Host Ping</td><td>nothing (only a maintenance window silences it)</td></tr>
+              <tr><td>Host Ping</td><td>nothing (only a maintenance window or an <a href="#exceptions">exception</a> silences it)</td></tr>
               <tr><td><code>agent_ping</code></td><td>the Host Ping</td></tr>
               <tr><td>all others</td><td>the <code>agent_ping</code> or the Host Ping</td></tr>
             </tbody>
@@ -248,6 +248,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
             <div><div class="callout-title">Catch-up after the window ends</div><p>The alerter remembers, per check, the last <em>reported</em> status: a problem that outlasts the window, and a recovery of an alert reported <em>before</em> the window, are <strong>caught up</strong> after the window ends (within the check interval at the latest). A transition that happens entirely <em>inside</em> the window (e.g. <code>ok → critical → ok</code> during maintenance) stays permanently silent – there never was a reported discrepancy.</p></div>
           </div>
+          <p>A deleted maintenance window has ended: it stops applying at once but stays traceable for 90 days (<code>GET /api/monitoring/exceptions?include_ended=true</code>) and is deleted after that. Who creates, changes or ends a window is recorded by the monitoring with name and account. Since this update maintenance windows are exceptions (below); the update takes the existing ones over unchanged.</p>
+          <h3 id="exceptions">Exceptions (API)</h3>
+          <p>Through <code>/api/monitoring/exceptions</code> (admin-only, see the <a href="../developer/api-reference.html">API reference</a>) notifications can be muted more precisely than with a maintenance window: for one check, a check type, a server or all servers, permanently, once or weekly, with a reason. As with a maintenance window, <em>collect-but-mute</em> applies; when several apply, the narrowest counts. The desktop has no interface for exceptions yet, and it does not mark a check muted by an exception that is not a maintenance window.</p>
+          <p>What a setting of a check leaves out (<code>ignore_devices</code> of <code>smart_health</code>, <code>ignore_mounts</code> of <code>agent_resources</code>, <code>ignore</code> of <code>service_process</code> in auto mode, <code>exclude_vmids</code> of <code>proxmox_backup</code>, <code>ignore_containers</code> of <code>docker_health</code>), <code>GET /api/monitoring/objects</code> lists as not collected (<code>not_collected</code>) at the end of the list; the field <code>exception</code> names the setting.</p>
 
           <h2 id="smart">SMART monitoring</h2>
           <p>The agent auto-detects SATA, SAS and NVMe disks (<code>smartctl --scan</code>). For NVMe the critical-warning bits are decoded individually:</p>

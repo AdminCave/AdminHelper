@@ -222,7 +222,7 @@
           <table>
             <thead><tr><th>Check</th><th>bleibt stumm, solange auf demselben Server auf <code>critical</code> steht …</th></tr></thead>
             <tbody>
-              <tr><td>Host Ping</td><td>nichts (stumm schaltet ihn nur ein Wartungsfenster)</td></tr>
+              <tr><td>Host Ping</td><td>nichts (stumm schaltet ihn nur ein Wartungsfenster oder eine <a href="#ausnahmen">Ausnahme</a>)</td></tr>
               <tr><td><code>agent_ping</code></td><td>der Host Ping</td></tr>
               <tr><td>alle anderen</td><td>der <code>agent_ping</code> oder der Host Ping</td></tr>
             </tbody>
@@ -248,6 +248,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
             <div><div class="callout-title">Nachmeldung nach Fenster-Ende</div><p>Der Alerter merkt sich pro Check den zuletzt <em>gemeldeten</em> Status: Ein Problem, das das Fenster überdauert, und eine Erholung eines <em>vor</em> dem Fenster gemeldeten Alerts werden nach Fenster-Ende <strong>nachgemeldet</strong> (spätestens nach dem Check-Intervall). Eine Transition, die vollständig <em>innerhalb</em> des Fensters passiert (z. B. <code>ok → critical → ok</code> während der Wartung), bleibt dagegen dauerhaft stumm – es gab nie eine gemeldete Abweichung.</p></div>
           </div>
+          <p>Ein gelöschtes Wartungsfenster ist beendet: Es gilt sofort nicht mehr, bleibt aber 90 Tage nachvollziehbar (<code>GET /api/monitoring/exceptions?include_ended=true</code>) und wird danach gelöscht. Wer ein Fenster anlegt, ändert oder beendet, hält das Monitoring mit Name und Konto fest. Wartungsfenster sind seit diesem Update Ausnahmen (unten); bestehende übernimmt das Update unverändert.</p>
+          <h3 id="ausnahmen">Ausnahmen (API)</h3>
+          <p>Über <code>/api/monitoring/exceptions</code> (admin-only, siehe <a href="../developer/api-reference.html">API-Referenz</a>) lassen sich Benachrichtigungen gezielter stummschalten als mit einem Wartungsfenster: für einen Check, einen Check-Typ, einen Server oder alle Server, dauerhaft, einmalig oder wöchentlich, mit Grund. Es gilt wie beim Wartungsfenster <em>collect-but-mute</em>; gelten mehrere, zählt die engste. Eine Oberfläche für Ausnahmen hat der Desktop noch nicht, und einen Check, den eine Ausnahme stummschaltet, die kein Wartungsfenster ist, kennzeichnet er nicht.</p>
+          <p>Was eine Einstellung eines Checks ausblendet (<code>ignore_devices</code> bei <code>smart_health</code>, <code>ignore_mounts</code> bei <code>agent_resources</code>, <code>ignore</code> bei <code>service_process</code> im Auto-Modus, <code>exclude_vmids</code> bei <code>proxmox_backup</code>, <code>ignore_containers</code> bei <code>docker_health</code>), führt <code>GET /api/monitoring/objects</code> als nicht erhoben (<code>not_collected</code>) am Ende der Liste; das Feld <code>exception</code> nennt die Einstellung.</p>
 
           <h2 id="smart">SMART-Monitoring</h2>
           <p>Der Agent erkennt automatisch SATA-, SAS- und NVMe-Festplatten (<code>smartctl --scan</code>). Für NVMe werden die Critical-Warning-Bits einzeln dekodiert:</p>

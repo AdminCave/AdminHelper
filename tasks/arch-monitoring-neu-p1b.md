@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1b — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1b · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1b · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1b.md (Roadmap R-1636)
 Heavy: linux-full — Server-Proxy (Präfix `exceptions`, Akteur-Header in `monitoring_proxy`) und eine Monitoring-Migration; kein Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -78,8 +78,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_objects_api
 Doku: → T7
 Abhängt von: T2, T5
 
-### T7 — Doku DE+EN und CHANGELOG (R-1636)  [ ]
+### T7 — Doku DE+EN und CHANGELOG (R-1636)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-neu-p1b.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @346b1d8e9 2026-11-25T20:04:58+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Entwickler-Doku Monitoring: Ausnahme-Modell (Geltung, Wirkung, Dauer, Spur, Herkunft), Wartung als Fassade, Leser, Akteur-Header, ausgenommene Objekte, Aufbewahrung, Rückweg der Migration. API-Referenz: `/exceptions`, `exception` an `GET /objects`, `mutedReason` `exception`, `DELETE /maintenance/{id}` beendet. Admin-Doku Monitoring: Löschen eines Wartungsfensters beendet es (90 Tage nachvollziehbar), per Einstellung ausgenommene Objekte. Changelog-Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
