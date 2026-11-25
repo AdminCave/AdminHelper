@@ -2565,6 +2565,16 @@
             "title": "Checkname",
             "type": "string"
           },
+          "exception": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObjectExceptionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "goneAt": {
             "anyOf": [
               {
@@ -2640,7 +2650,8 @@
           "badSince",
           "stable",
           "goneAt",
-          "lastCheck"
+          "lastCheck",
+          "exception"
         ],
         "title": "MonitorObjectOut",
         "type": "object"
@@ -2725,6 +2736,73 @@
           "notifiedStatus"
         ],
         "title": "MonitorStateOut",
+        "type": "object"
+      },
+      "ObjectExceptionOut": {
+        "description": "What keeps an object out (R-1636): a setting of its check (source setting, effect\nskip, the setting's name) or the narrowest exception in force over its check (source\nexception, its id, scope kind, effect and reason). The fields of the other source are\nnull.",
+        "properties": {
+          "effect": {
+            "title": "Effect",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "scopeKind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopekind"
+          },
+          "setting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setting"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "effect",
+          "setting",
+          "id",
+          "scopeKind",
+          "reason"
+        ],
+        "title": "ObjectExceptionOut",
         "type": "object"
       },
       "PlanCredentialOut": {
@@ -5621,7 +5699,7 @@
     },
     "/objects": {
       "get": {
-        "description": "The objects of the checks, worst first, then by name; gone ones only on request.",
+        "description": "The objects of the checks, worst first, then by name, the ones a setting excludes\nlast; gone ones only on request. Each names the setting or exception that keeps it out.",
         "operationId": "list_objects_objects_get",
         "parameters": [
           {

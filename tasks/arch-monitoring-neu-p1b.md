@@ -69,8 +69,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_object_stat
 Doku: → T7
 Abhängt von: T1
 
-### T6 — Objekt-API: Ausgenommene zuletzt, Feld `exception` (R-1636)  [ ]
+### T6 — Objekt-API: Ausgenommene zuletzt, Feld `exception` (R-1636)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/objects.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_objects_api.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5cb312a6c 2026-11-25T19:43:36+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1b/T6.verdict.json)
 Änderung: `list_objects` (`routers/objects.py:39`) sortiert `excluded` zuletzt, dann schlechteste zuerst (`_WORST_FIRST` `:27`), Name, Check, Schlüssel; Feld `exception` je Objekt: aus `excluded` `{source: setting, setting, effect: skip}`, sonst die engste geltende Ausnahme des Checks `{source: exception, id, scopeKind, effect, reason}`, eine Abfrage je Aufruf, Zuordnung nach dem Paging. `MonitorObjectOut` (`schemas.py:321`) um `exception`. Tests: Reihenfolge, beide Quellen, Einstellung schlägt Ausnahme, engste Ausnahme, `no_notify` sortiert nicht, Paging; OpenAPI-Snapshot.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_objects_api.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
 Doku: → T7
@@ -101,3 +103,5 @@ Abhängt von: T1, T2, T3, T4, T5, T6
 - 2026-11-25 T5: Eine ignorierte Platte im Standby wird kein Objekt — der Agent schickt dann nur den Gerätepfad (`smart.go`), ein Objekt darunter wäre ein zweites neben dem unter WWN; `complete` bleibt unverändert.
 - 2026-11-25 T5: `others_ok` löscht die Markierung `excluded` — es nennt keine Einstellung, ein Objekt, das es auf ok setzt, ist nicht mehr ausgenommen.
 - 2026-11-25 T5: Fünf bestehende Tests erwarteten „ausgenommen = kein Objekt“ (P1b/P1c) — als gewollte Verhaltensänderung angepasst, Kernaussage (Check, Meldung, `_details` unverändert) je mit Gegenstück ohne das Objekt gepaart.
+- 2026-11-25 T6: `GET /objects` liest die Ausnahmen mit `load_no_notify` (eine Abfrage je Seite, nach dem Paging zugeordnet) — P1b kennt nur die Wirkung `no_notify`, P1c (R-1637) erweitert den Leser um `skip`/`no_rating`; eine Ausnahme ändert weder Status noch Platz eines Objekts, nur die Einstellungs-Markierung sortiert (zuletzt).
+- 2026-11-25 T6: Die Einstellung zählt als Objekt-Geltung und schlägt jede Ausnahme-Zeile; ihr `exception` trägt `source: setting`, `effect: skip` und den Namen der Einstellung, die Felder der Ausnahme sind `null` (und umgekehrt).

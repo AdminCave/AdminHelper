@@ -426,6 +426,20 @@ class MonitorStateOut(BaseModel):
     notifiedStatus: str | None
 
 
+class ObjectExceptionOut(BaseModel):
+    """What keeps an object out (R-1636): a setting of its check (source setting, effect
+    skip, the setting's name) or the narrowest exception in force over its check (source
+    exception, its id, scope kind, effect and reason). The fields of the other source are
+    null."""
+
+    source: str
+    effect: str
+    setting: str | None
+    id: str | None
+    scopeKind: str | None
+    reason: str | None
+
+
 class MonitorObjectOut(BaseModel):
     checkId: str
     checkName: str
@@ -441,6 +455,7 @@ class MonitorObjectOut(BaseModel):
     stable: bool
     goneAt: str | None
     lastCheck: str | None
+    exception: ObjectExceptionOut | None
 
 
 class MonitorCheckOut(BaseModel):
