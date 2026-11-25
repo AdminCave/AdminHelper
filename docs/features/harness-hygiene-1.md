@@ -38,7 +38,7 @@ R-1347, R-1408, R-1680, R-1683.
 ## Ziel & Nicht-Ziele
 
 Jede Zeile wird an ihrer Wurzel behoben, mit einem Test, der vorher rot ist (wo es um Verhalten geht). Nicht-Ziele:
-`ci.yml` (Merger Kevin; die CI-Venvs bleiben, wie sie sind), CLAUDE.md, neue Kennzahlen in `stats`.
+`ci.yml` (Merger Kevin; die CI-Jobs bleiben unverändert, nur der Schemathesis-Job pinnt mit, weil er `run.sh` fährt), CLAUDE.md, neue Kennzahlen in `stats`.
 
 ## Entscheidungen der Session
 

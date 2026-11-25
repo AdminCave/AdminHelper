@@ -77,7 +77,11 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
            --output-file=requirements.txt requirements.in"
 ```
 
-Tests/CI installieren `requirements.in` (lose, ungehasht) — `--require-hashes`
+`scripts/tests/run.sh` (lokal und im Schemathesis-Job der CI) installiert
+`requirements-dev.txt` mit einem `name==version`-Auszug des Locks als Constraint
+(`$AH_OUT_DIR/constraints-<komp>.txt`; pip nimmt den gehashten Lock mit Extras nicht
+als Constraint), die Test-Venvs stehen also auf den Versionen des Images. Die übrigen
+Test-Jobs der CI installieren `requirements.in` (lose, ungehasht) — `--require-hashes`
 verträgt keine Mischung aus gehashten und ungehashten Zeilen. Den Stand, den das
 Image ausliefert, prüfen die CI-Jobs `python-lock-server`, `-monitoring` und
 `-ca-issuer` (Python wie im Dockerfile): erst der Lock mit `--require-hashes`, dann
