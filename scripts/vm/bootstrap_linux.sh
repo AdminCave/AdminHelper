@@ -40,6 +40,14 @@ PYTEST_VERSION="${AH_PYTEST_VERSION:-9.1.1}"
 # "Install oasdiff"); scripts/dev/toolchain-lockstep.sh holds the two together.
 OASDIFF_VERSION="${AH_OASDIFF_VERSION:-1.32.0}"
 OASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad}"
+# python3.14 for run.sh's venv: the install_only build of
+# astral-sh/python-build-standalone, pinned by release and SHA-256 and at the
+# patch version of the Dockerfiles' python:3.14-slim. Not the deadsnakes PPA:
+# Launchpad answered 503 on 2026-11-25 and every fresh box failed its lease
+# (R-1789); GitHub is a hard dependency of the boxes anyway.
+PY_VERSION="${AH_PY_VERSION:-3.14.10}"
+PY_PBS_RELEASE="${AH_PY_PBS_RELEASE:-20261124}"
+PY_SHA256_LINUX_AMD64="${AH_PY_SHA256:-bfa2f9fe1691f14a98c37e206641058ad7116db117ac924fdcab744987107ad8}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Profile: full (default — everything, for the single-box run.sh incl. desktop GUI
 # E2E) | server (docker stack only) | agent (Go agent + packaging). server/agent
@@ -148,12 +156,19 @@ $SUDO update-locale LANG=en_US.UTF-8 >/dev/null
 # 3.13+ API (SSLSocket.get_unverified_chain: the 2026-11-13 weekly, R-1418).
 # run.sh's ensure_venv builds the venv with python3.14 when it is installed.
 # Every profile: the bake warms each template with `run.sh unit`.
-log "python3.14 from the deadsnakes PPA (the Dockerfiles' Python, for run.sh's venv)"
-if ! python3.14 -c 'import ensurepip' >/dev/null 2>&1; then
-  $SUDO apt-get install -y --no-install-recommends --no-upgrade software-properties-common
-  $SUDO add-apt-repository -y ppa:deadsnakes/ppa
-  wait_apt_lock
-  $SUDO apt-get install -y --no-install-recommends --no-upgrade python3.14 python3.14-venv
+log "python ${PY_VERSION} from python-build-standalone ${PY_PBS_RELEASE} (the Dockerfiles' Python, for run.sh's venv)"
+if [ "$(python3.14 -c 'import ensurepip, platform; print(platform.python_version())' 2>/dev/null || true)" != "$PY_VERSION" ]; then
+  py_dir="/opt/ah-python/${PY_VERSION}"
+  curl -fsSL --retry 5 --retry-connrefused --retry-all-errors -o /tmp/ah-python.tgz \
+    "https://github.com/astral-sh/python-build-standalone/releases/download/${PY_PBS_RELEASE}/cpython-${PY_VERSION}%2B${PY_PBS_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz"
+  echo "${PY_SHA256_LINUX_AMD64}  /tmp/ah-python.tgz" | sha256sum -c --quiet -
+  $SUDO rm -rf "$py_dir"
+  $SUDO mkdir -p "$py_dir"
+  $SUDO tar -xzf /tmp/ah-python.tgz -C "$py_dir" --strip-components=1
+  rm -f /tmp/ah-python.tgz
+  $SUDO ln -sfn "$py_dir/bin/python3.14" /usr/local/bin/python3.14
+  python3.14 -c 'import ensurepip, ssl, sqlite3, venv' \
+    || { echo "python ${PY_VERSION} from ${PY_PBS_RELEASE} does not import ensurepip/ssl/sqlite3/venv" >&2; exit 1; }
 fi
 
 # The pipx fallback stays, the `|| true` behind it does not: run.sh dep-gates
