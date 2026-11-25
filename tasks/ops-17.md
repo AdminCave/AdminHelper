@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-17 — Betriebsskripte: Nachlese aus ops-16 — Task-Ledger
-Status: geplant · Branch: feature/ops-17 · Review: pro Task
+Status: aktiv · Branch: feature/ops-17 · Review: pro Task
 Spec: docs/features/ops-17.md (Roadmap R-1757, R-1761, R-1759, R-1765, R-1766)
 Heavy: linux-full — scripts/agent-install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
