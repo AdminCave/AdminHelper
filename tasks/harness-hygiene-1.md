@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Hygiene 1 — Task-Ledger
-Status: aktiv · Branch: feature/harness-hygiene-1 · Review: pro Task
+Status: bereit · Branch: feature/harness-hygiene-1 · Review: pro Task
 Spec: docs/features/harness-hygiene-1.md (Roadmap R-1721, R-1722, R-1723, R-1768, R-0479, R-0481, R-0593, R-1265, R-0914, R-1024, R-1347, R-1408, R-1680, R-1683)
 Heavy: linux-full — T5 ändert `scripts/backup.sh`, dessen Beweis `backup-restore` (echter Stack) nur der Sammellauf fährt; alles andere ist hermetisch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -103,8 +103,10 @@ das Verhalten echt; nur ohne `localedef` bleibt die statische Prüfung. Dazu R-1
 Verify: bash scripts/dev/verify.sh scripts --strict -- windows_update_set_test
 Doku: diese Task (release.md)
 
-### T10 — Doku: DEVELOPMENT.md und Changelog  [ ]
+### T10 — Doku: DEVELOPMENT.md und Changelog  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, changelog.d/harness-hygiene-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c06dbf531 2026-11-25T17:34:16+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: DEVELOPMENT.md: Teardown (gemergt gegen `origin/main`, Reste), Aufräumen der Berichte, `stats` ohne
 `kevin-min`. Changelog-Fragment (ae/oe/ue) unter Entwickler-Werkzeuge, Backup/Diagnose neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

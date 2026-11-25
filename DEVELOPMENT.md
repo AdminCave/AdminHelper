@@ -612,7 +612,11 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
   `bash scripts/dev/worktree-setup.sh <pfad> <slug>` richtet ihn ein (eigene Test-DB, eigenes Venv,
   `node_modules` als Hardlink-Kopie, frpc-Sidecar, Venv-Links, `.vm/lane`);
   `bash scripts/dev/worktree-teardown.sh <pfad> <slug>` reapt zuerst die VMs der Lane und raeumt dann
-  Worktree, Test-DB und Venv weg.
+  Test-DB, Venv und Worktree weg; einen Worktree mit uncommitteter Arbeit laesst es samt DB stehen.
+  Den Branch loescht es, wenn er in `origin/main` steckt (nach `git fetch`; ein Merge ueber die Queue
+  kommt so an, bevor der Haupt-Checkout vorspult). Reste, die einem anderen Benutzer gehoeren (etwa
+  `./data` eines Stack-Tests als Container-UID), entfernt es ueber einen Wegwerf-Container; ohne
+  Docker nennt es die Pfade und endet mit 1.
 - **Commit einer Task** nur ueber `task-close.sh` (Abschnitt „Task schliessen“).
 - **Token-Hooks:** `git config core.hooksPath scripts/dev/hooks`, einmal im Haupt-Checkout; Worktrees
   erben es. `pre-commit`, `prepare-commit-msg`, `pre-merge-commit` und `pre-applypatch` fahren
@@ -747,7 +751,8 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   Repos druckt es, ausfuehren tut es ihn nicht. Laeuft `gh` nicht, scheitert es oder liefert
   kein lesbares JSON: Exit 74.
 - `stats` zaehlt Tasks pro Tag (netto abgehakte `[x]` in `git log -p -- tasks/*.md`),
-  Kevin-Minuten pro PR, die Wartezeit je Zustand aus der Historie der Datei, die Stale-Quote
+  die Wartezeit je Zustand aus der Historie der Datei (ein einziger `git log -p` ueber das
+  private Repo, Sekunden statt Minuten), die Stale-Quote
   (offene Zeilen ueber ihrem Ablauf) und die Dedup-Quote. Seine Fenster sind ganze UTC-Tage,
   damit dieselbe Frage auf jeder Maschine dieselbe Antwort hat.
 
@@ -1522,6 +1527,10 @@ bash scripts/tests/nightly.sh run --dry-run   # nur die Vorpruefung, startet nic
 # vor install einmal wie unter Cron: env -i HOME="$HOME" PATH=/usr/bin:/bin bash scripts/tests/nightly.sh run --dry-run
 bash scripts/tests/nightly.sh uninstall   # entfernt genau diese Zeile
 ```
+
+Vor dem Start raeumt `run` `.ah-out/weekly/` auf: die 30 neuesten Laeufe bleiben, darueber hinaus
+Laeufe ohne PASS fuer 90 Tage; ein Lauf ohne Urteil, der juenger als ein Tag ist, gilt als laufend
+und bleibt. Die Langzeit-Sicht ist `tasks/private/history.csv`.
 
 `run` ueberspringt die Nacht (Grund in `.ah-out/nightly.log`), wenn der Haupt-Checkout nicht
 sauber auf `main` steht (ausgenommen der ungetrackte REG-Entwurf `tasks/reg-*.md` von `heavy.sh`),
