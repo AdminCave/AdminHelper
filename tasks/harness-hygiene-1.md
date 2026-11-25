@@ -34,8 +34,10 @@ Beweis: worktree-teardown.sh:110-117 (branch -d gegen lokalen main); ops-16 Tear
 Verify: bash scripts/dev/verify.sh scripts --strict -- worktree_setup_test
 Doku: → T10
 
-### T3 — nightly.sh: alte Berichte aufräumen (R-1723)  [ ]
+### T3 — nightly.sh: alte Berichte aufräumen (R-1723)  [x]
 Komponente: scripts · Dateien: scripts/tests/nightly.sh, scripts/tests/nightly_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @cca9acfdb 2026-11-25T15:44:23+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T3.verdict.json)
 Änderung: Vor jedem Start löscht `nightly.sh` unter `.ah-out/weekly/` alle Läufe außer den 30 neuesten; Läufe, deren
 erste Berichtszeile nicht `PASS` ist, bleiben 90 Tage. Gelöscht wird nur mit vollem Pfad je Verzeichnis, nie ein
 laufender (ohne `report.md`-Urteil und jünger als ein Tag).
@@ -100,3 +102,4 @@ Task-Review: am Ende
 ## Entscheidungen
 - T1: Engpass war das Parsen (12 216 Fassungen × 10 ms), nicht `git show`; `waits()` liest jetzt nur die `+|`-Zeilen eines `git log -p -U0`. Gegenprobe auf dem privaten Repo: 400,4 s → 16,5 s, gleiche Werte bis auf drei Übergänge aus 67 alten Fassungen mit doppelter ID (R-0047, R-0084), deren Flip-Flop die alte Fassung zählte.
 - T2: Ob der Worktree gehen darf, entscheidet `git status --porcelain` vor allem anderen (ein unsauberer behält auch seine DB); fremd-eigene Pfade findet `find ! -user $(id -u) -prune`, entfernt je Pfad `docker run --rm --network none … alpine rm -rf` (Muster `uninstall.sh`); ohne Remote prüft das Skript weiter gegen den lokalen `main`. Gegenprobe: alte Fassung 5 failed (alpha-Meldung, rho, sigma, tau).
+- T3: Aufräumen läuft in `run` direkt vor dem tmux-Start (nicht im Dry-Run, nicht bei übersprungener Nacht); Alter aus dem Verzeichnisnamen, „läuft noch“ = kein Urteil und mtime jünger als ein Tag. Gegenprobe: alte Fassung 2 failed.

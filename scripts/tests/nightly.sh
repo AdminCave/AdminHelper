@@ -22,6 +22,11 @@
 #                   cron's bare environment is enough)
 #              --dry-run runs 1, 2 and 4, fetches nothing, starts nothing and
 #              writes no log line.
+#              A run that starts first prunes $AH_OUT_DIR/weekly/ (R-1723): the
+#              30 newest run directories stay, and beyond them those whose
+#              verdict is not PASS for 90 days; history.csv in tasks/private
+#              keeps the long view. A directory without a verdict younger than
+#              a day may still be written to and stays.
 #   install    the one marked crontab line (01:30 every night); idempotent. A
 #              crontab that cannot be read (other than "no crontab") is left
 #              alone: exit 2, nothing written
@@ -53,6 +58,8 @@ VMPY="${AH_NIGHTLY_VMPY:-python3 scripts/vm/vm.py}"
 read -r -a VMPY_CMD <<<"$VMPY"
 WEEKLY_DAY="${AH_NIGHTLY_WEEKLY_DAY:-6}"
 SESSION=ah-nightly
+KEEP_RUNS=30
+KEEP_DAYS=90
 MARK="# ah-nightly (scripts/tests/nightly.sh)"
 # cron starts with PATH=/usr/bin:/bin; the session's tools (the ~/.local/bin links
 # of CLAUDE.md §10) come after it, never before: in front they would shadow the
@@ -105,6 +112,26 @@ preflight() {
   [ "$rc" = 0 ] || skip "vm.py list exited $rc (see $OUT/nightly-vmlist.out)"
 }
 
+# Only names heavy.sh gives its run directories (<yyyy-mm-dd-hhmm>) are touched,
+# each by its full path; anything else under weekly/ stays.
+prune() {
+  local dir="$OUT/weekly" name verdict cutoff seen=0 n=0
+  [ -d "$dir" ] || return 0
+  cutoff="$(date -d "-$KEEP_DAYS days" +%Y-%m-%d)"
+  while IFS= read -r name; do
+    seen=$((seen + 1))
+    [ "$seen" -le "$KEEP_RUNS" ] && continue
+    verdict="$(head -n 1 "$dir/$name/report.md" 2>/dev/null || true)"
+    case "$verdict" in
+      PASS*) ;;
+      *) [[ "${name:0:10}" < "$cutoff" ]] || continue
+         [ -n "$verdict" ] || [ -z "$(find "$dir/$name" -maxdepth 0 -mmin -1440)" ] || continue ;;
+    esac
+    rm -rf -- "${dir:?}/$name" && n=$((n + 1))
+  done < <(cd "$dir" && printf '%s\n' * | LC_ALL=C grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}$' | LC_ALL=C sort -r)
+  [ "$n" = 0 ] || log "prune: $n run(s) removed from $dir"
+}
+
 case "$VERB" in
   run)
     preflight
@@ -112,6 +139,7 @@ case "$VERB" in
       echo "nightly: pre-flight ok — would start '$HEAVY $mode' in tmux $SESSION"
       exit 0
     fi
+    prune
     tmux new-session -d -s "$SESSION" -c "$ROOT" "$HEAVY $mode" || skip "tmux new-session failed"
     log "start (HEAD $(git -C "$ROOT" rev-parse --short HEAD))"
     echo "nightly: started '$HEAVY $mode' in tmux $SESSION"
