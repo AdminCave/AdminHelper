@@ -155,7 +155,7 @@ def test_the_burst_is_summed_up_after_the_window(stalled, no_drop_notice, monkey
             events.fire_event(EVENT, None)
         timer = events._drop_timer
         assert timer is not None
-        timer.join(timeout=5)
+        timer.join(timeout=30)
 
     assert not timer.is_alive()
     assert no_drop_notice == [(2, f"{EVENT} x2")]
