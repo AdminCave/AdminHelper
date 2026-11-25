@@ -44,8 +44,10 @@ laufender (ohne `report.md`-Urteil und jünger als ein Tag).
 Verify: bash scripts/dev/verify.sh scripts --strict -- nightly_test
 Doku: → T10
 
-### T4 — review-risk.txt: fehlende Risikopfade (R-0479, R-0481, R-0593, R-1265)  [ ]
+### T4 — review-risk.txt: fehlende Risikopfade (R-0479, R-0481, R-0593, R-1265)  [x]
 Komponente: scripts · Dateien: scripts/dev/review-risk.txt, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fc99e31db 2026-11-25T15:52:44+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T4.verdict.json)
 Änderung: Aufnehmen: `apps/server/app/core/config.py`, `scripts/agent-install.sh`,
 `apps/monitoring/app/checkers/http.py`, `apps/agent/internal/probe/`, `apps/agent/internal/discovery/`,
 `apps/agent/internal/credentials/`; ein Test je Pfad, dass `review.sh risk` ihn als Risikopfad meldet.
@@ -103,3 +105,4 @@ Task-Review: am Ende
 - T1: Engpass war das Parsen (12 216 Fassungen × 10 ms), nicht `git show`; `waits()` liest jetzt nur die `+|`-Zeilen eines `git log -p -U0`. Gegenprobe auf dem privaten Repo: 400,4 s → 16,5 s, gleiche Werte bis auf drei Übergänge aus 67 alten Fassungen mit doppelter ID (R-0047, R-0084), deren Flip-Flop die alte Fassung zählte.
 - T2: Ob der Worktree gehen darf, entscheidet `git status --porcelain` vor allem anderen (ein unsauberer behält auch seine DB); fremd-eigene Pfade findet `find ! -user $(id -u) -prune`, entfernt je Pfad `docker run --rm --network none … alpine rm -rf` (Muster `uninstall.sh`); ohne Remote prüft das Skript weiter gegen den lokalen `main`. Gegenprobe: alte Fassung 5 failed (alpha-Meldung, rho, sigma, tau).
 - T3: Aufräumen läuft in `run` direkt vor dem tmux-Start (nicht im Dry-Run, nicht bei übersprungener Nacht); Alter aus dem Verzeichnisnamen, „läuft noch“ = kein Urteil und mtime jünger als ein Tag. Gegenprobe: alte Fassung 2 failed.
+- T4: Die drei Agent-Pakete als eigener Block (Proben und Discovery laufen auf dem Host, credentials trägt Geheimnisse), `config.py` bei Auth, `checkers/http.py` bei SSRF, `agent-install.sh` bei Install. Gegenprobe: alte Liste 6 failed.
