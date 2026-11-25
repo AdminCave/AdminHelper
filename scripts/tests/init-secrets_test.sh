@@ -288,9 +288,19 @@ printf '#!/usr/bin/env bash\ncase "${*: -2:1}" in *.env.ah-*) kill -TERM "$PPID"
   "$(command -v mv)" > "$TERMDIR/bin/mv"
 chmod +x "$TERMDIR/bin/mv"
 PATH="$TERMDIR/bin:$PATH" bash "$INIT" "$ENV" >/dev/null 2>&1; rc=$?
-[ $rc -ne 0 ] && ok "SIGTERM while the .env is written ends init-secrets.sh" || bad "SIGTERM while writing: exit $rc"
+# 143 = 128 + SIGTERM: the signal ended the run, not the wrapper's own exit 1.
+[ $rc -eq 143 ] && ok "SIGTERM while the .env is written ends init-secrets.sh (143)" || bad "SIGTERM while writing: exit $rc"
 ! compgen -G "$TERMDIR/.env.ah-*" >/dev/null && ok "SIGTERM while the .env is written leaves no .env.ah-* copy" \
   || bad "copies left after SIGTERM: $(compgen -G "$TERMDIR/.env.ah-*" | tr '\n' ' ')"
+
+# The EXIT traps over ENV_TMPS expand the array only when it is set: bash before 4.4
+# (this box runs a newer one) calls an empty array unbound under set -u (R-1765).
+for s in init-secrets install update; do
+  grep -qF 'rm -f -- ${ENV_TMPS[@]+"${ENV_TMPS[@]}"}' "$REPO_ROOT/scripts/$s.sh" \
+    && ! grep -qF 'rm -f -- "${ENV_TMPS[@]}"' "$REPO_ROOT/scripts/$s.sh" \
+    && ok "$s.sh: the trap over ENV_TMPS holds under bash 4.2 as well" \
+    || bad "$s.sh: the trap expands ENV_TMPS unguarded"
+done
 
 echo
 echo "──────────────────────────────────────────"

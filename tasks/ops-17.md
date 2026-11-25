@@ -1,0 +1,59 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# ops-17 — Betriebsskripte: Nachlese aus ops-16 — Task-Ledger
+Status: erledigt · Branch: feature/ops-17 · Review: pro Task
+Spec: docs/features/ops-17.md (Roadmap R-1757, R-1761, R-1759, R-1765, R-1766)
+Heavy: linux-full — scripts/agent-install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (Sammellauf)
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+## Entscheidungen
+- 2026-11-25 Kevin: die Session merged ops-17 selbst (auch agent-install.sh/update.sh).
+- 2026-11-25 T2: die Rechte der Dumps setzt ein Wegwerf-Container des postgres-Images (nur backups/ gemountet, --network none, find -type f), nicht der Host: backups/ beschreibt ein Container, ein Host-chmod folgte dort angelegten Links (Prüfer-Fund). Ein Warnzweig für fremde Eigentümer entfällt damit.
+- 2026-11-25 T3/T4: scripts/tests/backup_restore_test.sh trägt den Live-Block für pg-backup (T3) und die Probe mit Typ und Funktion (T4); task-close stagt ganze Dateien, deshalb gehört die Datei zu T4 (Prüfer-Fund: an T3 allein wäre der Probe-Teil rot). Den Fix von T3 belegt test_env_parity.
+
+### T1 — R-1757, R-1766, R-1765: agent-install.sh nach abgebrochener Provisionierung; Test-Nachlese  [x]
+Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-17.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ef493aacd 2026-11-25T15:38:41+01:00
+Review: approve (.ah-out/review/ops-17/T1.verdict.json)
+Änderung: Scheitert `adminhelper-agent provision`, schreibt agent-install.sh vor dem Abbruch die Repo-Konfiguration nach der vorhandenen Identitäts-CA (`write_repo_tls`). Tests: Provisionierung scheitert auf einem Host mit CA (apt und dnf) → Konfiguration wie vor dem Lauf; dnf-Fall `--server-id` mit alter CA; Fehlerpfad der CA-Kopie; die Token-Prüfungen suchen den ganzen Token statt `zz9`.
+Beweis: Roadmap R-1757 (Einzelheiten privat); scripts/tests/agent_install_test.sh:214,226 (R-1766)
+Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
+Doku: changelog.d/ops-17.md (neutral)
+
+### T2 — R-1761, R-1765: update.sh setzt ältere Dumps auf nur-Besitzer; Test-Nachlese  [x]
+Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh, changelog.d/ops-17.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3a9dafcaa 2026-11-25T16:17:23+01:00
+Review: approve (.ah-out/review/ops-17/T2.verdict.json)
+Änderung: update.sh setzt Dump-Dateien in `backups/` (`*.dump`) auf nur-Besitzer, soweit es ihr Eigentümer ist; andere nennt es mit einer Warnung. Der Snapshot-Test prüft positiv statt mit `grep -qv`.
+Beweis: Roadmap R-1761 (Einzelheiten privat)
+Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
+Doku: changelog.d/ops-17.md (neutral)
+
+### T3 — R-1759: pg-backup sichert je Dienst-Rolle  [x]
+Komponente: server · Dateien: scripts/pg-backup.sh, docker-compose.yml, apps/server/tests/test_env_parity.py, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-17.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @046301146 2026-11-25T16:39:21+01:00
+Review: approve (.ah-out/review/ops-17/T3.verdict.json)
+Änderung: pg-backup.sh dumpt `adminhelper` als `ah_server` und `adminhelper_monitor` als `ah_monitor` (Passwörter `SERVER_DB_PASSWORD`, `MONITOR_DB_PASSWORD` aus der Umgebung); der Dienst bekommt diese statt `POSTGRES_PASSWORD` und wartet auf db-init. test_env_parity: Superuser-Passwort wieder nur postgres/db-init. Live: backup_restore_test fährt pg-backup einmal im Profil und prüft beide Dumps (nur-Besitzer, nicht leer).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py tests/test_compose_hardening.py
+Doku: docs/admin/betrieb.html DE + docs/en/admin/operations.html · changelog.d/ops-17.md
+
+### T4 — R-1765: restore.sh leert auch Routinen und Typen; Trap-Nachlese  [x]
+Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, scripts/install.sh, scripts/update.sh, changelog.d/ops-17.md, scripts/tests/backup_restore_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @38b63eee3 2026-11-25T17:03:18+01:00
+Review: approve (.ah-out/review/ops-17/T4.verdict.json)
+Änderung: Das Leeren in restore_db entfernt auch Funktionen/Prozeduren/Aggregate und eigenständige Composite-/Range-Typen in public; scheitert das Leeren, läuft kein pg_restore (Test). Die EXIT-Traps über `ENV_TMPS` in init-secrets.sh, install.sh und update.sh vertragen ein leeres Array auch unter bash 4.2; der SIGTERM-Test prüft rc=143.
+Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test init-secrets_test install_test update_test
+Doku: changelog.d/ops-17.md
+Abhängt von: T2
+
+### T5 — R-1759: Monitoring-Test von pg-backup kennt die Rollen-Passwörter  [x]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_catalog_adminhelper.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @087f641ca 2026-11-25T17:37:18+01:00
+Review: approve (.ah-out/review/ops-17/T5.verdict.json)
+Änderung: Die PR-CI (#672) war rot: test_catalog_adminhelper fährt scripts/pg-backup.sh mit Stub-pg_dump, kannte aber die seit T3 verlangten SERVER_DB_PASSWORD/MONITOR_DB_PASSWORD nicht. Der Helfer setzt sie; ein neuer Fall: ohne die Passwörter bricht das Skript ab und schreibt nichts.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_adminhelper.py
+Doku: keine (Test)

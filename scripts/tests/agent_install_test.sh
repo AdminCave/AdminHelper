@@ -89,6 +89,8 @@ EOF
 cat > "$BIN/dnf" <<EOF
 #!/usr/bin/env bash
 echo "\$@" >> "$WORK/dnf.calls"
+# The repo TLS stance dnf meets when it installs the agent (before any provisioning).
+[[ " \$* " == *" adminhelper-agent "* ]] && grep ssl "\$AH_YUM_REPO_DIR/adminhelper.repo" >> "$WORK/dnf-repo-at-install" 2>/dev/null
 exit 0
 EOF
 cat > "$BIN/adminhelper-agent" <<EOF
@@ -109,6 +111,8 @@ case "\$1" in
     if grep -qx -- '--token-stdin' "$WORK/provision.args"; then
       cat > "$WORK/provision.stdin"
     fi
+    # AH_STUB_PROVISION_FAIL=1: provisioning fails before it enrolls anything.
+    [ "\${AH_STUB_PROVISION_FAIL:-0}" = 1 ] && exit 1
     if [ "\${AH_STUB_ENROLL:-1}" = 1 ]; then
       mkdir -p "\$(dirname "\$AH_IDENTITY_CA")" && echo test-ca > "\$AH_IDENTITY_CA"
     fi
@@ -134,8 +138,8 @@ fresh_env() {
     export AH_RPM_KEY_DIR="$ROOT/rpm-gpg"
     export AH_IDENTITY_CA="$ROOT/identity/ca.crt"
     export AH_REPO_CA="$ROOT/apt/adminhelper-ca.crt"
-    rm -f "$WORK/provision.args" "$WORK/provision.stdin" "$WORK/apt-get.calls" "$WORK/dnf.calls" "$WORK/apt-conf-at-update"
-    unset AH_STUB_NO_CAFP AH_STUB_NO_TOKEN_STDIN AH_STUB_ENROLL AH_STUB_VIRT AH_STUB_SMART_FAIL 2>/dev/null || true
+    rm -f "$WORK/provision.args" "$WORK/provision.stdin" "$WORK/apt-get.calls" "$WORK/dnf.calls" "$WORK/apt-conf-at-update" "$WORK/dnf-repo-at-install"
+    unset AH_STUB_NO_CAFP AH_STUB_NO_TOKEN_STDIN AH_STUB_ENROLL AH_STUB_VIRT AH_STUB_SMART_FAIL AH_STUB_PROVISION_FAIL 2>/dev/null || true
 }
 
 run_script() { bash "$SCRIPT" "$@" 2>&1; }
@@ -207,11 +211,11 @@ out=$(run_script --server https://srm.example.com --token zz9tok-1 --server-id s
 grep -qx -- "--token-stdin" "$WORK/provision.args" 2>/dev/null && grep -qx -- "--ca-fp" "$WORK/provision.args" \
     && ok "provision got --token-stdin (and --ca-fp from the same help)" \
     || bad "provision args: $(tr '\n' ' ' < "$WORK/provision.args" 2>/dev/null)"
-[ -s "$WORK/provision.args" ] && ! grep -q "zz9" "$WORK/provision.args" && ! grep -qx -- "--token" "$WORK/provision.args" \
+[ -s "$WORK/provision.args" ] && ! grep -qF "zz9tok-1" "$WORK/provision.args" && ! grep -qx -- "--token" "$WORK/provision.args" \
     && ok "neither the token nor --token is a program argument" || bad "token passed as an argument"
 [ "$(cat "$WORK/provision.stdin" 2>/dev/null)" = "zz9tok-1" ] \
     && ok "the agent read the token from stdin" || bad "agent stdin: '$(cat "$WORK/provision.stdin" 2>/dev/null)'"
-! grep -q "zz9" <<<"$out" && ok "the output does not name the token" || bad "token in the output"
+! grep -qF "zz9tok-1" <<<"$out" && ok "the output does not name the token" || bad "token in the output"
 
 echo "── old agent without --token-stdin: token as an argument + warning ──"
 fresh_env; export AH_PKG_MGR=apt AH_STUB_NO_TOKEN_STDIN=1
@@ -223,7 +227,7 @@ grep -qx -- "--token" "$WORK/provision.args" 2>/dev/null && grep -qx "zz9tok-1" 
     && ok "fell back to --token (and kept --ca-fp)" \
     || bad "fallback args: $(tr '\n' ' ' < "$WORK/provision.args" 2>/dev/null)"
 grep -qi "predates --token-stdin" <<<"$out" && ok "warns that the token goes on the command line" || bad "no warning"
-! grep -q "zz9" <<<"$out" && ok "the warning does not name the token" || bad "token in the output"
+! grep -qF "zz9tok-1" <<<"$out" && ok "the warning does not name the token" || bad "token in the output"
 
 echo "── dnf path: verified local gpgkey, sslverify flip after enroll ──"
 fresh_env; export AH_PKG_MGR=dnf
@@ -300,6 +304,52 @@ out=$(run_script --server https://srm.example.com --token t --server-id s --gpg-
     && grep -q "CAInfo \"$AH_REPO_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" && [ "$(cat "$AH_REPO_CA")" = test-ca ] \
     && ok "apt, --server-id with an old CA: bootstrap before enrolling, the new CA pinned after" \
     || bad "apt provisioning with old CA: rc=$rc at-update=$(cat "$WORK/apt-conf-at-update" 2>/dev/null)"
+fresh_env; export AH_PKG_MGR=dnf
+mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo old-ca > "$AH_IDENTITY_CA"
+out=$(run_script --server https://srm.example.com --token t --server-id s --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -qx 'sslverify=0' "$WORK/dnf-repo-at-install" 2>/dev/null \
+    && ! grep -q sslcacert "$WORK/dnf-repo-at-install" \
+    && grep -q "sslcacert=$AH_IDENTITY_CA" "$AH_YUM_REPO_DIR/adminhelper.repo" \
+    && ok "dnf, --server-id with an old CA: bootstrap before enrolling, the CA pinned after" \
+    || bad "dnf provisioning with old CA: rc=$rc at-install=$(cat "$WORK/dnf-repo-at-install" 2>/dev/null)"
+# Provisioning that fails on an enrolled host: the run fetched the index in the
+# bootstrap stance and goes back to the stance of the CA the host still holds.
+for mgr in apt dnf; do
+  fresh_env; export AH_PKG_MGR=$mgr AH_STUB_PROVISION_FAIL=1
+  mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo old-ca > "$AH_IDENTITY_CA"
+  out=$(run_script --server https://srm.example.com --token t --server-id s --gpg-fp "$FP"); rc=$?
+  case $mgr in
+    apt) pinned() { grep -q "CAInfo \"$AH_REPO_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
+           && ! grep -q Verify-Peer "$AH_APT_CONF_DIR/99adminhelper-ca" && [ "$(cat "$AH_REPO_CA" 2>/dev/null)" = old-ca ]; } ;;
+    dnf) pinned() { grep -q "sslcacert=$AH_IDENTITY_CA" "$AH_YUM_REPO_DIR/adminhelper.repo" 2>/dev/null \
+           && ! grep -q sslverify=0 "$AH_YUM_REPO_DIR/adminhelper.repo"; } ;;
+  esac
+  { [ $rc -ne 0 ] && grep -q "provisioning failed" <<<"$out" && pinned; } \
+    && ok "$mgr, provisioning fails on an enrolled host: the repo stays pinned to its CA" \
+    || bad "$mgr failed provisioning: rc=$rc"
+done
+unset AH_STUB_PROVISION_FAIL
+# The run stops before provisioning (no token and no terminal to ask on): the enrolled
+# host gets the stance of its CA back as well, whatever ended the run (R-1757).
+if command -v setsid >/dev/null 2>&1; then
+  fresh_env; export AH_PKG_MGR=apt
+  mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo old-ca > "$AH_IDENTITY_CA"
+  out=$(setsid bash "$SCRIPT" --server https://srm.example.com --server-id s --gpg-fp "$FP" </dev/null 2>&1); rc=$?
+  { [ $rc -ne 0 ] && grep -q "no interactive terminal" <<<"$out" \
+    && grep -q "CAInfo \"$AH_REPO_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
+    && ! grep -q Verify-Peer "$AH_APT_CONF_DIR/99adminhelper-ca"; } \
+    && ok "apt, no token and no terminal on an enrolled host: the repo stays pinned to its CA" \
+    || bad "apt abort before provisioning: rc=$rc conf=$(cat "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null)"
+else
+  bad "setsid missing: the abort before provisioning cannot be tested"
+fi
+# The CA copy for apt cannot be written: the run stops and says so.
+fresh_env; export AH_PKG_MGR=apt
+mkdir -p "$(dirname "$AH_IDENTITY_CA")" && echo old-ca > "$AH_IDENTITY_CA"
+: > "$ROOT/not-a-dir"; export AH_REPO_CA="$ROOT/not-a-dir/adminhelper-ca.crt"
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+{ [ $rc -ne 0 ] && grep -q "could not copy the internal CA" <<<"$out"; } \
+  && ok "apt: a CA copy that cannot be written stops the run" || bad "CA copy failure: rc=$rc"
 fresh_env; export AH_PKG_MGR=apt
 out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
 [ $rc -eq 0 ] && grep -q 'Verify-Peer "false"' "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null && [ ! -e "$AH_REPO_CA" ] \

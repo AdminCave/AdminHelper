@@ -668,8 +668,9 @@ services:
       - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
     environment:
       - PGHOST=postgres
-      - PGUSER=adminhelper
-      - PGPASSWORD=${POSTGRES_PASSWORD}
+      # Each database dumped as its own service role, never as the superuser (R-1759).
+      - SERVER_DB_PASSWORD=${SERVER_DB_PASSWORD}
+      - MONITOR_DB_PASSWORD=${MONITOR_DB_PASSWORD}
       - BACKUP_DIR=/backups
       - RETENTION_DAYS=7
     entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
@@ -684,6 +685,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
 # Four networks. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
 # plane is NOT on the shared default net — a compromised internet-facing frps could

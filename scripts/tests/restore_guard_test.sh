@@ -249,7 +249,9 @@ case "$*" in
     if grep -q certificate_register_state <<<"$sql"; then
       printf '%s\n' "$sql" > "$STUB_DIR/register.sql"; echo "REOPEN $*" >> "$STUB_DIR/calls.log"; exit 0
     fi
-    printf '%s\n' "$sql" >> "$STUB_DIR/clear.sql"; echo "CLEAR $*" >> "$STUB_DIR/calls.log"; exit 0 ;;
+    printf '%s\n' "$sql" >> "$STUB_DIR/clear.sql"; echo "CLEAR $*" >> "$STUB_DIR/calls.log"
+    # AH_STUB_CLEAR_FAIL=1: emptying the database fails (ON_ERROR_STOP).
+    [ "${AH_STUB_CLEAR_FAIL:-0}" = 1 ] && exit 3; exit 0 ;;
   *pg_restore*)    cat >/dev/null ;;
   "compose config")                   echo 'name: drproj' ;;
   "compose config --images postgres") echo 'postgres:17-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
@@ -278,7 +280,9 @@ cleared=$(grep -n '^CLEAR .*-U ah_server -d adminhelper ' "$WORK/reg/a/calls.log
 # and types of public, so a database migrated forward keeps nothing the dump lacks.
 { [ -n "$cleared" ] && [ -n "$restored" ] && [ "$cleared" -lt "$restored" ] \
     && grep -q "DROP %s IF EXISTS public.%I CASCADE" "$WORK/reg/a/clear.sql" \
-    && grep -q "DROP SEQUENCE IF EXISTS" "$WORK/reg/a/clear.sql" && grep -q "DROP TYPE IF EXISTS" "$WORK/reg/a/clear.sql"; } \
+    && grep -q "DROP SEQUENCE IF EXISTS" "$WORK/reg/a/clear.sql" && grep -q "DROP TYPE IF EXISTS" "$WORK/reg/a/clear.sql" \
+    && grep -q "WHEN 'a' THEN 'AGGREGATE' ELSE 'ROUTINE'" "$WORK/reg/a/clear.sql" \
+    && grep -q "t.typtype IN ('e', 'd', 'r')" "$WORK/reg/a/clear.sql"; } \
   && ok "the server DB is emptied as ah_server before its pg_restore" \
   || bad "emptying: clear at ${cleared:-none}, pg_restore at ${restored:-none}"
 
@@ -289,6 +293,14 @@ out=$(reg_restore "$WORK/reg/b" "$WORK/reg/mon.tar.gz"); rc=$?
     && ! grep -q '^CLEAR .*-d adminhelper ' "$WORK/reg/b/calls.log"; } \
   && ok "without the server DB the register is left alone" \
   || bad "monitor-only restore: rc=$rc calls=[$(cat "$WORK/reg/b/calls.log" 2>/dev/null)]"
+
+# Emptying that fails stops the restore before any pg_restore (R-1765).
+mkdir -p "$WORK/reg/c"
+out=$(AH_STUB_CLEAR_FAIL=1 reg_restore "$WORK/reg/c" "$WORK/reg/full.tar.gz"); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'konnte adminhelper nicht leeren' <<<"$out" \
+    && grep -q '^CLEAR ' "$WORK/reg/c/calls.log" && ! grep -q 'pg_restore' "$WORK/reg/c/calls.log"; } \
+  && ok "a failed emptying stops the restore before pg_restore" \
+  || bad "failed emptying: rc=$rc calls=[$(cat "$WORK/reg/c/calls.log" 2>/dev/null)]"
 
 # --- 8./9. pg-restore.sh does the same, for the server DB only ──────────────
 mkdir -p "$WORK/pg/bin" "$WORK/pg/a" "$WORK/pg/b"

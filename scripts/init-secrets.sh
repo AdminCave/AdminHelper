@@ -89,7 +89,8 @@ upsert() {
 # an abort leaves between mktemp and mv goes with the exit, a signal included, as in
 # install.sh and update.sh (R-1727). After the mv the name is gone and rm -f is a no-op.
 ENV_TMPS=()
-trap 'rm -f -- "${ENV_TMPS[@]}"' EXIT
+# ${a[@]+…}: bash before 4.4 calls an empty array unbound under set -u.
+trap 'rm -f -- ${ENV_TMPS[@]+"${ENV_TMPS[@]}"}' EXIT
 
 generated=()
 left_alone=()

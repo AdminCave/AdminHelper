@@ -241,7 +241,7 @@ def test_an_unreachable_detail_is_critical():
     assert _status("monitoring_scheduler", status_code=503) == "critical"
 
 
-def _pg_backup(tmp_path, pg_dump_body):
+def _pg_backup(tmp_path, pg_dump_body, role_passwords=True):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "pg_dump"
@@ -253,8 +253,13 @@ def _pg_backup(tmp_path, pg_dump_body):
     fake.chmod(0o755)
     backups = tmp_path / "backups"
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "BACKUP_DIR": str(backups)}
+    env.pop("SERVER_DB_PASSWORD", None)
+    env.pop("MONITOR_DB_PASSWORD", None)
+    if role_passwords:
+        # pg-backup dumps each database as its service role (R-1759).
+        env |= {"SERVER_DB_PASSWORD": "pw-server", "MONITOR_DB_PASSWORD": "pw-monitor"}
     run = subprocess.run(["sh", str(PG_BACKUP)], env=env, capture_output=True, check=False)
-    files = sorted(p.name for p in backups.iterdir() if p.is_file())
+    files = sorted(p.name for p in backups.iterdir() if p.is_file()) if backups.exists() else []
     return run.returncode, files
 
 
@@ -271,3 +276,9 @@ def test_a_good_dump_lands_in_the_backup_folder(tmp_path):
     assert rc == 0
     assert len(files) == 2
     assert all(f.endswith(".dump") for f in files)
+
+
+def test_without_the_role_passwords_the_backup_stops_and_writes_nothing(tmp_path):
+    rc, files = _pg_backup(tmp_path, "exit 0\n", role_passwords=False)
+    assert rc != 0
+    assert files == []
