@@ -1041,6 +1041,7 @@ m_sum="$(cksum < "$m_bundle")"
 mkdir -p "$m/bin-link" "$m/bin-tar"
 cat > "$m/bin-link/mktemp" <<EOF
 #!/usr/bin/env bash
+[ "\$1" != -d ] || exec "$(type -P mktemp)" "\$@"
 case "\${!#}" in
     */.adminhelper-diagnostics-*)
         name="\$("$(type -P mktemp)" -u -- "\${!#}")" || exit 1
@@ -1074,6 +1075,7 @@ mkdir -p "$m/bin-dirlink" "$m/elsewhere"
 ln -s -- "$m/elsewhere" "$m/out/.lnk"
 cat > "$m/bin-dirlink/mktemp" <<EOF
 #!/usr/bin/env bash
+[ "\$1" != -d ] || exec "$(type -P mktemp)" "\$@"
 case "\${!#}" in
     */.adminhelper-diagnostics-*)
         base="\${!#}"; base="\${base##*/}"
@@ -1131,6 +1133,89 @@ m_same || { echo "(m) a name swapped before the open changed the earlier bundle"
 m_left="$(ls -A "$m/out")"
 [ "$m_left" = "${m_bundle##*/}" ] \
     || { echo "(m) a name swapped before the open left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+
+# The bundle's own dir under a name that is a link to a dir of ours and 0700 (a mktemp
+# stub for mktemp -d makes the real dir, moves it away and leaves a link to it): owner
+# and mode pass, only the comparison with the name's own inode stops the run. Nothing
+# is written there; the link is the stub's and stays.
+mkdir -p "$m/bin-dirswap" "$m/dirswap"
+cat > "$m/bin-dirswap/mktemp" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = -d ] && [[ "\${!#}" == */.adminhelper-diagnostics-* ]]; then
+    name="\$("$(type -P mktemp)" "\$@")" || exit 1
+    mv -- "\$name" "$m/dirswap/moved" && ln -s -- "$m/dirswap/moved" "\$name" || exit 1
+    printf '%s\n' "\$name"
+    exit 0
+fi
+exec "$(type -P mktemp)" "\$@"
+EOF
+chmod +x "$m/bin-dirswap/mktemp"
+rc=0
+( umask 022 && cd "$m" && PATH="$m/bin-dirswap:$m/bin:$PATH" TMPDIR="$tmp" \
+    timeout 30 bash "$ROOT/scripts/diagnostics.sh" --output "$m/out" ) > "$m/run-dirswap.log" 2>&1 || rc=$?
+case "$rc" in
+    0) echo "(m) a link as the bundle's dir: exit 0" >&2; fail=1 ;;
+    124) echo "(m) a link as the bundle's dir: the run hung" >&2; fail=1 ;;
+esac
+grep -q '^\[diagnostics\] ERROR: .*not a directory of its own' "$m/run-dirswap.log" \
+    || { echo "(m) a link as the bundle's dir: no ERROR line on the dir" >&2; fail=1; }
+[ "$(stat -c '%a' "$m/dirswap/moved" 2>&1)" = 700 ] \
+    || { echo "(m) a link as the bundle's dir: the moved dir is not 0700, the case proves less" >&2; fail=1; }
+[ -z "$(ls -A "$m/dirswap/moved" 2>/dev/null)" ] \
+    || { echo "(m) a link as the bundle's dir: written into the dir behind the link" >&2; fail=1; }
+m_same || { echo "(m) a link as the bundle's dir changed the earlier bundle" >&2; fail=1; }
+for m_ent in "$m/out"/.adminhelper-diagnostics-*; do
+    [ -L "$m_ent" ] && rm -f -- "$m_ent"
+done
+m_left="$(ls -A "$m/out")"
+[ "$m_left" = "${m_bundle##*/}" ] \
+    || { echo "(m) a link as the bundle's dir left in the output dir: $(tr '\n' ' ' <<<"$m_left")" >&2; fail=1; }
+
+# The bundle's own dir renamed and its name taken by a link to another dir right after
+# the script entered it (a function named cd under BASH_ENV): the script works in the
+# dir itself from then on, so the bundle still lands in the output dir and nothing
+# reaches the link's target. The target is 0500: a temp file made through the name
+# would fail there instead of passing through it unseen.
+cat > "$m/cdswap-env.sh" <<'EOF'
+#!/usr/bin/env bash
+# Sourced through BASH_ENV: right after the script enters its own dir, that dir is
+# renamed within the output dir and its name becomes a link to another dir (once).
+cd() {
+  builtin cd "$@" || return
+  local name="${!#}"
+  if [[ -n "${AH_TEST_CDSWAP_TO:-}" && "$name" == */.adminhelper-* && ! -e "$AH_TEST_CDSWAP_MARK" ]]; then
+    : > "$AH_TEST_CDSWAP_MARK"
+    mv -- "$name" "${name%/*}/renamed" && ln -s -- "$AH_TEST_CDSWAP_TO" "$name"
+  fi
+}
+EOF
+mkdir -p "$m/cdswap/out" "$m/cdswap/elsewhere"
+chmod 500 "$m/cdswap/elsewhere"
+rc=0
+( umask 022 && cd "$m" && BASH_ENV="$m/cdswap-env.sh" AH_TEST_CDSWAP_TO="$m/cdswap/elsewhere" \
+    AH_TEST_CDSWAP_MARK="$m/cdswap/swapped" PATH="$m/bin:$PATH" TMPDIR="$tmp" \
+    timeout 30 bash "$ROOT/scripts/diagnostics.sh" --output "$m/cdswap/out" ) > "$m/run-cdswap.log" 2>&1 || rc=$?
+chmod 700 "$m/cdswap/elsewhere"
+m_cd_bundle="$m/cdswap/out/${m_bundle##*/}"
+[ "$rc" = 0 ] || { echo "(m) the bundle's dir swapped after the cd: exit $rc" >&2; sed 's/^/    | /' "$m/run-cdswap.log" >&2; fail=1; }
+[ -e "$m/cdswap/swapped" ] || { echo "(m) the bundle's dir swapped after the cd: the swap did not happen" >&2; fail=1; }
+[ -z "$(ls -A "$m/cdswap/elsewhere")" ] \
+    || { echo "(m) the bundle's dir swapped after the cd: written into the link's target" >&2; fail=1; }
+[ -z "$(ls -A "$m/cdswap/out/renamed" 2>/dev/null)" ] \
+    || { echo "(m) the bundle's dir swapped after the cd: left in the renamed dir" >&2; fail=1; }
+{ [ -f "$m_cd_bundle" ] && [ ! -L "$m_cd_bundle" ] && [ "$(stat -c '%a' "$m_cd_bundle")" = 600 ] \
+    && tar -tzf "$m_cd_bundle" 2>/dev/null | grep -qx './report.txt'; } \
+    || { echo "(m) the bundle's dir swapped after the cd: no 0600 bundle in the output dir" >&2; fail=1; }
+
+# A shared output dir with the setgid bit: the bundle's own dir inherits it (2700),
+# the run still goes through and leaves only the bundle.
+mkdir -p "$m/sgid/out" && chmod 2775 "$m/sgid/out"
+rc=0
+( umask 022 && cd "$m" && PATH="$m/bin:$PATH" TMPDIR="$tmp" \
+    timeout 30 bash "$ROOT/scripts/diagnostics.sh" --output "$m/sgid/out" ) > "$m/run-sgid.log" 2>&1 || rc=$?
+[ "$rc" = 0 ] || { echo "(m) a setgid output dir: exit $rc" >&2; sed 's/^/    | /' "$m/run-sgid.log" >&2; fail=1; }
+[ "$(ls -A "$m/sgid/out")" = "${m_bundle##*/}" ] \
+    || { echo "(m) a setgid output dir left: $(ls -A "$m/sgid/out" | tr '\n' ' ')" >&2; fail=1; }
 
 # A default ACL on the output dir: the bundle is still 0600, its mode comes from
 # mktemp. Without setfacl or ACL support the case says so and checks the mode alone.

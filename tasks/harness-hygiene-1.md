@@ -54,8 +54,10 @@ Review: approve (.ah-out/review/harness-hygiene-1/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: keine (die Liste ist ihre eigene Doku)
 
-### T5 — backup.sh/diagnostics.sh: Zwischendatei-Handling härten (R-0914)  [ ]
-Komponente: scripts · Dateien: scripts/backup.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+### T5 — backup.sh/diagnostics.sh: Zwischendatei-Handling härten (R-0914)  [x]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, scripts/tests/restore_guard_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @91351c68e 2026-11-25T16:10:27+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T5.verdict.json)
 Änderung: Nach dem Plan in `tasks/private/` (Roadmap-Zeile R-0914); das Archiv entsteht und heißt wie bisher.
 `security` prüft die Task.
 Verify: bash scripts/dev/verify.sh scripts --strict -- diagnostics_test
@@ -106,3 +108,4 @@ Task-Review: am Ende
 - T2: Ob der Worktree gehen darf, entscheidet `git status --porcelain` vor allem anderen (ein unsauberer behält auch seine DB); fremd-eigene Pfade findet `find ! -user $(id -u) -prune`, entfernt je Pfad `docker run --rm --network none … alpine rm -rf` (Muster `uninstall.sh`); ohne Remote prüft das Skript weiter gegen den lokalen `main`. Gegenprobe: alte Fassung 5 failed (alpha-Meldung, rho, sigma, tau).
 - T3: Aufräumen läuft in `run` direkt vor dem tmux-Start (nicht im Dry-Run, nicht bei übersprungener Nacht); Alter aus dem Verzeichnisnamen, „läuft noch“ = kein Urteil und mtime jünger als ein Tag. Gegenprobe: alte Fassung 2 failed.
 - T4: Die drei Agent-Pakete als eigener Block (Proben und Discovery laufen auf dem Host, credentials trägt Geheimnisse), `config.py` bei Auth, `checkers/http.py` bei SSRF, `agent-install.sh` bei Install. Gegenprobe: alte Liste 6 failed.
+- T5: Das Archiv entsteht in einem eigenen 0700-Verzeichnis im Ausgabeordner (`mktemp -d`), das Skript arbeitet darin über relative Namen und prüft Eigentümer, Mode und Inode vor dem Schreiben; kein zusätzliches `chmod 600` (Mode kommt von `mktemp`, die fd-Prüfung verlangt 600, auch unter Default-ACL). Das leere Verzeichnis räumt der EXIT-trap per `rmdir` nur über den Namen. Gegenprobe: alter Stand restore_guard 3 failed, diagnostics 6 Meldungen; je ein Mutant (ohne Inode-Vergleich, Zwischendatei über den Namen) rot. Runde 2 (security, wichtig): ein setgid-Ausgabeordner vererbt das Bit, `2700` gilt als eigen; das Bit bleibt, damit das Archiv wie bisher die Gruppe des Ordners trägt (Gegenprobe ohne `2700`: je 1 rot).
