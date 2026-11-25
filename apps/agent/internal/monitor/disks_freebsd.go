@@ -17,7 +17,7 @@ import (
 // (gopsutil's disk.Partitions uses MNT_WAIT and hangs on a hung NFS mount, R-1701). The figures
 // of that list are only the kernel's cached mnt_stat, which nothing refreshes without MNT_WAIT,
 // so each mount is read with statfs(2) of its own: a local one directly, a network one bounded
-// by boundedStats.
+// by boundedStats, as is a local one below a network mount.
 func collectDisks() []DiskInfo {
 	n, err := unix.Getfsstat(nil, unix.MNT_NOWAIT)
 	if err != nil || n == 0 {
@@ -28,8 +28,7 @@ func collectDisks() []DiskInfo {
 	if err != nil {
 		return nil
 	}
-	var stats []fsStat
-	var shares []string
+	var local, shares []string
 	for _, s := range buf[:n] {
 		mount := unix.ByteSliceToString(s.Mntonname[:])
 		fstype := unix.ByteSliceToString(s.Fstypename[:])
@@ -38,16 +37,26 @@ func collectDisks() []DiskInfo {
 		}
 		if freebsdNetFS(fstype) {
 			shares = append(shares, mount)
+		} else {
+			local = append(local, mount)
+		}
+	}
+	// A local mount below a share is reached through it and is read with the deadline too.
+	var stats []fsStat
+	bounded := shares
+	for _, mount := range local {
+		if underNetMount(mount, shares) {
+			bounded = append(bounded, mount)
 			continue
 		}
 		if st, err := statfsOf(mount); err == nil {
 			stats = append(stats, st)
 		}
 	}
-	answered := boundedStats(shares, time.After(shareStatTimeout), statfsOf)
-	if len(answered) < len(shares) {
-		logger.Warnf("disks: %d network mount(s) did not answer statfs within %s, left out of this run",
-			len(shares)-len(answered), shareStatTimeout)
+	answered := boundedStats(bounded, time.After(shareStatTimeout), statfsOf)
+	if len(answered) < len(bounded) {
+		logger.Warnf("disks: %d network mount(s) did not answer statfs within %s or still hang from an earlier run, left out of this run",
+			len(bounded)-len(answered), shareStatTimeout)
 	}
 	return disksFromFsstat(append(stats, answered...), "freebsd")
 }

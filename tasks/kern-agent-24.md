@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/kern-agent-24/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/ ./internal/httpclient/
 Doku: keine (Verhalten wie dokumentiert: das Self-Update vertraut dem CA-Bundle der Enrollment-Zeit)
 
-### T3 — R-1772: FreeBSD-Plattensammler mit einer offenen Abfrage je Mount  [ ]
+### T3 — R-1772: FreeBSD-Plattensammler mit einer offenen Abfrage je Mount  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/disks_bounded.go, apps/agent/internal/monitor/disks_freebsd.go, apps/agent/internal/monitor/disks_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0c37911cb 2026-11-25T05:22:30+01:00
+Review: approve (.ah-out/review/kern-agent-24/T3.verdict.json)
 Änderung: `boundedStats` merkt sich Mounts, deren Abfrage noch hängt, und fragt sie erst nach deren Antwort wieder; bis dahin fehlt der Mount wie bei einer Zeitüberschreitung. Ein lokaler Mount, dessen Pfad unter einem Netz-Mount liegt, wird mit Frist gelesen (reine Funktion ohne Build-Tag, unter Linux getestet). Wackler-Gegenprobe der neuen Tests mit `-count`, Summary in den Commit-Body. Nicht auf FreeBSD gefahren: Im Pool ist keine Box, der Cross-Build läuft in der Verify.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T4
