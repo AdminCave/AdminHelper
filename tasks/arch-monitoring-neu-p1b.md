@@ -25,8 +25,10 @@ je Task dazu. Überschneidung mit P1d (R-1638, eigene arch-Session): `schemas.py
 Push `origin/main` hereinmergen und `scripts/dev/overlap.sh` fahren, wer zweiter merged, hängt seine Revision um.
 Belegte Fehler außerhalb des Auftrags werden Roadmap-Zeilen (`roadmap.py add`).
 
-### T1 — Ausnahme-Modell: Tabelle, Übernahme der Wartungsfenster, Auswerter (R-1636)  [ ]
+### T1 — Ausnahme-Modell: Tabelle, Übernahme der Wartungsfenster, Auswerter (R-1636)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/alembic/versions/f4b6d8a0c2e4_exceptions.py, apps/monitoring/app/maintenance.py, apps/monitoring/app/exception_scope.py, apps/monitoring/tests/test_exception_scope.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/tests/test_models_timestamps.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @28f6c5c13 2026-11-25T15:22:41+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1b/T1.verdict.json)
 Änderung: Modell `MonitorException` (`monitor_exceptions`, Spalten wie Spec, `check_id` FK `ON DELETE CASCADE`, Indizes auf `server_id` und `check_id`, `to_dict` mit `iso_utc`) und Spalte `MonitorObjectState.excluded`; `MonitorMaintenance` (`models.py:537`) bleibt, bekommt `synonym` `duration_kind`/`reason`. Revision `f4b6d8a0c2e4` (SPDX) nach `e3a5c7e9f1b2`: Tabelle, Spalte, idempotente 1:1-Übernahme aus `monitor_maintenance` (gleiche ID, NULL-`enabled` → `false`, `origin = migration`); Downgrade schreibt die Ausnahmen in Wartungsform zurück und entfernt Spalte und Tabelle. `app/maintenance.py` (`maintenance_intervals` `:84`, `is_in_maintenance` `:119`) liest `duration_kind`/`reason`; neu `app/exception_scope.py` (SPDX): gilt, deckt, engste, Wartungsform, Laden der geltenden `no_notify`-Zeilen. Tests: Auswerter (Dauerarten, beendet, ausgeschaltet, Rangfolge Check > Check-Typ > Server > alle); Postgres-Äquivalenz alt ↔ neu über ein Zeitraster (einmalig, wöchentlich über Mitternacht, Sommerzeitwechsel, global, ausgeschaltet, NULL-`enabled`, ohne Zeitfelder), Spalten 1:1, Downgrade → Upgrade; `_EXPECTED` in `test_models_timestamps.py` um die Zeitfelder der Ausnahme.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_exception_scope.py tests/test_maintenance.py tests/test_migrations_smoke.py tests/test_models_timestamps.py tests/test_alembic_builtin.py
 Doku: → T7
@@ -73,3 +75,8 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6
+
+## Entscheidungen
+- 2026-11-25 T1: Bei gleicher Geltung gewinnt die Ausnahme in Wartungsform, dann die kleinere ID (`exception_scope.narrowest`) — `mutedReason` bleibt `"maintenance window"`, solange ein Fenster des Servers läuft, und das Ergebnis hängt nie von der Zeilenreihenfolge ab.
+- 2026-11-25 T1: `app/maintenance.py` bekommt das öffentliche `duration_active` (einmalig/wöchentlich), das `is_in_maintenance` und `exception_scope.in_force` teilen — eine Zeitlogik für Fenster und Ausnahmen statt zwei Kopien.
+- 2026-11-25 T1: Kaskade der Check-Ausnahmen prüft nur der Postgres-Migrationstest — die SQLite-Ausweichdatenbank der Unit-Tests setzt `ON DELETE CASCADE` ohne `foreign_keys`-Pragma nicht um.

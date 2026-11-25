@@ -4,7 +4,9 @@
 
 """Maintenance-window evaluation (collect-but-mute).
 
-Pure logic on window rows — the caller queries them. One-off windows compare
+Pure logic on window rows — the caller queries them. A row is a maintenance window
+(MonitorMaintenance, frozen since R-1636) or an exception (MonitorException): both
+carry duration_kind, reason and the same time fields. One-off windows compare
 naive-UTC timestamps; weekly windows are evaluated in the window's IANA
 timezone via zoneinfo so "Sunday 02:00" stays wall-clock correct across DST
 transitions (the documented Uptime-Kuma failure mode). A window that started
@@ -17,18 +19,20 @@ import logging
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from app.models import MonitorMaintenance
+from app.models import MonitorException, MonitorMaintenance
 
 logger = logging.getLogger("monitor.maintenance")
 
+Window = MonitorMaintenance | MonitorException
 
-def _once_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
+
+def _once_active(window: Window, now_utc: datetime) -> bool:
     if window.starts_at is None or window.ends_at is None:
         return False
     return window.starts_at <= now_utc < window.ends_at
 
 
-def _weekly_parts(window: MonitorMaintenance):
+def _weekly_parts(window: Window):
     """(weekdays, hour, minute, tz, duration) of a weekly window, or None if it can never
     be active."""
     if not window.start_time or not window.duration_minutes:
@@ -56,7 +60,7 @@ def _weekly_parts(window: MonitorMaintenance):
     return weekdays, hour, minute, tz, timedelta(minutes=window.duration_minutes)
 
 
-def _weekly_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
+def _weekly_active(window: Window, now_utc: datetime) -> bool:
     parts = _weekly_parts(window)
     if parts is None:
         return False
@@ -77,12 +81,22 @@ def _weekly_active(window: MonitorMaintenance, now_utc: datetime) -> bool:
     return False
 
 
+def duration_active(window: Window, now_utc: datetime) -> bool:
+    """True when the once or weekly duration of the row runs at ``now_utc``; any other
+    duration_kind is not a window and never runs here."""
+    if window.duration_kind == "once":
+        return _once_active(window, now_utc)
+    if window.duration_kind == "weekly":
+        return _weekly_active(window, now_utc)
+    return False
+
+
 def _naive_utc(local: datetime) -> datetime:
     return local.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def maintenance_intervals(
-    windows: list[MonitorMaintenance], server_id: str | None, start: datetime, end: datetime
+    windows: list[Window], server_id: str | None, start: datetime, end: datetime
 ) -> list[tuple[datetime, datetime, str | None]]:
     """(start, end, note) in naive UTC of every enabled window of this server (or of all
     servers) that overlaps start..end, cut to it and sorted by start. A weekly
@@ -95,9 +109,9 @@ def maintenance_intervals(
         if window.server_id is not None and window.server_id != server_id:
             continue
         occurrences: list[tuple[datetime, datetime]] = []
-        if window.kind == "once" and window.starts_at and window.ends_at:
+        if window.duration_kind == "once" and window.starts_at and window.ends_at:
             occurrences.append((window.starts_at, window.ends_at))
-        elif window.kind == "weekly":
+        elif window.duration_kind == "weekly":
             parts = _weekly_parts(window)
             if parts is None:
                 continue
@@ -112,23 +126,17 @@ def maintenance_intervals(
                 day += timedelta(days=1)
         for begin, finish in occurrences:
             if begin < end and finish > start:
-                out.append((max(begin, start), min(finish, end), window.note))
+                out.append((max(begin, start), min(finish, end), window.reason))
     return sorted(out, key=lambda interval: interval[0])
 
 
-def is_in_maintenance(
-    windows: list[MonitorMaintenance], server_id: str | None, now_utc: datetime
-) -> bool:
+def is_in_maintenance(windows: list[Window], server_id: str | None, now_utc: datetime) -> bool:
     """True when any enabled window covers this server (or all servers) now."""
     for window in windows:
         if not window.enabled:
             continue
         if window.server_id is not None and window.server_id != server_id:
             continue
-        if window.kind == "once":
-            if _once_active(window, now_utc):
-                return True
-        elif window.kind == "weekly":
-            if _weekly_active(window, now_utc):
-                return True
+        if duration_active(window, now_utc):
+            return True
     return False

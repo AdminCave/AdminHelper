@@ -455,3 +455,249 @@ def test_object_state_upgrades_and_downgrades(monkeypatch):
         # Paired with the negative: the status change log keeps its row.
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM monitor_status_log")).scalar() == 1
+
+
+# arch-monitoring-neu-p1b T1 (R-1636): every maintenance window, of every form.
+def _window(id, server_id, kind, **kw):
+    row = dict(
+        id=id,
+        server_id=server_id,
+        kind=kind,
+        starts_at=None,
+        ends_at=None,
+        weekdays=None,
+        start_time=None,
+        duration_minutes=None,
+        timezone="UTC",
+        note=None,
+        enabled=True,
+    )
+    row.update(kw)
+    return row
+
+
+_MARCH_29 = dict(starts_at="2026-03-29 00:00", ends_at="2026-03-29 03:00")
+_WINDOWS = [
+    _window("once-srv1", "srv-1", "once", note="Patch", **_MARCH_29),
+    _window("once-all", None, "once", starts_at="2026-10-25 00:30", ends_at="2026-10-25 01:15"),
+    # Saturday 23:30 for 90 minutes: across midnight.
+    _window(
+        "weekly-midnight", "srv-2", "weekly", weekdays="[5]", start_time="23:30",
+        duration_minutes=90, note="Backup",
+    ),
+    # Sunday 02:30 Berlin: missing on 2026-03-29, twice on 2026-10-25.
+    _window(
+        "weekly-berlin", None, "weekly", weekdays="[6]", start_time="02:30",
+        duration_minutes=60, timezone="Europe/Berlin",
+    ),
+    _window(
+        "weekly-ny", "srv-1", "weekly", weekdays="[0, 6]", start_time="01:30",
+        duration_minutes=60, timezone="America/New_York",
+    ),
+    # Saturday and Sunday 22:00 Berlin for three hours, across midnight and DST.
+    _window(
+        "weekly-days", "srv-3", "weekly", weekdays="[5, 6]", start_time="22:00",
+        duration_minutes=180, timezone="Europe/Berlin",
+    ),
+    # An unknown zone falls back to UTC.
+    _window(
+        "bad-tz", "srv-3", "weekly", weekdays="[6]", start_time="03:00", duration_minutes=60,
+        timezone="Mars/Olympus",
+    ),
+    _window("off", "srv-1", "once", enabled=False, **_MARCH_29),
+    _window("null-enabled", "srv-2", "once", enabled=None, **_MARCH_29),
+    _window("no-times-once", "srv-1", "once"),
+    _window("no-times-weekly", None, "weekly", weekdays="[0]"),
+]  # fmt: skip
+
+# The windows the grid must find active, so the equivalence cannot pass on nothing.
+_MUST_MUTE = {
+    "once-srv1",
+    "once-all",
+    "weekly-midnight",
+    "weekly-berlin",
+    "weekly-ny",
+    "weekly-days",
+    "bad-tz",
+}
+_MAINTENANCE_COLUMNS = (
+    "id, server_id, kind, starts_at, ends_at, weekdays, start_time, duration_minutes,"
+    " timezone, note, enabled, created_at"
+)
+
+
+def _time_grid():
+    """Every quarter hour around the DST changes of Berlin and New York in 2026 and the
+    weekends they fall on: the window times sit on full and half hours."""
+    from datetime import date, datetime, timedelta
+
+    days = [
+        date(2026, 3, 7),
+        date(2026, 3, 8),
+        date(2026, 3, 28),
+        date(2026, 3, 29),
+        date(2026, 10, 24),
+        date(2026, 10, 25),
+        date(2026, 10, 31),
+        date(2026, 11, 1),
+    ]
+    grid = set()
+    for d in days:
+        start = datetime(d.year, d.month, d.day) - timedelta(hours=6)
+        grid.update(start + timedelta(minutes=15 * i) for i in range(36 * 4))
+    return sorted(grid)
+
+
+def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
+    # Kevin 2026-11-25: the windows move 1:1 and an equivalence test accepts them. For
+    # every window and server over the grid, the old evaluator on the old row and the
+    # exception scope on the new row agree; the columns carry over; the way back writes
+    # the facade's state into monitor_maintenance, and the way up again takes it over.
+    from datetime import datetime
+
+    from alembic import command
+    from sqlalchemy import inspect, text
+    from sqlalchemy.orm import sessionmaker
+
+    from app.exception_scope import covers, in_force, narrowest
+    from app.maintenance import is_in_maintenance
+    from app.models import MonitorException, MonitorMaintenance
+
+    with scratch_db(monkeypatch, "exceptions") as (cfg, engine):
+        command.upgrade(cfg, "e3a5c7e9f1b2")  # just before the exceptions
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"INSERT INTO monitor_maintenance ({_MAINTENANCE_COLUMNS})"
+                    " VALUES (:id, :server_id, :kind, :starts_at, :ends_at, :weekdays,"
+                    " :start_time, :duration_minutes, :timezone, :note, :enabled, :created_at)"
+                ),
+                [dict(w, created_at=f"2026-01-01 10:{i:02d}:00") for i, w in enumerate(_WINDOWS)],
+            )
+        select_old = text(f"SELECT {_MAINTENANCE_COLUMNS} FROM monitor_maintenance ORDER BY id")
+        with engine.connect() as conn:
+            old_rows = [tuple(r) for r in conn.execute(select_old)]
+        db = sessionmaker(bind=engine)()
+        old = {w.id: w for w in db.query(MonitorMaintenance).all()}
+        db.close()
+        assert len(old) == len(_WINDOWS)
+
+        command.upgrade(cfg, "f4b6d8a0c2e4")
+        with engine.connect() as conn:
+            new_rows = conn.execute(
+                text(
+                    "SELECT id, server_id, duration_kind, starts_at, ends_at, weekdays,"
+                    " start_time, duration_minutes, timezone, reason, enabled, created_at,"
+                    " scope_kind, effect, origin, check_id, check_type, created_by,"
+                    " created_by_id, updated_at, ended_at FROM monitor_exceptions ORDER BY id"
+                )
+            ).all()
+            # monitor_maintenance stays as it is.
+            assert [tuple(r) for r in conn.execute(select_old)] == old_rows
+        assert [tuple(r) for r in new_rows] == [
+            (
+                *row[:10],
+                bool(row[10]),  # NULL becomes false
+                row[11],
+                "all" if row[1] is None else "server",
+                "no_notify",
+                "migration",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            for row in old_rows
+        ]
+        db = sessionmaker(bind=engine)()
+        new = {e.id: e for e in db.query(MonitorException).all()}
+        db.close()
+
+        servers = ["srv-1", "srv-2", "srv-3", None]
+        muted = set()
+        for now in _time_grid():
+            for server in servers:
+                for wid, window in old.items():
+                    before = is_in_maintenance([window], server, now)
+                    after = covers(new[wid], None, None, server) and in_force(new[wid], now)
+                    assert before == after, (wid, server, now)
+                    if before:
+                        muted.add(wid)
+                assert is_in_maintenance(list(old.values()), server, now) == (
+                    narrowest(new.values(), None, None, server, now) is not None
+                ), (server, now)
+        assert muted == _MUST_MUTE
+
+        with engine.begin() as conn:
+            for cid in ("c1", "c2"):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks"
+                        " (id, name, check_type, config, interval, severity)"
+                        " VALUES (:id, 'C', 'ping', '{}', '5m', 'critical')"
+                    ),
+                    {"id": cid},
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_exceptions"
+                    " (id, scope_kind, server_id, check_id, effect, duration_kind, origin)"
+                    " VALUES (:id, :scope, 'srv-1', :check, 'no_notify', 'permanent', 'api')"
+                ),
+                [
+                    {"id": "on-c1", "scope": "check", "check": "c1"},
+                    {"id": "on-c2", "scope": "check", "check": "c2"},
+                    {"id": "srv1-permanent", "scope": "server", "check": None},
+                ],
+            )
+            # Ended through the facade: gone from its list, and so from the way back.
+            conn.execute(
+                text("UPDATE monitor_exceptions SET ended_at = :at WHERE id = 'once-srv1'"),
+                {"at": datetime(2026, 11, 25, 10, 0)},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_object_state"
+                    " (check_id, object_key, kind, name, status, reason, since, fail_count,"
+                    " stable, excluded) VALUES ('c1', 'srv-1/disk/tmpfs', 'disk', 'tmpfs',"
+                    " 'not_collected', '', '2026-11-25 10:00:00', 0, true, :excluded)"
+                ),
+                {"excluded": "x" * 40},
+            )
+            conn.execute(text("DELETE FROM monitor_checks WHERE id = 'c2'"))
+        with engine.connect() as conn:
+            left = conn.execute(
+                text("SELECT id FROM monitor_exceptions WHERE scope_kind = 'check'")
+            ).scalars()
+            assert list(left) == ["on-c1"]  # a check exception goes with its check
+            assert (
+                conn.execute(
+                    text("SELECT enabled FROM monitor_exceptions WHERE id = 'on-c1'")
+                ).scalar()
+                is True
+            )  # the server default
+
+        command.downgrade(cfg, "e3a5c7e9f1b2")
+        insp = inspect(engine)
+        assert "monitor_exceptions" not in insp.get_table_names()
+        assert "excluded" not in {c["name"] for c in insp.get_columns("monitor_object_state")}
+        with engine.connect() as conn:
+            back = [tuple(r) for r in conn.execute(select_old)]
+            # Paired with the negatives: the object state keeps its row.
+            assert conn.execute(text("SELECT count(*) FROM monitor_object_state")).scalar() == 1
+        assert back == [
+            (*row[:10], bool(row[10]), row[11]) for row in old_rows if row[0] != "once-srv1"
+        ]
+
+        command.upgrade(cfg, "f4b6d8a0c2e4")
+        with engine.connect() as conn:
+            again = conn.execute(
+                text("SELECT id, scope_kind, origin, enabled FROM monitor_exceptions ORDER BY id")
+            ).all()
+        assert [tuple(r) for r in again] == [
+            (row[0], "all" if row[1] is None else "server", "migration", bool(row[10]))
+            for row in old_rows
+            if row[0] != "once-srv1"
+        ]
