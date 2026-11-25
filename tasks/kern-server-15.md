@@ -1,5 +1,5 @@
 # kern-server-15 — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-15 · Review: pro Task
+Status: bereit · Branch: feature/kern-server-15 · Review: pro Task
 Spec: docs/features/kern-server-15.md (Roadmap R-1758, R-1763, R-1764, R-1773)
 Heavy: linux-full — docker-compose.yml (Healthchecks von monitoring und ca-issuer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -57,8 +57,10 @@ Doku: docs/developer/hooks.html DE+EN · changelog.d/kern-server-15.md
 Task-Review: am Ende
 Abhängt von: T3, T5
 
-### T7 — Abschlussprüfung: Frist des Warte-Tests auf 30 s  [ ]
+### T7 — Abschlussprüfung: Frist des Warte-Tests auf 30 s  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_tag_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2b7529ba5 2026-11-25T06:15:18+01:00
+Review: approve (.ah-out/review/kern-server-15/T7.verdict.json)
 Änderung: `test_orphan_cleanup_does_not_wait_for_the_hub` wartet 30 s statt 10 s auf die Rückkehr des Abgleichs (`.claude/rules/testing.md`, Fristen); Fund `wichtig` der Abschlussprüfung.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: keine (nur Test)

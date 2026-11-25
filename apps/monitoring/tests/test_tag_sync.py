@@ -355,8 +355,8 @@ def test_orphan_cleanup_does_not_wait_for_the_hub(db, monkeypatch):
     waited_for_the_sync: list[bool] = []
 
     def hung_hub(*args, **kwargs):
-        # Without the fix the sync itself waits here, so the 10 s run out before it returns.
-        waited_for_the_sync.append(sync_returned.wait(10))
+        # Without the fix the sync itself waits here, so the 30 s run out before it returns.
+        waited_for_the_sync.append(sync_returned.wait(30))
         hub_answered.set()
         return True
 
