@@ -777,7 +777,8 @@ fi
 # The .env working copies (upsert_env, both rollbacks) sit next to .env; one an
 # abort leaves between mktemp and mv goes with the exit as well (R-0592).
 ENV_TMPS=()
-trap 'rm -rf -- "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}; rm -f -- "${ENV_TMPS[@]}"' EXIT
+# ${a[@]+…}: bash before 4.4 calls an empty array unbound under set -u.
+trap 'rm -rf -- "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}; rm -f -- ${ENV_TMPS[@]+"${ENV_TMPS[@]}"}' EXIT
 EXTRACT=$(fetch_bundle "$TARGET" "$TMP")
 
 # --- Self-update: hand off to the release's update.sh if it differs ----------

@@ -552,10 +552,31 @@ BEGIN
     LOOP
         EXECUTE format('DROP SEQUENCE IF EXISTS public.%I CASCADE', r.relname);
     END LOOP;
+    -- Enum, domain and range types, and composite types of their own (a table's row
+    -- type went with its table). Types first: a range type takes its constructor
+    -- functions along, which cannot be dropped on their own.
     FOR r IN SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-             WHERE n.nspname = 'public' AND t.typtype IN ('e', 'd')
+             LEFT JOIN pg_class c ON c.oid = t.typrelid
+             WHERE n.nspname = 'public'
+               AND (t.typtype IN ('e', 'd', 'r') OR (t.typtype = 'c' AND c.relkind = 'c'))
+               AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                               WHERE d.objid = t.oid AND d.deptype = 'e')
     LOOP
         EXECUTE format('DROP TYPE IF EXISTS public.%I CASCADE', r.typname);
+    END LOOP;
+    -- Routines (functions, procedures, aggregates, window functions) by their full
+    -- signature, overloads included. A CASCADE before may have taken one along: its
+    -- OID is checked first, its signature formed only then. Members of an extension
+    -- and parts of another object (deptype i) go with their owner.
+    FOR r IN SELECT p.oid, p.prokind FROM pg_proc p
+             JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'public'
+               AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                               WHERE d.objid = p.oid AND d.deptype IN ('e', 'i'))
+    LOOP
+        CONTINUE WHEN NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = r.oid);
+        EXECUTE format('DROP %s IF EXISTS %s CASCADE',
+            CASE r.prokind WHEN 'a' THEN 'AGGREGATE' ELSE 'ROUTINE' END, r.oid::regprocedure);
     END LOOP;
 END
 $$;

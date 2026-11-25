@@ -48,7 +48,8 @@ _TMPROOT="$(mktemp -d)"
 # The .env working copies of upsert_env sit next to .env; one an abort leaves
 # between mktemp and mv goes with the exit as well (R-0592).
 ENV_TMPS=()
-trap 'rm -rf "$_TMPROOT"; rm -f -- "${ENV_TMPS[@]}"' EXIT
+# ${a[@]+…}: bash before 4.4 calls an empty array unbound under set -u.
+trap 'rm -rf "$_TMPROOT"; rm -f -- ${ENV_TMPS[@]+"${ENV_TMPS[@]}"}' EXIT
 
 REPO="AdminCave/AdminHelper"
 REF=""                       # empty -> resolve the latest published release

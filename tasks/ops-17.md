@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-17 — Betriebsskripte: Nachlese aus ops-16 — Task-Ledger
-Status: aktiv · Branch: feature/ops-17 · Review: pro Task
+Status: bereit · Branch: feature/ops-17 · Review: pro Task
 Spec: docs/features/ops-17.md (Roadmap R-1757, R-1761, R-1759, R-1765, R-1766)
 Heavy: linux-full — scripts/agent-install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,8 +41,10 @@ Review: approve (.ah-out/review/ops-17/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py tests/test_compose_hardening.py
 Doku: docs/admin/betrieb.html DE + docs/en/admin/operations.html · changelog.d/ops-17.md
 
-### T4 — R-1765: restore.sh leert auch Routinen und Typen; Trap-Nachlese  [ ]
+### T4 — R-1765: restore.sh leert auch Routinen und Typen; Trap-Nachlese  [x]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, scripts/install.sh, scripts/update.sh, changelog.d/ops-17.md, scripts/tests/backup_restore_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @38b63eee3 2026-11-25T17:03:18+01:00
+Review: approve (.ah-out/review/ops-17/T4.verdict.json)
 Änderung: Das Leeren in restore_db entfernt auch Funktionen/Prozeduren/Aggregate und eigenständige Composite-/Range-Typen in public; scheitert das Leeren, läuft kein pg_restore (Test). Die EXIT-Traps über `ENV_TMPS` in init-secrets.sh, install.sh und update.sh vertragen ein leeres Array auch unter bash 4.2; der SIGTERM-Test prüft rc=143.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test init-secrets_test install_test update_test
 Doku: changelog.d/ops-17.md

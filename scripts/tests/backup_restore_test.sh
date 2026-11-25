@@ -111,9 +111,10 @@ probe_sql() {
     e2e_dc exec -T postgres sh -c "PGPASSWORD=\$POSTGRES_PASSWORD psql -h 127.0.0.1 -U adminhelper -d adminhelper -v ON_ERROR_STOP=1 -tAc \"$1\"" \
         2>/dev/null | tr -d '[:space:]'
 }
-probe_sql "CREATE TABLE ah_probe_fk (v varchar(32) REFERENCES alembic_version(version_num)); CREATE TABLE ah_probe_orphan (id int)" >/dev/null
+probe_sql "CREATE TABLE ah_probe_fk (v varchar(32) REFERENCES alembic_version(version_num)); CREATE TABLE ah_probe_orphan (id int); SET ROLE ah_server; CREATE TYPE ah_probe_pair AS (a int, b int); CREATE FUNCTION ah_probe_fn() RETURNS int LANGUAGE sql AS 'SELECT 1'; CREATE FUNCTION ah_probe_sum(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b'; CREATE AGGREGATE ah_probe_agg(int) (sfunc = ah_probe_sum, stype = int); CREATE FUNCTION ah_probe_atomic() RETURNS int LANGUAGE sql BEGIN ATOMIC SELECT ah_probe_fn(); END; CREATE TYPE ah_probe_range AS RANGE (subtype = float8)" >/dev/null
 [ "$(probe_sql "SELECT count(*) FROM pg_tables WHERE tablename LIKE 'ah_probe_%'")" = 2 ] \
-    && ok "two tables of a newer schema in place (one with a foreign key)" || bad "could not create the probe tables"
+    && [ "$(probe_sql "SELECT (SELECT count(*) FROM pg_type WHERE typname IN ('ah_probe_pair', 'ah_probe_range')) + (SELECT count(*) FROM pg_proc WHERE proname IN ('ah_probe_fn', 'ah_probe_sum', 'ah_probe_agg', 'ah_probe_atomic'))")" = 6 ] \
+    && ok "a newer schema in place: two tables (one with a foreign key), two types, four routines" || bad "could not create the probe objects"
 if [ -n "$BK" ] && (cd "$E2E_REPO_ROOT" && ./scripts/restore.sh "$BK" --yes) >"$E2E_WORK/restore2.log" 2>&1; then
     ok "restore.sh over a database migrated forward completed"
 else
@@ -121,6 +122,8 @@ else
 fi
 [ "$(probe_sql "SELECT count(*) FROM pg_tables WHERE tablename LIKE 'ah_probe_%'")" = 0 ] \
     && ok "no table of the newer schema is left" || bad "tables of the newer schema left after the restore"
+[ "$(probe_sql "SELECT (SELECT count(*) FROM pg_type WHERE typname IN ('ah_probe_pair', 'ah_probe_range')) + (SELECT count(*) FROM pg_proc WHERE proname IN ('ah_probe_fn', 'ah_probe_sum', 'ah_probe_agg', 'ah_probe_atomic'))")" = 0 ] \
+    && ok "no type or routine of the newer schema is left (R-1765)" || bad "type or function of the newer schema left after the restore"
 for _ in $(seq 1 60); do
     code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "$E2E_SERVER_URL/" 2>/dev/null || echo 000)
     [ "$code" != "000" ] && break
@@ -129,6 +132,23 @@ done
 TOKEN3=$(e2e_admin_token)
 grep -q "dr-probe" <<<"$(curl -k -s -H "Authorization: Bearer $TOKEN3" "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo "")" \
     && ok "the server record is back after the second restore" || bad "server record lost in the second restore"
+
+# ── pg-backup dumps each database as its service role (R-1759) ──────────────
+# One run of the profile service's script, as this user into a directory of the
+# test: both dumps there, not empty, owner-only, and no superuser password needed.
+mkdir -p "$E2E_WORK/pgb"
+if e2e_dc --profile backup run --rm -T --no-deps --user "$(id -u):$(id -g)" -v "$E2E_WORK/pgb:/backups" \
+        --entrypoint /usr/local/bin/pg-backup.sh pg-backup >"$E2E_WORK/pgb.log" 2>&1; then
+    ok "pg-backup ran with the service roles"
+else
+    bad "pg-backup failed"; tail -10 "$E2E_WORK/pgb.log" >&2
+fi
+for db in adminhelper adminhelper_monitor; do
+    d=$(ls "$E2E_WORK"/pgb/"$db"-*.dump 2>/dev/null | head -1)
+    { [ -s "$d" ] && [ "$(stat -c %a "$d")" = 600 ]; } \
+        && ok "pg-backup: $db dump written owner-only ($(du -h "$d" | cut -f1))" \
+        || bad "pg-backup: $db dump missing, empty or not 0600 (${d:-none})"
+done
 
 # ── Restore on an empty host, COMPOSE_PROJECT_NAME only in the .env (R-0665) ──
 # An install directory of its own named unlike the project: restore.sh must take the

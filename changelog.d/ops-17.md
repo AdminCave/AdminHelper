@@ -4,6 +4,9 @@
   eingebundenen Host, stellt `agent-install.sh` die Repo-Konfiguration des Hosts wieder her.
 - **Update: aeltere Datenbank-Sicherungen:** `update.sh` macht Dump-Dateien in `backups/` nur fuer den Besitzer
   lesbar; gelingt das nicht, nennt es eine Warnung.
+- **Restore: Routinen und Typen:** `restore.sh` leert vor dem Einspielen auch Funktionen, Prozeduren und eigene
+  Typen einer neueren Version; die Skripte raeumen ihre Arbeitskopien der `.env` auch unter aelteren bash-Versionen
+  sauber weg.
 
 ### Changed
 
