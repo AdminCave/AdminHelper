@@ -93,8 +93,10 @@ Review: approve (.ah-out/review/harness-hygiene-1/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- .github/scripts/cache_settings_test
 Doku: keine (Kopfkommentar)
 
-### T9 — windows_update_set_test: de_DE ohne installierte Locale (R-1683)  [ ]
+### T9 — windows_update_set_test: de_DE ohne installierte Locale (R-1683)  [x]
 Komponente: scripts · Dateien: scripts/tests/windows_update_set_test.sh, .claude/rules/release.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @441a18cd3 2026-11-25T17:31:40+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T9.verdict.json)
 Änderung: Fehlt `de_DE.UTF-8`, erzeugt der Test sie per `localedef` in ein eigenes Verzeichnis (`LOCPATH`) und prüft
 das Verhalten echt; nur ohne `localedef` bleibt die statische Prüfung. Dazu R-1680: `release.md:66` nennt
 `ReleasePublicKey` (`apps/agent/internal/selfupdate/minisign.go:22`) als dritte Pin-Stelle.
@@ -118,3 +120,4 @@ Task-Review: am Ende
 - T6: pip nimmt den gehashten Lock nicht als Constraint („Constraints cannot have extras“, Hashes ebenso); `pip_dev` in `run.sh` zieht je Komponente einen `name==version`-Auszug nach `AH_OUT_DIR/constraints-<komp>.txt` und installiert `requirements-dev.txt -c` darauf, ein leerer Auszug bricht ab. Beleg: Worktree-Venv danach sqlalchemy 2.1.8 = Lock. Gegenprobe: alter `run.sh` 2 failed, Mutant „Extras im Auszug“ 1 failed.
 - T7: Wurzel statt Einzelstellen: `report_of`/`history_of` geben immer 0 zurück, damit `cat`s SIGPIPE unter `pipefail` weder eine positive Assertion rot noch eine negative grün macht (alle Aufrufer auf einmal); ein Bericht über einem Pipe-Puffer macht den Fall sicher statt 3 %. Neuer Fall 4b3 (roter Schritt + Fuzz-Fund in einem Teil). Gegenprobe: Helfer ohne `return 0` 2 failed, `heavy.sh` ohne Fund-Anhang 1 failed.
 - T8: eigenes Muster `composebuild` neben `dockerbuild`: compose nimmt Optionen (mit oder ohne Wert) vor dem Unterbefehl, `docker-compose` ist das alte Binary; `run app make build` bleibt grün (kein Optionsvorspann). Gegenprobe: alter Prüfer 9 failed.
+- T9: `localedef` zuerst, auch wo die Locale installiert ist, damit derselbe Pfad überall läuft; davor eine Probe, dass die Locale wirklich greift (`²` matcht `[0-9]`), sonst bewiese die Ablehnung nichts. Ob der CI-Runner `de_DE`-Quellen hat: nicht verifiziert, ohne sie bleibt die statische Prüfung. Gegenprobe: ohne `export LC_ALL=C` 1 failed. Runde 2 (reviewer, Blocker): `localedef` legt das Elternverzeichnis nicht an, der Zweig griff nie; jetzt `mkdir -p` davor, die ok-Zeile nennt den Weg; Beleg mit einem `locale`-Shim, der `de_DE` verbirgt: Weg `$T/locale`, PASS.
