@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Hygiene 1 — Task-Ledger
-Status: bereit · Branch: feature/harness-hygiene-1 · Review: pro Task
+Status: erledigt · Branch: feature/harness-hygiene-1 · Review: pro Task
 Spec: docs/features/harness-hygiene-1.md (Roadmap R-1721, R-1722, R-1723, R-1768, R-0479, R-0481, R-0593, R-1265, R-0914, R-1024, R-1347, R-1408, R-1680, R-1683)
 Heavy: linux-full — T5 ändert `scripts/backup.sh`, dessen Beweis `backup-restore` (echter Stack) nur der Sammellauf fährt; alles andere ist hermetisch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
