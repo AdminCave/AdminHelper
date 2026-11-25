@@ -1112,7 +1112,7 @@ def test_load_shedding_is_no_object():
     )
 
 
-def test_ignored_and_pseudo_mounts_stay_outside_and_the_result_whole():
+def test_an_ignored_mount_is_marked_with_the_setting_and_a_pseudo_mount_no_object():
     disks = [
         {"mount": "/", "percent": 10},
         {"mount": "/boot", "percent": 99},
@@ -1121,12 +1121,15 @@ def test_ignored_and_pseudo_mounts_stay_outside_and_the_result_whole():
     report = _report(cpu_percent=10, memory_percent=10, disks=disks)
     status, _, metrics = CHECKER.evaluate({**T, "ignore_mounts": ["/boot"]}, report)
     assert status == "ok"
+    reason = "Excluded by setting ignore_mounts"
+    boot = _object("mount", "/boot", "/boot", agent.NOT_COLLECTED, reason)
     assert _object_result(metrics) == (
         True,
         [
             _object("cpu", None, "CPU"),
             _object("memory", None, "Memory"),
             _object("mount", "/", "/"),
+            {**boot, "excluded": "ignore_mounts"},
         ],
     )
 
@@ -1146,7 +1149,12 @@ def test_a_disk_or_sensor_without_a_name_is_the_object_it_is_rated_as():
         ],
     )
     _, _, metrics = CHECKER.evaluate({**T, "ignore_mounts": ["?"]}, report)
-    assert [item["kind"] for item in _object_result(metrics)[1]] == ["cpu", "memory", "sensor"]
+    assert [(item["kind"], item.get("excluded")) for item in _object_result(metrics)[1]] == [
+        ("cpu", None),
+        ("memory", None),
+        ("mount", "ignore_mounts"),
+        ("sensor", None),
+    ]
 
 
 def _mount(i):

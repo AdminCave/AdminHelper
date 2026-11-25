@@ -6,10 +6,10 @@
 
 A checker hands its objects to the engine next to `_details`, as
 ``metrics["_objects"] = {"complete": bool, "items": [{"kind", "id", "name", "status",
-"reason", "stable"?}], "others_ok"?: str}``; the callers take it out of the metrics before
-they go to VictoriaMetrics. apply_result calls apply_objects under the check's locked
-MonitorState row, so both result paths write here in the same transaction and nothing else
-locks.
+"reason", "stable"?, "excluded"?}], "others_ok"?: str}``; the callers take it out of the
+metrics before they go to VictoriaMetrics. apply_result calls apply_objects under the check's
+locked MonitorState row, so both result paths write here in the same transaction and nothing
+else locks.
 
 ``others_ok`` is for a check that hears only of its bad objects (service_process in auto
 mode): an incomplete result with it says that every stored object it does not name is ok,
@@ -53,6 +53,9 @@ MAX_ROWS = 2 * MAX_OBJECTS
 OBJECT_LOG_PER_DAY = MAX_ROWS
 MAX_NAME = 200
 _KIND_MAX = 40
+# The width of monitor_object_state.excluded, the name of the setting that excludes an
+# object (R-1636).
+_EXCLUDED_MAX = 40
 # The kind of the object a check without an object result stands for.
 FALLBACK_KIND = "check"
 # Worst first (ADR §3), the order of GET /objects; of two items under one key the
@@ -126,6 +129,9 @@ def _entry(item: object) -> dict | None:
         return None
     ident = ident or None
     name, reason = item.get("name"), item.get("reason")
+    excluded = item.get("excluded")
+    if not isinstance(excluded, str) or not 0 < len(excluded) <= _EXCLUDED_MAX:
+        excluded = None
     return {
         "kind": kind,
         "id": ident,
@@ -133,6 +139,7 @@ def _entry(item: object) -> dict | None:
         "status": status,
         "reason": _cut(reason if isinstance(reason, str) else "", MAX_MESSAGE),
         "stable": item.get("stable", True) is not False,
+        "excluded": excluded,
     }
 
 
@@ -260,6 +267,8 @@ def _apply_item(
         "bad_since": _bad_since(row, eff_status, now),
         "fail_count": fail_count,
         "stable": item["stable"],
+        # others_ok names no setting: an object it turns ok is no longer excluded.
+        "excluded": item.get("excluded"),
         "gone_at": None,
     }
     if row is None:

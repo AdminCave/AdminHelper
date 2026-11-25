@@ -379,6 +379,32 @@ def _guest_object(vmid, label, status, reason, cluster=None):
 _NOT_RATED = "Not running, backup not rated"
 
 
+def _excluded(item: dict, setting: str) -> dict:
+    """An object a setting excludes (R-1636), written out rather than built by the checker."""
+    reason = f"Excluded by setting {setting}"
+    return {**item, "status": NOT_COLLECTED, "reason": reason, "excluded": setting}
+
+
+def test_proxmox_an_excluded_guest_is_an_object_marked_with_the_setting():
+    web = {"vmid": 100, "name": "web", "status": "running", "last_backup_ts": time.time()}
+    old = {"vmid": 101, "name": "old", "status": "running", "last_backup_ts": None}
+    checker = ProxmoxBackupChecker()
+    status, msg, metrics = checker.evaluate(
+        {"exclude_vmids": [101]}, _proxmox(web, old, cluster_name="pve")
+    )
+    unrated = _guest_object(101, "VM 101 (old)", NOT_COLLECTED, "", "pve")
+    assert _object_result(metrics) == (
+        True,
+        [
+            _guest_object(100, "VM 100 (web)", "ok", "Backup up to date", "pve"),
+            _excluded(unrated, "exclude_vmids"),
+        ],
+    )
+    # Check, message and details stay as they are without the guest: it is not rated.
+    alone = checker.evaluate({}, _proxmox(web, cluster_name="pve"))
+    assert (status, msg, metrics["_details"]) == (alone[0], alone[1], alone[2]["_details"])
+
+
 def test_proxmox_each_guest_is_a_backup_object(monkeypatch):
     monkeypatch.setattr("app.checkers.plugins.time.time", lambda: 1_000_000.0)
     report = _proxmox(
@@ -409,10 +435,13 @@ def test_proxmox_a_guest_exclude_stopped_leaves_unrated_is_not_collected():
     assert status == "ok"
     assert metrics["_details"]["vms"] == []
     assert metrics["proxmox_backup_missing"] == 0
-    # exclude_stopped is a rule, the guest is there; exclude_vmids stays outside (P1b).
+    # exclude_stopped is a rule, the guest is there; exclude_vmids excludes its guest.
     assert _object_result(metrics) == (
         True,
-        [_guest_object(100, "VM 100 (web)", NOT_COLLECTED, _NOT_RATED)],
+        [
+            _guest_object(100, "VM 100 (web)", NOT_COLLECTED, _NOT_RATED),
+            _excluded(_guest_object(999, "VM 999 (?)", NOT_COLLECTED, ""), "exclude_vmids"),
+        ],
     )
     # Without the rule both stopped guests are rated.
     _, _, metrics = ProxmoxBackupChecker().evaluate({"exclude_stopped": False}, report)
@@ -1056,11 +1085,22 @@ def test_docker_a_restarted_container_is_a_warning_object():
     assert _object_result(metrics)[1] == [_container_object("web", "warning", "restarted")]
 
 
-def test_docker_ignored_containers_name_no_object():
-    report = _docker(_ctr(), _ctr(id="c2", name="watchtower"))
-    _, _, metrics = DockerHealthChecker().evaluate({"ignore_containers": ["watchtower"]}, report)
-    # The ignore list stays outside (P1c): the result is whole without the container.
-    assert _object_result(metrics) == (True, [_container_object("web", "ok", "Running")])
+def test_docker_an_ignored_container_is_an_object_marked_with_the_setting():
+    watchtower = _ctr(id="c2", name="watchtower", state="exited", exit_code=1)
+    checker = DockerHealthChecker()
+    status, msg, metrics = checker.evaluate(
+        {"ignore_containers": ["watchtower"]}, _docker(_ctr(), watchtower)
+    )
+    assert _object_result(metrics) == (
+        True,
+        [
+            _container_object("web", "ok", "Running"),
+            _excluded(_container_object("watchtower", NOT_COLLECTED, ""), "ignore_containers"),
+        ],
+    )
+    # Check, message and details stay as they are without the container: it is not rated.
+    alone = checker.evaluate({}, _docker(_ctr()))
+    assert (status, msg, metrics["_details"]) == (alone[0], alone[1], alone[2]["_details"])
 
 
 def test_docker_container_with_an_empty_name_is_an_object_named_by_a_question_mark():

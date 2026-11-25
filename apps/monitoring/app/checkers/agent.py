@@ -150,6 +150,16 @@ def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]
 NOT_COLLECTED = "not_collected"
 
 
+def excluded_object(item: dict | None, setting: str) -> dict | None:
+    """The object of an entry a setting of the check excludes (R-1636): not rated, its
+    reason and mark name the setting, so the object list shows it last instead of losing
+    it. None, an entry without a key, stays None."""
+    if item is None:
+        return None
+    reason = f"Excluded by setting {setting}"
+    return {**item, "status": NOT_COLLECTED, "reason": reason, "excluded": setting}
+
+
 def whole_list(value: object) -> bool:
     """Whether capped_objects(value) keeps every entry of a report list. Object results
     (R-1559) built from a list it cut short are incomplete: what it left out is not gone."""
@@ -562,8 +572,9 @@ def _resource_objects(
     temperatures: list[dict],
 ) -> dict:
     """The object result of agent_resources (R-1559): cpu with the load, memory with the swap,
-    a mount per rated path, a sensor per name. Load shedding is part of none: an object the
-    gate leaves unmeasured is never a problem (ADR 0004 §2).
+    a mount per path, one in ignore_mounts excluded (R-1636), a sensor per name. Load
+    shedding is part of none: an object the gate leaves unmeasured is never a problem
+    (ADR 0004 §2).
 
     Complete only with CPU, RAM and the whole disk list: the agent leaves the list out when
     it cannot read the partitions, and a reading that is missing must not mark an object gone.
@@ -577,7 +588,10 @@ def _resource_objects(
     mounts: dict[str, dict] = {}
     for disk in disks:
         mount = entry_text(disk, "mount", NO_MOUNT)
-        if mount not in ignore_mounts:
+        if mount in ignore_mounts:
+            unrated = _host_object(grader, "mount", mount, mount, ())
+            mounts[mount] = excluded_object(unrated, "ignore_mounts")
+        else:
             keys = (f"disk:{mount}", f"inode:{mount}")
             mounts[mount] = _host_object(grader, "mount", mount, mount, keys)
     sensors: dict[str, dict] = {}
@@ -888,14 +902,15 @@ class ServiceProcessChecker:
         systemd: dict,
         failed: list[str],
         enabled_inactive: list[str],
+        ignored: list[str],
         reasons: dict[str, str],
         host_os: object,
     ) -> dict:
         """The object result of auto mode (R-1559): a service object per failed or enabled
         but inactive unit, rated as in the message. The agent names no healthy unit, so the
         result is incomplete; with both lists whole and no error it says the stored units it
-        does not name are ok (others_ok), so a unit that recovers turns ok. An ignored unit
-        is no object (P1b)."""
+        does not name are ok (others_ok), so a unit that recovers turns ok. A unit of either
+        list the ignore globs match is named excluded (R-1636)."""
         items = []
         # An empty name, which _details keeps, is no key.
         for unit in filter(None, failed):
@@ -905,6 +920,9 @@ class ServiceProcessChecker:
         for unit in filter(None, enabled_inactive):
             reason = "Inactive (autostart)"
             items.append(self._service_object(unit, unit, host_os, "warning", reason))
+        for unit in filter(None, ignored):
+            unrated = self._service_object(unit, unit, host_os, NOT_COLLECTED, "")
+            items.append(excluded_object(unrated, "ignore"))
         objects: dict = {"complete": False, "items": items}
         # A list cut at the cap may hide a bad unit, and after a failed list-units the empty
         # lists prove nothing. An entry that is no name stands for no unit.
@@ -997,6 +1015,8 @@ class ServiceProcessChecker:
 
         failed = [u for u in failed_raw if not self._is_ignored(u, ignore)]
         enabled_inactive = [u for u in enabled_inactive_raw if not self._is_ignored(u, ignore)]
+        kept = {*failed, *enabled_inactive}
+        ignored = [u for u in (*failed_raw, *enabled_inactive_raw) if u not in kept]
 
         metrics = {
             "services_failed": len(failed),
@@ -1020,7 +1040,7 @@ class ServiceProcessChecker:
         failed_units = [u for u in failed if not self._is_service(u)]
         reasons = self._reasons(systemd.get("failed_details"))
         metrics["_objects"] = self._auto_objects(
-            systemd, failed, enabled_inactive, reasons, _host_os(report)
+            systemd, failed, enabled_inactive, ignored, reasons, _host_os(report)
         )
 
         def named(units: list[str]) -> list[str]:

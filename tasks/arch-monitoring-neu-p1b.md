@@ -60,8 +60,10 @@ Verify: bash scripts/dev/verify.sh monitoring server --strict
 Doku: → T7
 Abhängt von: T3
 
-### T5 — Checker melden per Einstellung ausgenommene Objekte (R-1636)  [ ]
+### T5 — Checker melden per Einstellung ausgenommene Objekte (R-1636)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/objects.py, apps/monitoring/app/checkers/plugins.py, apps/monitoring/app/checkers/smart.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_object_state.py, apps/monitoring/tests/test_plugin_checkers.py, apps/monitoring/tests/test_smart_checker.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/monitoring/tests/test_service_process_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9bf0d2382 2026-11-25T19:40:19+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1b/T5.verdict.json)
 Änderung: Helfer in `app/objects.py` für ein ausgenommenes Objekt (`not_collected`, Grund `Excluded by setting <name>`, `excluded = <name>`); `_entry` (`:111`) und `_apply_item` (`:237`) tragen `excluded` in den Objektzustand. Statt `continue` melden die Checker den Eintrag über den Helfer: `exclude_vmids` (`plugins.py:169`, `:188`), `ignore_containers` (`plugins.py:641`), `ignore_devices` (`smart.py:288`), `ignore_mounts` (`agent.py:580`), Dienst-Globs (`agent.py:981`, je getroffene Unit). Tests je Liste: das Objekt erscheint mit Marke und Grund, Status, Nachricht und `_details` des Checks bleiben gleich (bestehende Tests unverändert grün), ein Objekt, das die Liste verlässt, verliert die Marke. 9 Dateien: ein Helfer und seine fünf Aufrufer mit ihren Tests.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_object_state.py tests/test_plugin_checkers.py tests/test_smart_checker.py tests/test_agent_resources_checker.py tests/test_service_process_checker.py tests/test_check_configs.py tests/test_checker_forecast.py tests/test_check_engine_context.py
 Doku: → T7
@@ -95,3 +97,7 @@ Abhängt von: T1, T2, T3, T4, T5, T6
 - 2026-11-25 T4: `request_actor` liest `request.headers` statt `Header()`-Parametern und hängt nur an den schreibenden Routen — die Akteurs-Header sind Proxy-intern, das OpenAPI-Schema bleibt unverändert (Snapshot grün ohne Update).
 - 2026-11-25 T4: Der Proxy setzt die Akteurs-Header nur bei gebundenem Akteur (`actor_id` gesetzt); Steuerzeichen filtert das Monitoring mit `str.isprintable`, das nimmt auch Zeilen- und Absatztrenner heraus.
 - 2026-11-25 T4: Den Nit des `security`-Urteils zu T2 (`maintenance._apply` ließ `check_id`/`check_type` stehen) behebt T4, weil es `_apply` ohnehin anfasst; Test `test_a_window_put_over_a_check_exception_clears_the_check` mit Gegenprobe rot.
+- 2026-11-25 T5: Der Helfer `excluded_object` steht in `app/checkers/agent.py`, nicht in `app/objects.py` — `app.objects` importiert über `app.check_engine` die Checker, ein Import in die Gegenrichtung wäre ein Zyklus (wie `NOT_COLLECTED` dort).
+- 2026-11-25 T5: Eine ignorierte Platte im Standby wird kein Objekt — der Agent schickt dann nur den Gerätepfad (`smart.go`), ein Objekt darunter wäre ein zweites neben dem unter WWN; `complete` bleibt unverändert.
+- 2026-11-25 T5: `others_ok` löscht die Markierung `excluded` — es nennt keine Einstellung, ein Objekt, das es auf ok setzt, ist nicht mehr ausgenommen.
+- 2026-11-25 T5: Fünf bestehende Tests erwarteten „ausgenommen = kein Objekt“ (P1b/P1c) — als gewollte Verhaltensänderung angepasst, Kernaussage (Check, Meldung, `_details` unverändert) je mit Gegenstück ohne das Objekt gepaart.
