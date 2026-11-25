@@ -14,8 +14,10 @@ Beweis: docker-compose.yml:396 und :611 @main 564be0395 (`urlopen` ohne ProxyHan
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_healthchecks.py
 Doku: keine (Verhalten wie dokumentiert: der Check fragt den Dienst selbst)
 
-### T2 — R-1773: LOG_LEVEL nur aus der festen Liste  [ ]
+### T2 — R-1773: LOG_LEVEL nur aus der festen Liste  [x]
 Komponente: server · Dateien: apps/pycommon/ah_common/logging_config.py, apps/server/tests/test_logging_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d7976474b 2026-11-25T05:39:16+01:00
+Review: approve (.ah-out/review/kern-server-15/T2.verdict.json)
 Änderung: `_resolve_level` prüft gegen die feste Liste DEBUG, INFO, WARNING, ERROR, CRITICAL wie der CA-Issuer, statt gegen `getLevelName`. Der Test `LOG_LEVEL=TRACE` (mit registriertem Level) erwartet `ConfigError`; ohne den Fix ist er rot.
 Beweis: apps/pycommon/ah_common/logging_config.py:33 @main 564be0395; docs/admin/betrieb.html:133 nennt die fünf Namen für alle drei Dienste
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_logging_config.py
@@ -48,3 +50,4 @@ Task-Review: am Ende
 Abhängt von: T3, T5
 
 ## Entscheidungen
+- T2: Auch die Alias-Namen WARN und FATAL, die `getLevelName` kennt, stoppen jetzt den Start. So halten es der CA-Issuer und betrieb.html (fünf Namen); ein Test belegt es.
