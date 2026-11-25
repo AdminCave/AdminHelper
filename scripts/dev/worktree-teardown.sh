@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # worktree-teardown.sh — take down what worktree-setup.sh made (CLAUDE.md §8): the
-# lane's VMs first, then the worktree, its test database and venv, and its branch
-# when that is merged.
+# lane's VMs first, then its test database and venv, the worktree, and its branch
+# when that is merged into origin/main.
 #
 #   bash scripts/dev/worktree-teardown.sh <path> <slug>
 #
@@ -93,12 +93,15 @@ fi
 # boxes and ends on vm.py list, which fails on a leak.
 AH_VM_STATE_DIR="$WT/.vm" bash "$ROOT/scripts/vm/reap.sh" --lane "$SLUG" \
   || fail "reap failed — the worktree stays (VMs of lane $SLUG may still run)"
-if [ -d "$WT" ]; then
-  git -C "$ROOT" worktree remove "$WT" \
-    || fail "worktree not clean — inspect it, then: git worktree remove --force $WT, and run this again"
-  echo "  worktree $WT removed"
+# Whether the worktree may go is decided before anything of it goes: a dirty
+# worktree keeps its database too. git worktree remove (without --force) refuses
+# exactly what status lists.
+if [ -d "$WT" ] && [ -n "$(git -C "$WT" status --porcelain)" ]; then
+  fail "worktree not clean — inspect it, then: git worktree remove --force $WT, and run this again"
 fi
 
+# Database and venv before the worktree: a remove that fails halfway has already
+# unregistered it, and a second run then stops at "no worktree" (R-1768).
 rc=0
 ( [ -z "$PG_URL_PASS" ] || export PGPASSWORD="$PG_URL_PASS"
   exec dropdb --if-exists --maintenance-db="$PG_URL_OUT" "$DB" ) || rc=$?
@@ -107,12 +110,42 @@ echo "  test database $DB dropped"
 rm -rf -- "$HOME/.cache/ah-venv-$SLUG"
 echo "  venv ~/.cache/ah-venv-$SLUG removed"
 
+if [ -d "$WT" ]; then
+  # A stack test in the worktree leaves ./data owned by the container's UID
+  # (10001), which neither git nor this user can delete. Those paths go first,
+  # as root in a throwaway container, as uninstall.sh does.
+  me="$(id -u)"
+  foreign=()
+  while IFS= read -r -d '' path; do foreign+=("${path#"$WT"/}"); done \
+    < <(find "$WT" -mindepth 1 -xdev ! -user "$me" -prune -print0)
+  if [ "${#foreign[@]}" -gt 0 ]; then
+    command -v docker >/dev/null 2>&1 \
+      || fail "$WT holds paths of another user (${foreign[*]}) and there is no docker to remove them — remove them, then run this again"
+    for rel in "${foreign[@]}"; do
+      docker run --rm --network none -v "$WT:/wt" alpine rm -rf -- "/wt/$rel" \
+        || fail "could not remove $WT/$rel of another user — remove it, then run this again"
+    done
+    echo "  ${#foreign[@]} path(s) of another user removed: ${foreign[*]}"
+  fi
+  git -C "$ROOT" worktree remove "$WT" \
+    || fail "git worktree remove $WT failed — inspect it, then: git worktree remove --force $WT, and run this again"
+  echo "  worktree $WT removed"
+fi
+
+# Merged means merged into origin/main: the main checkout's main lags behind a
+# merge-queue merge until someone fast-forwards it (R-1722).
 BRANCH="feature/$SLUG"
 if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
-  if git -C "$ROOT" branch -d "$BRANCH" >/dev/null 2>&1; then
-    echo "  branch $BRANCH deleted (merged)"
+  BASE=main
+  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    git -C "$ROOT" fetch -q origin main 2>/dev/null || echo "  note: git fetch origin failed — checking against the last known origin/main"
+    git -C "$ROOT" show-ref --verify --quiet refs/remotes/origin/main && BASE=origin/main
+  fi
+  if git -C "$ROOT" merge-base --is-ancestor "$BRANCH" "$BASE"; then
+    git -C "$ROOT" branch -qD "$BRANCH"
+    echo "  branch $BRANCH deleted (merged into $BASE)"
   else
-    echo "  note: branch $BRANCH kept, not merged (git branch -D $BRANCH if you mean it)"
+    echo "  note: branch $BRANCH kept, not merged into $BASE (git branch -D $BRANCH if you mean it)"
   fi
 fi
 echo "worktree $SLUG taken down"

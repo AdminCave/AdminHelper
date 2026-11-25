@@ -22,8 +22,10 @@ tote Kennzahl `kevin-min/PR` (`:1283-1285`) fällt weg.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T10
 
-### T2 — worktree-teardown.sh: gemergt gegen origin/main, Reste fremder UID (R-1722, R-1768)  [ ]
+### T2 — worktree-teardown.sh: gemergt gegen origin/main, Reste fremder UID (R-1722, R-1768)  [x]
 Komponente: scripts · Dateien: scripts/dev/worktree-teardown.sh, scripts/tests/worktree_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d69863adf 2026-11-25T15:38:41+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T2.verdict.json)
 Änderung: `dropdb` und Venv vor `git worktree remove`; Reste unter dem Worktree, die dem Nutzer nicht gehören, räumt
 ein Wegwerf-Container (ohne Docker: klarer Fehlertext). Der Branch gilt als gemergt, wenn er nach `git fetch`
 Vorfahr von `origin/main` ist (dann `git branch -D`). Tests: ein Branch, der nur in `origin/main` gemergt ist, geht;
@@ -97,3 +99,4 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - T1: Engpass war das Parsen (12 216 Fassungen × 10 ms), nicht `git show`; `waits()` liest jetzt nur die `+|`-Zeilen eines `git log -p -U0`. Gegenprobe auf dem privaten Repo: 400,4 s → 16,5 s, gleiche Werte bis auf drei Übergänge aus 67 alten Fassungen mit doppelter ID (R-0047, R-0084), deren Flip-Flop die alte Fassung zählte.
+- T2: Ob der Worktree gehen darf, entscheidet `git status --porcelain` vor allem anderen (ein unsauberer behält auch seine DB); fremd-eigene Pfade findet `find ! -user $(id -u) -prune`, entfernt je Pfad `docker run --rm --network none … alpine rm -rf` (Muster `uninstall.sh`); ohne Remote prüft das Skript weiter gegen den lokalen `main`. Gegenprobe: alte Fassung 5 failed (alpha-Meldung, rho, sigma, tau).
