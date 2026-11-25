@@ -21,7 +21,9 @@
 # `no-cache: ${{ startsWith(github.ref, 'refs/tags/') }}` and a `cache-from`/`cache-to` is
 # `${{ !startsWith(github.ref, 'refs/tags/') && <value without ||> || '' }}`.
 # In both, docker/bake-action and a `docker build`, `docker buildx build` or `docker buildx bake`
-# in a run: step are violations: their cache settings are not read.
+# in a run: step are violations: their cache settings are not read. So is a compose build, with
+# options before the subcommand too: `docker compose -f x.yml build`, `docker compose --file x.yml
+# build`, `docker-compose build` (R-1408).
 # A `with:` written as a flow mapping (`with: { … }`, or `{` on the line below) is a violation
 # everywhere: it is not read.
 # A violation is printed as a GitHub error annotation with file and line; exit 1 then.
@@ -57,7 +59,11 @@ for i in "${!files[@]}"; do
     # A step runs from its `- ` line to the next non-blank line indented no deeper than that
     # dash. Comment lines never count as settings.
     out=$(awk -v file="$f" -v mode="${modes[$i]}" '
-        BEGIN { dockerbuild = "(^|[^[:alnum:]_.-])docker[[:space:]]+((buildx|compose|image|builder)[[:space:]]+)?(build|bake)([[:space:];|&)]|$)" }
+        BEGIN {
+            dockerbuild = "(^|[^[:alnum:]_.-])docker[[:space:]]+((buildx|compose|image|builder)[[:space:]]+)?(build|bake)([[:space:];|&)]|$)"
+            # Compose takes options before its subcommand, each maybe with a value of its own.
+            composebuild = "(^|[^[:alnum:]_.-])docker([[:space:]]+|-)compose([[:space:]]+-[^[:space:];|&]*([[:space:]]+[^-[:space:];|&][^[:space:];|&]*)?)*[[:space:]]+(build|bake)([[:space:];|&)]|$)"
+        }
         function indent(s) { match(s, /^ */); return RLENGTH }
         function keyof(s) { if (!match(s, /^[ ]*[A-Za-z0-9_-]+:/)) return ""; s = substr(s, 1, RLENGTH - 1); sub(/^[ ]*/, "", s); return s }
         function check() {
@@ -139,9 +145,9 @@ for i in "${!files[@]}"; do
                     if (u ~ /^docker\/build-push-action@/) bpa = 1
                     if (u ~ /^docker\/bake-action(\/[^@]*)?@/) bake = 1
                 }
-                if (k == "run" && line ~ dockerbuild) runbuild = 1
+                if (k == "run" && (line ~ dockerbuild || line ~ composebuild)) runbuild = 1
             } else if (ind > keyind && blk == "run") {
-                if (line ~ dockerbuild) runbuild = 1
+                if (line ~ dockerbuild || line ~ composebuild) runbuild = 1
             } else if (ind > keyind && blk == "with") {
                 # A flow mapping may also start on the line below `with:`.
                 if (!withind && line ~ /^[ ]*[{]/) flow = 1

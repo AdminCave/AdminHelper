@@ -84,8 +84,10 @@ CLAUDE.md-Teil des Nits fährt nicht mit.
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Test und Zeilenumbruch)
 
-### T8 — cache_settings.sh: compose-build-Formen (R-1408)  [ ]
+### T8 — cache_settings.sh: compose-build-Formen (R-1408)  [x]
 Komponente: scripts · Dateien: .github/scripts/cache_settings.sh, .github/scripts/cache_settings_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @af4261423 2026-11-25T17:22:10+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T8.verdict.json)
 Änderung: `docker compose -f x.yml build`, `docker compose --file …  build` und `docker-compose build` in einem
 `run:`-Schritt sind Verstöße wie `docker build`; der Kopfkommentar (`cache_settings.sh:24`) nennt sie; Test je Form.
 Verify: bash scripts/dev/verify.sh scripts --strict -- .github/scripts/cache_settings_test
@@ -115,3 +117,4 @@ Task-Review: am Ende
 - T5: Das Archiv entsteht in einem eigenen 0700-Verzeichnis im Ausgabeordner (`mktemp -d`), das Skript arbeitet darin über relative Namen und prüft Eigentümer, Mode und Inode vor dem Schreiben; kein zusätzliches `chmod 600` (Mode kommt von `mktemp`, die fd-Prüfung verlangt 600, auch unter Default-ACL). Das leere Verzeichnis räumt der EXIT-trap per `rmdir` nur über den Namen. Gegenprobe: alter Stand restore_guard 3 failed, diagnostics 6 Meldungen; je ein Mutant (ohne Inode-Vergleich, Zwischendatei über den Namen) rot. Runde 2 (security, wichtig): ein setgid-Ausgabeordner vererbt das Bit, `2700` gilt als eigen; das Bit bleibt, damit das Archiv wie bisher die Gruppe des Ordners trägt (Gegenprobe ohne `2700`: je 1 rot).
 - T6: pip nimmt den gehashten Lock nicht als Constraint („Constraints cannot have extras“, Hashes ebenso); `pip_dev` in `run.sh` zieht je Komponente einen `name==version`-Auszug nach `AH_OUT_DIR/constraints-<komp>.txt` und installiert `requirements-dev.txt -c` darauf, ein leerer Auszug bricht ab. Beleg: Worktree-Venv danach sqlalchemy 2.1.8 = Lock. Gegenprobe: alter `run.sh` 2 failed, Mutant „Extras im Auszug“ 1 failed.
 - T7: Wurzel statt Einzelstellen: `report_of`/`history_of` geben immer 0 zurück, damit `cat`s SIGPIPE unter `pipefail` weder eine positive Assertion rot noch eine negative grün macht (alle Aufrufer auf einmal); ein Bericht über einem Pipe-Puffer macht den Fall sicher statt 3 %. Neuer Fall 4b3 (roter Schritt + Fuzz-Fund in einem Teil). Gegenprobe: Helfer ohne `return 0` 2 failed, `heavy.sh` ohne Fund-Anhang 1 failed.
+- T8: eigenes Muster `composebuild` neben `dockerbuild`: compose nimmt Optionen (mit oder ohne Wert) vor dem Unterbefehl, `docker-compose` ist das alte Binary; `run app make build` bleibt grün (kein Optionsvorspann). Gegenprobe: alter Prüfer 9 failed.

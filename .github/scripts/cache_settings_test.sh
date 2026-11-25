@@ -329,6 +329,21 @@ for form in 'docker compose up -d' 'docker image ls' 'docker builder prune -f' '
     check "no image build in run: (uncached): green: $form" 0 "$(run --uncached "$work/runform.yml")"
 done
 
+# R-1408: compose with options before build, and the old docker-compose binary, build too.
+for form in 'docker compose -f x.yml build' 'docker compose --file ci/compose.yml build' \
+    'docker compose --file=x.yml -p ci build app' 'docker-compose build' 'docker-compose -f x.yml build' \
+    $'docker compose\t-f x.yml\tbuild' 'docker compose -f a.yml -f b.yml build && echo done' 'docker compose --dry-run build'; do
+    printf '    steps:\n      - run: |\n          %s\n' "$form" >"$work/runform.yml"
+    check "compose build form in run: (uncached): red: $form" 1 "$(run --uncached "$work/runform.yml")"
+done
+printf '    steps:\n      - run: docker compose -f x.yml build\n' >"$work/runcompose.yml"
+check "compose build with -f on the run: line (tag-uncached): red" 1 "$(run --tag-uncached "$work/runcompose.yml")"
+for form in 'docker compose -f x.yml up -d' 'docker-compose up -d' 'docker compose -f x.yml run app make build' \
+    'docker-compose-build.sh' 'docker compose -f x.yml config'; do
+    printf '    steps:\n      - run: |\n          %s\n' "$form" >"$work/runform.yml"
+    check "no compose build in run: (uncached): green: $form" 0 "$(run --uncached "$work/runform.yml")"
+done
+
 # R-1355: a flow mapping on the line below with: is a flow mapping too.
 printf '    steps:\n      - uses: Swatinem/rust-cache@v2\n        with:\n          {cache-bin: false}\n' >"$work/flownext.yml"
 check "flow mapping on the line below with:: red" 1 "$(run "$work/flownext.yml")"
