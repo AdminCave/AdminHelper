@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Weckbedingung für zurückgestellte Roadmap-Zeilen — Task-Ledger
-Status: aktiv · Branch: feature/kern-roadmap-1 · Review: am Ende
+Status: bereit · Branch: feature/kern-roadmap-1 · Review: am Ende
 Spec: Roadmap R-1780
 Heavy: none — nur `scripts/dev/roadmap.py` samt Unit-Tests und Markdown (Skill, DEVELOPMENT.md, ein Ledger-Kopf); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Verhaltensänderung, gleiche Prüfung.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T2
 
-### T2 — Doku: Skill und DEVELOPMENT.md; Ledger-Kopf kern-config-1  [ ]
+### T2 — Doku: Skill und DEVELOPMENT.md; Ledger-Kopf kern-config-1  [x]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, DEVELOPMENT.md, tasks/kern-config-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3966b9ab3 2026-11-25T12:53:16+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der roadmap-Skill nennt beim Zurückstellen `--until` und die Meldung „Wieder fällig“; DEVELOPMENT.md
 beschreibt `--until`, die Spalte und den neuen Lint-Fund im Abschnitt `status`. Aufräumen: `tasks/kern-config-1.md`
 steht auf `main` noch auf `Status: bereit` (T7 kam nach „erledigt“), deshalb zeigt der AH-STATUS den Zug als laufend;
