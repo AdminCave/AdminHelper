@@ -5,8 +5,10 @@ Heavy: linux-full — docker-compose.yml (Healthchecks von monitoring und ca-iss
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1758: Healthchecks von monitoring und ca-issuer ohne Proxy  [ ]
+### T1 — R-1758: Healthchecks von monitoring und ca-issuer ohne Proxy  [x]
 Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_healthchecks.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d88d5f220 2026-11-25T05:36:09+01:00
+Review: approve (.ah-out/review/kern-server-15/T1.verdict.json)
 Änderung: Die Healthchecks von `monitoring` und `ca-issuer` öffnen ihre Loopback-URL über `build_opener(ProxyHandler({}))`, wie der Server-Check. Ein Test fährt die beiden Befehle aus der Compose-Datei mit gesetztem `http_proxy` auf einen toten Port gegen einen lokalen HTTP-Server; ohne den Fix ist er rot.
 Beweis: docker-compose.yml:396 und :611 @main 564be0395 (`urlopen` ohne ProxyHandler); Probe aus R-1758: `proxy_bypass('127.0.0.1')` ist False
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_healthchecks.py
