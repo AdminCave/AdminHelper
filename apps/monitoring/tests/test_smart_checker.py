@@ -180,6 +180,36 @@ def test_ignored_device_is_skipped():
     assert CHECKER.evaluate(cfg, _report(_disk(smart_passed=False)))[0] == "ok"
 
 
+def test_an_ignored_disk_is_an_object_marked_with_the_setting():
+    sdb = _disk(device="/dev/sdb", model="Y")
+    report = _report(_disk(smart_passed=False, wwn="0x5000c500a1b2c3d4"), sdb)
+    status, msg, metrics = CHECKER.evaluate({"ignore_devices": ["/dev/sda"]}, report)
+    reason = "Excluded by setting ignore_devices"
+    sda = _object("0x5000c500a1b2c3d4", "/dev/sda (X)", NOT_COLLECTED, reason)
+    assert _objects(metrics) == (
+        True,
+        [
+            {**sda, "excluded": "ignore_devices"},
+            _object("/dev/sdb", "/dev/sdb (Y)", "ok", "SMART OK", stable=False),
+        ],
+    )
+    # Check, message and details stay as they are without the disk: it is not rated.
+    alone = CHECKER.evaluate({}, _report(sdb))
+    assert (status, msg, metrics["_details"]) == (alone[0], alone[1], alone[2]["_details"])
+
+
+def test_an_ignored_disk_asleep_is_no_object():
+    # Asleep the agent sends the device path alone (smart.go): no key to name the disk by.
+    asleep = {"device": "/dev/sda", "standby": True}
+    report = _report(asleep, _disk(device="/dev/sdb"))
+    _, _, metrics = CHECKER.evaluate({"ignore_devices": ["/dev/sda"]}, report)
+    complete, items = _objects(metrics)
+    assert (complete, [item["id"] for item in items]) == (True, ["/dev/sdb"])
+    # Paired: not ignored, the sleeping disk is an object under its path.
+    _, _, metrics = CHECKER.evaluate({}, report)
+    assert [item["id"] for item in _objects(metrics)[1]] == ["/dev/sda", "/dev/sdb"]
+
+
 def test_disk_list_is_capped():
     # Like the plugin lists, only the first 500 disks are rated, so a broken agent cannot
     # flood the details, the message and the per-disk metrics (R-0486).
@@ -418,7 +448,9 @@ def test_a_long_device_or_model_goes_into_the_message_on_one_line(field, message
 def test_the_ignore_list_compares_the_full_device():
     cfg = {"ignore_devices": [_LONG_TEXT]}
     disk = _disk(device=_LONG_TEXT, smart_passed=False)
-    assert CHECKER.evaluate(cfg, _report(disk)) == (
+    status, msg, metrics = CHECKER.evaluate(cfg, _report(disk))
+    objects = metrics.pop("_objects")
+    assert (status, msg, metrics) == (
         "ok",
         "All 0 disks SMART OK",
         {
@@ -426,10 +458,12 @@ def test_the_ignore_list_compares_the_full_device():
             "smart_disks_warning": 0,
             "smart_disks_critical": 0,
             "_details": {"disks": []},
-            # An ignored disk is no object, and the result is complete.
-            "_objects": {"complete": True, "items": []},
         },
     )
+    # The ignored disk is named excluded under its capped path, and the result is complete.
+    reason = "Excluded by setting ignore_devices"
+    excluded = _object(_LONG_SHOWN, f"{_LONG_SHOWN} (X)", NOT_COLLECTED, reason, stable=False)
+    assert objects == {"complete": True, "items": [{**excluded, "excluded": "ignore_devices"}]}
 
 
 @pytest.mark.parametrize(

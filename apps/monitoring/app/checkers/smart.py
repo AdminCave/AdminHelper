@@ -24,6 +24,7 @@ from app.checkers.agent import (
     capped_objects,
     entry_number,
     entry_text,
+    excluded_object,
     join_capped,
     whole_list,
 )
@@ -304,6 +305,11 @@ class SmartHealthChecker:
         for disk in smart:
             device = entry_text(disk, "device", "?")
             if device in ignore:
+                # Asleep the agent sends the device path alone (smart.go), no key of the disk:
+                # then it is no object, rather than a second one under the path.
+                if disk.get("standby") is not True:
+                    unrated = _disk_object(disk, device, NOT_COLLECTED, [])
+                    objects.append(excluded_object(unrated, "ignore_devices"))
                 continue
             if disk.get("standby") is True:
                 asleep += 1

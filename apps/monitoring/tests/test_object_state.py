@@ -546,6 +546,54 @@ def test_others_ok_reason_is_capped_and_storable(factory):
     assert len(sda.reason) == MAX_MESSAGE and "\x00" not in sda.reason
 
 
+# --- excluded objects (R-1636) --------------------------------------------------
+
+
+def _excluded(ident, setting="ignore_devices"):
+    item = _item(ident, "not_collected", f"Excluded by setting {setting}")
+    return {**item, "excluded": setting}
+
+
+def test_an_excluded_object_keeps_the_setting_until_a_result_rates_it(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda", "critical", "Failed")), T0)
+    _apply(factory, _result(_excluded("sda")), T0 + MIN, status="not_collected")
+
+    sda = _objects(factory)[SDA]
+    # Undamped: excluding a bad object turns it not_collected at once.
+    assert (sda.status, sda.reason, sda.excluded) == (
+        "not_collected",
+        "Excluded by setting ignore_devices",
+        "ignore_devices",
+    )
+
+    _apply(factory, _result(_item("sda", "critical", "Failed")), T0 + 2 * MIN, status="critical")
+    sda = _objects(factory)[SDA]
+    assert (sda.status, sda.excluded) == ("critical", None)
+
+
+def test_others_ok_clears_the_setting(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_excluded("sda", "ignore"), complete=False), T0)
+    assert _objects(factory)[SDA].excluded == "ignore"
+
+    _apply(factory, _partial(), T0 + MIN)
+
+    sda = _objects(factory)[SDA]
+    assert (sda.status, sda.reason, sda.excluded) == ("ok", "No problem reported", None)
+
+
+@pytest.mark.parametrize(
+    ("mark", "stored"),
+    [("x" * 40, "x" * 40), ("x" * 41, None), ("", None), (5, None)],
+    ids=["40", "41", "empty", "int"],
+)
+def test_only_a_setting_name_that_fits_marks_an_object(factory, mark, stored):
+    _seed_check(factory)
+    _apply(factory, _result({**_item("sda"), "excluded": mark}), T0)
+    assert _objects(factory)[SDA].excluded == stored
+
+
 # --- the fallback object --------------------------------------------------------
 
 

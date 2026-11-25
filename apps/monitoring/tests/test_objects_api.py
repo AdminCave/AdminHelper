@@ -3,27 +3,28 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """GET /objects (R-1559): the objects of the checks with their damped state, worst
-first, with filters, paging and the time of the check's last run."""
+first, with filters, paging and the time of the check's last run; the ones a setting
+excludes last, and each with what keeps it out (R-1636)."""
 
 from datetime import datetime, timedelta
 
 import pytest
 
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker
-from app.models import MonitorCheck, MonitorObjectState, MonitorState
+from app.models import MonitorCheck, MonitorException, MonitorObjectState, MonitorState
 from app.objects import NOT_COLLECTED, object_key, read_objects
 
 T0 = datetime(2026, 11, 19, 12, 0, 0)
 MIN = timedelta(minutes=1)
 
 
-def _check(db, ident, server_id="srv-1", name=None):
+def _check(db, ident, server_id="srv-1", name=None, check_type="ping"):
     db.add(
         MonitorCheck(
             id=ident,
             server_id=server_id,
             name=name or ident,
-            check_type="ping",
+            check_type=check_type,
             config="{}",
             enabled=True,
         )
@@ -89,6 +90,7 @@ def test_an_object_carries_its_state_its_check_and_the_last_run(objects):
         "stable": False,
         "goneAt": None,
         "lastCheck": "2026-11-19T12:05:00Z",
+        "exception": None,
     }
 
 
@@ -140,6 +142,144 @@ def test_objects_come_worst_first_then_by_name(client_db):
         "srv-1/disk/b-collected",
         "srv-1/disk/a-ok",
     ]
+
+
+# --- excluded objects and exceptions (R-1636) -----------------------------------
+
+_SETTING = {
+    "source": "setting",
+    "effect": "skip",
+    "setting": "ignore_devices",
+    "id": None,
+    "scopeKind": None,
+    "reason": None,
+}
+
+
+def _exception(db, ident, scope_kind, **cols):
+    values = {"effect": "no_notify", "duration_kind": "permanent", "origin": "api"}
+    values.update(cols)
+    db.add(MonitorException(id=ident, scope_kind=scope_kind, **values))
+
+
+def _from_exception(ident, scope_kind, reason=None):
+    return {
+        "source": "exception",
+        "effect": "no_notify",
+        "setting": None,
+        "id": ident,
+        "scopeKind": scope_kind,
+        "reason": reason,
+    }
+
+
+def _marks(response) -> list[tuple[str, dict | None]]:
+    assert response.status_code == 200, response.text
+    return [(entry["key"], entry["exception"]) for entry in response.json()]
+
+
+def test_an_excluded_object_comes_last_and_names_its_setting(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        db.flush()
+        # Its name first and its status above ok: the place comes from the mark alone.
+        _object(db, "c1", "a-excluded", NOT_COLLECTED, excluded="ignore_devices")
+        _object(db, "c1", "b-collected", NOT_COLLECTED)
+        _object(db, "c1", "c-critical", "critical")
+        _object(db, "c1", "z-ok")
+        db.commit()
+
+    assert _marks(client.get("/objects")) == [
+        ("srv-1/disk/c-critical", None),
+        ("srv-1/disk/b-collected", None),
+        ("srv-1/disk/z-ok", None),
+        ("srv-1/disk/a-excluded", _SETTING),
+    ]
+
+
+def test_an_object_names_the_narrowest_exception_in_force_over_its_check(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        _check(db, "c2", server_id="srv-2")
+        _check(db, "c3", server_id="srv-2", check_type="smart")
+        _check(db, "c4", server_id=None)
+        db.flush()
+        _object(db, "c1", "sda")
+        _object(db, "c2", "sdb", server="srv-2")
+        _object(db, "c3", "sdc", server="srv-2")
+        _object(db, "c4", "example.org", kind="dns", server=None)
+        _exception(db, "e-all", "all")
+        _exception(db, "e-srv1", "server", server_id="srv-1")
+        _exception(db, "e-c1", "check", check_id="c1", server_id="srv-1", reason="disk swap")
+        _exception(db, "e-smart", "check_type", check_type="smart")
+        # Narrower over c2, but none of them is in force.
+        _exception(db, "e-ended", "check", check_id="c2", ended_at=T0)
+        _exception(db, "e-off", "check", check_id="c2", enabled=False)
+        past = {"starts_at": datetime(2020, 1, 1), "ends_at": datetime(2020, 1, 2)}
+        _exception(db, "e-past", "check", check_id="c2", duration_kind="once", **past)
+        db.commit()
+
+    assert sorted(_marks(client.get("/objects")), key=lambda mark: mark[0]) == [
+        ("dns/example.org", _from_exception("e-all", "all")),
+        ("srv-1/disk/sda", _from_exception("e-c1", "check", "disk swap")),
+        ("srv-2/disk/sdb", _from_exception("e-all", "all")),
+        ("srv-2/disk/sdc", _from_exception("e-smart", "check_type")),
+    ]
+
+
+def test_the_setting_beats_an_exception_over_the_check(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        db.flush()
+        _object(db, "c1", "sda", NOT_COLLECTED, excluded="ignore_devices")
+        _object(db, "c1", "sdb")
+        _exception(db, "e-c1", "check", check_id="c1")
+        db.commit()
+
+    assert _marks(client.get("/objects")) == [
+        ("srv-1/disk/sdb", _from_exception("e-c1", "check")),
+        ("srv-1/disk/sda", _SETTING),
+    ]
+
+
+def test_an_exception_keeps_the_status_and_the_place_of_its_object(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        _check(db, "c2")
+        db.flush()
+        _object(db, "c1", "b-critical", "critical")
+        _object(db, "c2", "a-ok")
+        _exception(db, "e-c1", "check", check_id="c1")
+        db.commit()
+
+    entries = client.get("/objects").json()
+    assert [(e["key"], e["status"], e["exception"] is not None) for e in entries] == [
+        ("srv-1/disk/b-critical", "critical", True),
+        ("srv-1/disk/a-ok", "ok", False),
+    ]
+
+
+def test_paging_counts_excluded_objects_and_marks_the_page(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        db.flush()
+        _object(db, "c1", "sda", NOT_COLLECTED, excluded="ignore_devices")
+        _object(db, "c1", "sdb", "warning")
+        _object(db, "c1", "sdc")
+        _exception(db, "e-c1", "check", check_id="c1")
+        db.commit()
+
+    r = client.get("/objects", params={"limit": 2, "offset": 1})
+    assert _marks(r) == [
+        ("srv-1/disk/sdc", _from_exception("e-c1", "check")),
+        ("srv-1/disk/sda", _SETTING),
+    ]
+    assert r.headers["X-Total-Count"] == "3"
 
 
 @pytest.mark.parametrize(

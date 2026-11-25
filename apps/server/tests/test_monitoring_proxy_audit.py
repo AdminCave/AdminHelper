@@ -4,14 +4,19 @@
 
 """Writes through the monitoring proxy land one audit row each: method, path and the
 monitoring's status, never the request body or query. An error after sending lands an
-`error` row; reads, refused paths and forwards that were never sent write none."""
+`error` row; reads, refused paths and forwards that were never sent write none. Every
+forward names the acting admin in X-AH-Actor-Id/-Name, built from the session and never
+from a client's header (R-1636)."""
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.auth import hash_password
+from app.core.request_context import Actor
 from app.modules.audit.models import AuditLog
 from app.modules.monitoring_proxy import router as mp
+from app.modules.users.models import User
 
 
 def _headers(client):
@@ -200,3 +205,58 @@ def test_the_admin_proxy_closes_its_session_before_the_forward(
     assert r.status_code == 200, r.text
     assert open_at_forward == [0]
     assert len(_rows(db_session, "monitoring.put")) == 1
+
+
+def _monitoring_headers(monkeypatch):
+    """The monitoring service in-process; returns the headers of each request it got."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(mp, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    return seen
+
+
+def test_the_forward_names_the_admin_not_the_client(
+    test_client, db_session, admin_user, monkeypatch
+):
+    seen = _monitoring_headers(monkeypatch)
+    forged = {"X-AH-Actor-Id": "user:999", "X-AH-Actor-Name": "mallory"}
+    r = test_client.post(
+        "/api/monitoring/exceptions", json={}, headers={**_headers(test_client), **forged}
+    )
+    assert r.status_code == 200, r.text
+    assert seen[0].get_list("x-ah-actor-id") == [f"user:{admin_user.id}"]
+    assert seen[0].get_list("x-ah-actor-name") == ["admin"]
+
+
+def test_a_name_beyond_ascii_arrives_percent_encoded(test_client, db_session, monkeypatch):
+    db_session.add(
+        User(username="jürgen", hashed_password=hash_password("pw-jürgen"), is_admin=True)
+    )
+    db_session.commit()
+    seen = _monitoring_headers(monkeypatch)
+    login = test_client.post(
+        "/api/auth/login", json={"username": "jürgen", "password": "pw-jürgen"}
+    )
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+    r = test_client.get("/api/monitoring/exceptions", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, r.text
+    assert seen[0]["x-ah-actor-name"] == "j%C3%BCrgen"
+
+
+def test_without_a_bound_actor_the_forward_names_none(
+    test_client, db_session, admin_user, monkeypatch
+):
+    seen = _monitoring_headers(monkeypatch)
+    headers = _headers(test_client)
+    # Every route of the proxy binds an admin; this stands for a caller that binds none.
+    monkeypatch.setattr(mp, "actor_from_request", lambda request: Actor())
+    r = test_client.get(
+        "/api/monitoring/exceptions", headers={**headers, "X-AH-Actor-Id": "user:999"}
+    )
+    assert r.status_code == 200, r.text
+    assert "x-ah-actor-id" not in seen[0] and "x-ah-actor-name" not in seen[0]

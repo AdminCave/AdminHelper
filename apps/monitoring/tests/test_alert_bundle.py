@@ -35,13 +35,12 @@ from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
-    MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
 )
 
-from ._helpers import no_env_proxy
+from ._helpers import maintenance_window, no_env_proxy
 
 _NOW = datetime(2026, 10, 20, 12, 0)
 _SHOWN = _NOW - timedelta(hours=1)
@@ -861,7 +860,7 @@ def maintenance_starts(server_id):
 
     def change(session, now):
         session.add(
-            MonitorMaintenance(
+            maintenance_window(
                 id="mw",
                 server_id=server_id,
                 kind="once",
@@ -918,7 +917,7 @@ def muted_until_now(db, how, i):
             duration_minutes=60,
             timezone="UTC",
         )
-    db.add(MonitorMaintenance(**window))
+    db.add(maintenance_window(**window))
     db.commit()
 
 
@@ -1064,7 +1063,7 @@ class TestFlush:
             open_heartbeat(db, i, at(0))
         if mute == "maintenance window":
             db.add(
-                MonitorMaintenance(
+                maintenance_window(
                     id="mw", server_id="srv-03", kind="once", starts_at=at(-60), ends_at=at(60)
                 )
             )
@@ -1132,7 +1131,7 @@ class TestFlush:
         add_rule(db)
         for i in (1, 2, 3, 4):
             open_heartbeat(db, i, at(-60))
-        db.add(MonitorMaintenance(id="mw", kind="once", starts_at=at(-90), ends_at=at(10)))
+        db.add(maintenance_window(id="mw", kind="once", starts_at=at(-90), ends_at=at(10)))
         db.commit()
 
         run_job(at(9.5))
@@ -1208,7 +1207,7 @@ class TestFlush:
             if kind == SILENT:
                 clock.now = at(1)
                 other = sessionmaker(bind=db.get_bind())()
-                other.add(MonitorMaintenance(id="mw", kind="once", starts_at=at(1), ends_at=at(60)))
+                other.add(maintenance_window(id="mw", kind="once", starts_at=at(1), ends_at=at(60)))
                 other.commit()
                 other.close()
 

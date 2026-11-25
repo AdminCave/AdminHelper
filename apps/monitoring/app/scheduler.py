@@ -212,13 +212,16 @@ _HISTORY_CLEANUP_JOB_ID = "system:history-cleanup"
 # an object that has been gone for 30 days is deleted (Kevin 2026-11-19).
 STATUS_LOG_RETENTION_DAYS = 90
 OBJECT_GONE_RETENTION_DAYS = 30
+# An ended exception stays readable this long (R-1636, Kevin 2026-11-25).
+EXCEPTION_ENDED_RETENTION_DAYS = 90
 
 
 def _run_history_cleanup() -> None:
-    """Delete status changes older than STATUS_LOG_RETENTION_DAYS and objects gone for
-    longer than OBJECT_GONE_RETENTION_DAYS."""
+    """Delete status changes older than STATUS_LOG_RETENTION_DAYS, objects gone for
+    longer than OBJECT_GONE_RETENTION_DAYS and exceptions ended longer than
+    EXCEPTION_ENDED_RETENTION_DAYS ago."""
     from app.core.database import SessionLocal
-    from app.models import MonitorObjectState, MonitorStatusChange
+    from app.models import MonitorException, MonitorObjectState, MonitorStatusChange
 
     now = utcnow_naive()
     db = SessionLocal()
@@ -226,6 +229,13 @@ def _run_history_cleanup() -> None:
         removed = (
             db.query(MonitorStatusChange)
             .filter(MonitorStatusChange.at < now - timedelta(days=STATUS_LOG_RETENTION_DAYS))
+            .delete(synchronize_session=False)
+        )
+        ended = (
+            db.query(MonitorException)
+            .filter(
+                MonitorException.ended_at < now - timedelta(days=EXCEPTION_ENDED_RETENTION_DAYS)
+            )
             .delete(synchronize_session=False)
         )
         db.commit()
@@ -261,6 +271,12 @@ def _run_history_cleanup() -> None:
                 "History cleanup: removed %d objects gone for more than %d days",
                 gone,
                 OBJECT_GONE_RETENTION_DAYS,
+            )
+        if ended:
+            logger.info(
+                "History cleanup: removed %d exceptions ended more than %d days ago",
+                ended,
+                EXCEPTION_ENDED_RETENTION_DAYS,
             )
     except Exception:
         db.rollback()

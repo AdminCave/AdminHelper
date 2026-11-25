@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from app.models import (
     MonitorAgentLiveness,
     MonitorCheck,
+    MonitorException,
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
@@ -301,6 +302,36 @@ def test_server_missing_from_the_inventory_is_cleaned_up(db):
     assert set(_assignments(db)) == {(tid, "srv-1")}
     assert [c.server_id for c in db.query(MonitorCheck).all()] == ["srv-1"]
     assert db.query(MonitorAgentLiveness).count() == 0
+
+
+def test_server_left_only_in_an_exception_is_cleaned_up(db):
+    """R-1636: an exception of a deleted server counts as what is left of it, an ended one
+    too; an exception of all servers names none."""
+    db.add(
+        MonitorException(
+            id="e-9",
+            scope_kind="server",
+            server_id="srv-9",
+            effect="no_notify",
+            duration_kind="permanent",
+            origin="api",
+            ended_at=datetime(2026, 1, 1),
+        )
+    )
+    db.add(
+        MonitorException(
+            id="e-all",
+            scope_kind="all",
+            effect="no_notify",
+            duration_kind="permanent",
+            origin="api",
+        )
+    )
+    db.commit()
+
+    sync_tag_assignments(db, [_renamed("srv-1", [])])
+
+    assert [e.id for e in db.query(MonitorException)] == ["e-all"]
 
 
 @pytest.mark.parametrize("inventory", [[], None], ids=["empty", "unavailable"])

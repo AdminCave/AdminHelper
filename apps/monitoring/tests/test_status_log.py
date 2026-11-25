@@ -28,10 +28,11 @@ from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
-    MonitorMaintenance,
     MonitorState,
     MonitorStatusChange,
 )
+
+from ._helpers import maintenance_window
 
 
 def _factory(engine):
@@ -175,7 +176,7 @@ def test_change_in_maintenance_is_logged_though_the_alert_is_muted(scheduler_pat
             )
         )
         db.add(
-            MonitorMaintenance(
+            maintenance_window(
                 id="m1",
                 server_id="srv-1",
                 kind="once",

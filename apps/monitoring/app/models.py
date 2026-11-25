@@ -22,7 +22,7 @@ from sqlalchemy import (
     text,
     true,
 )
-from sqlalchemy.orm import validates
+from sqlalchemy.orm import synonym, validates
 
 from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN, readable
 from app.core.database import Base
@@ -346,6 +346,9 @@ class MonitorObjectState(Base):
     fail_count = Column(Integer, nullable=False)
     stable = Column(Boolean, nullable=False)
     gone_at = Column(DateTime, nullable=True)
+    # The setting that excludes the object (ignore_mounts …, R-1636): the checker still
+    # names it, as not_collected, so the object list shows it instead of losing it.
+    excluded = Column(String(40), nullable=True)
 
 
 class MonitorTemplate(Base):
@@ -559,6 +562,11 @@ class MonitorMaintenance(Base):
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=utc_now_sql())
 
+    # Frozen since R-1636: the windows live on as exceptions (MonitorException). The
+    # names of an exception let app.maintenance read both kinds of row.
+    duration_kind = synonym("kind")
+    reason = synonym("note")
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -573,6 +581,87 @@ class MonitorMaintenance(Base):
             "timezone": self.timezone,
             "enabled": self.enabled,
             "createdAt": iso_utc(self.created_at),
+        }
+
+
+class MonitorException(Base):
+    """An exception in the sense of ADR 0004 §7 (R-1636), not a Python one: where it
+    applies (scope), what it does (effect), for how long (duration), why, and who
+    created, changed and ended it.
+
+    scope_kind check: check_id, and server_id holds the check's server for listing and
+    cleanup; check_type: every check of that type on every server; server: server_id;
+    all: every check. duration_kind permanent, or once and weekly with the fields and
+    rules of MonitorMaintenance. An ended row (ended_at set) no longer applies and is
+    kept for EXCEPTION_ENDED_RETENTION_DAYS. origin: api, maintenance (the /maintenance
+    facade) or migration (taken over from monitor_maintenance). The API checks which
+    columns belong to which scope; the database does not."""
+
+    __tablename__ = "monitor_exceptions"
+
+    id = Column(String, primary_key=True)
+    scope_kind = Column(String, nullable=False)
+    server_id = Column(String, nullable=True, index=True)
+    check_id = Column(
+        String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    check_type = Column(String, nullable=True)
+    effect = Column(String, nullable=False)
+    duration_kind = Column(String, nullable=False)
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    weekdays = Column(String, nullable=True)  # JSON [0-6], 0=Monday
+    start_time = Column(String, nullable=True)  # "HH:MM" wall clock in `timezone`
+    duration_minutes = Column(Integer, nullable=True)
+    timezone = Column(String, nullable=False, default="UTC", server_default="UTC")
+    reason = Column(String, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True, server_default=true())
+    origin = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=utc_now_sql())
+    created_by = Column(String, nullable=True)
+    created_by_id = Column(String, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+    updated_by = Column(String, nullable=True)
+    updated_by_id = Column(String, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    ended_by = Column(String, nullable=True)
+    ended_by_id = Column(String, nullable=True)
+
+    @property
+    def scope_value(self) -> str | None:
+        """The one value the scope names: the check, the check type or the server."""
+        return {
+            "check": self.check_id,
+            "check_type": self.check_type,
+            "server": self.server_id,
+        }.get(self.scope_kind)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "scopeKind": self.scope_kind,
+            "scopeValue": self.scope_value,
+            "serverId": self.server_id,
+            "effect": self.effect,
+            "durationKind": self.duration_kind,
+            "startsAt": iso_utc(self.starts_at),
+            "endsAt": iso_utc(self.ends_at),
+            "weekdays": json.loads(self.weekdays) if self.weekdays else [],
+            "startTime": self.start_time,
+            "durationMinutes": self.duration_minutes,
+            "timezone": self.timezone,
+            "reason": self.reason,
+            "enabled": self.enabled,
+            "origin": self.origin,
+            "createdAt": iso_utc(self.created_at),
+            "createdBy": self.created_by,
+            "createdById": self.created_by_id,
+            "updatedAt": iso_utc(self.updated_at),
+            "updatedBy": self.updated_by,
+            "updatedById": self.updated_by_id,
+            "endedAt": iso_utc(self.ended_at),
+            "endedBy": self.ended_by,
+            "endedById": self.ended_by_id,
         }
 
 

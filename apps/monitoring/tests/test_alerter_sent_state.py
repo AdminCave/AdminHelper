@@ -18,9 +18,11 @@ from app.core.time import utcnow_naive
 from app.models import (
     MonitorAlertRule,
     MonitorCheck,
-    MonitorMaintenance,
+    MonitorException,
     MonitorState,
 )
+
+from ._helpers import maintenance_window
 
 # --- T2: full decision matrix ------------------------------------------------
 
@@ -284,9 +286,9 @@ def test_f1_problem_resolved_during_host_down_never_reports(scenario):
 def _window(factory, active: bool):
     now = utcnow_naive()
     with factory() as db:
-        if not db.query(MonitorMaintenance).filter_by(id="m1").first():
+        if not db.query(MonitorException).filter_by(id="m1").first():
             db.add(
-                MonitorMaintenance(
+                maintenance_window(
                     id="m1",
                     server_id="srv-1",
                     kind="once",
@@ -295,7 +297,7 @@ def _window(factory, active: bool):
                     enabled=True,
                 )
             )
-        db.query(MonitorMaintenance).filter_by(id="m1").update({"enabled": active})
+        db.query(MonitorException).filter_by(id="m1").update({"enabled": active})
         db.commit()
 
 

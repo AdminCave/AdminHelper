@@ -20,6 +20,7 @@ from app.checkers.agent import (
     agent_number,
     cap_agent_text,
     capped_objects,
+    excluded_object,
     join_capped,
     whole_list,
 )
@@ -185,14 +186,15 @@ class ProxmoxBackupChecker:
             # A field of the wrong JSON type (a broken agent) counts as missing (R-0517); an
             # unreadable backup time is no backup.
             vmid = _whole_number(vm.get("vmid"))
-            if vmid in exclude_vmids:
-                continue
-
             # Type and name go into the message and into _details, which the desktop reads with
             # every other check in one answer: only a string, capped and on one line.
             vm_type = cap_agent_text(vm.get("type")) or "vm"
             name = cap_agent_text(vm.get("name")) or "?"
             label = f"{vm_type.upper()} {vmid} ({name})"
+            if vmid in exclude_vmids:
+                unrated = _guest_object(vmid, label, NOT_COLLECTED, "", cluster)
+                guests.append(excluded_object(unrated, "exclude_vmids"))
+                continue
             if exclude_stopped and vm.get("status") != "running":
                 # A rule, not an exception (ADR 0004 §10): the guest is there, its backup is
                 # not rated.
@@ -663,6 +665,10 @@ class DockerHealthChecker:
             if not isinstance(name, str):
                 name = cid if isinstance(cid, str) else "?"
             if name in ignore:
+                unrated = _container_object(
+                    cap_agent_text(name) or "?", "ok", None, "", _compose_ident(c)
+                )
+                objects.append(excluded_object(unrated, "ignore_containers"))
                 continue
 
             state = c.get("state")

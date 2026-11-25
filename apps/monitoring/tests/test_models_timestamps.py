@@ -23,8 +23,8 @@ _MODELS = sorted(
     key=lambda cls: cls.__name__,
 )
 
-# The 13 fields known when R-0202 was built; the test must find at least these, so it
-# cannot pass by finding nothing.
+# The 13 fields known when R-0202 was built and those added since; the test must find
+# at least these, so it cannot pass by finding nothing.
 _EXPECTED = {
     ("MonitorCheck", "createdAt"),
     ("MonitorCheck", "updatedAt"),
@@ -39,6 +39,12 @@ _EXPECTED = {
     ("MonitorMaintenance", "startsAt"),
     ("MonitorMaintenance", "endsAt"),
     ("MonitorMaintenance", "createdAt"),
+    # R-1636: the exception that took over the maintenance windows.
+    ("MonitorException", "startsAt"),
+    ("MonitorException", "endsAt"),
+    ("MonitorException", "createdAt"),
+    ("MonitorException", "updatedAt"),
+    ("MonitorException", "endedAt"),
 }
 
 

@@ -26,6 +26,7 @@ from app.models import (
     MonitorCheck,
     MonitorCheckTombstone,
     MonitorDiscovery,
+    MonitorException,
     MonitorFinding,
     MonitorHostFacts,
     MonitorMaintenance,
@@ -51,6 +52,7 @@ def known_server_ids(db: Session) -> set[str]:
         MonitorModuleTombstone.server_id,
         MonitorAgentKey.server_id,
         MonitorMaintenance.server_id,
+        MonitorException.server_id,
         MonitorAgentLiveness.server_id,
         MonitorHostFacts.server_id,
         MonitorTemplateSuggestionDismissal.server_id,
@@ -100,8 +102,11 @@ def cleanup_server(
     # Server-scoped maintenance windows would otherwise become orphans no UI
     # can reach (the only maintenance view is the per-server tab), and a stale
     # liveness row would be re-hydrated on every restart (T42). Global windows
-    # (server_id NULL) stay.
+    # (server_id NULL) stay. The exceptions of the server go with it, ended ones
+    # too: their trail names a server that is gone (R-1636). The frozen
+    # maintenance rows go as before: known_server_ids still counts them.
     db.query(MonitorMaintenance).filter(MonitorMaintenance.server_id == server_id).delete()
+    db.query(MonitorException).filter(MonitorException.server_id == server_id).delete()
     db.query(MonitorAgentLiveness).filter(MonitorAgentLiveness.server_id == server_id).delete()
 
     # Host facts and ignored template suggestions: no foreign key to the server either

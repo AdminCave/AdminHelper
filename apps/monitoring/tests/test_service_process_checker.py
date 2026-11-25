@@ -1230,16 +1230,26 @@ def test_auto_mode_names_each_bad_unit_as_a_service_object():
     }
 
 
-def test_auto_mode_leaves_an_ignored_unit_out_of_the_objects():
-    report = {"systemd": {"failed": ["nginx.service", "snapd.service"], "enabled_inactive": []}}
-    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto", "ignore": ["snapd*"]}, report)
-    assert [item["id"] for item in metrics["_objects"]["items"]] == ["nginx.service"]
-    # Paired: without the ignore list it is named.
-    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
-    assert [item["id"] for item in metrics["_objects"]["items"]] == [
-        "nginx.service",
-        "snapd.service",
+def test_auto_mode_names_an_ignored_unit_excluded():
+    systemd = {
+        "failed": ["nginx.service", "snapd.service"],
+        "enabled_inactive": ["snap.lxd.daemon.service"],
+    }
+    checker = ServiceProcessChecker()
+    status, msg, metrics = checker.evaluate(
+        {"mode": "auto", "ignore": ["snap*"]}, {"systemd": systemd}
+    )
+    reason = "Excluded by setting ignore"
+    assert metrics["_objects"]["items"] == [
+        _service("nginx.service", "critical", "Failed"),
+        {**_service("snapd.service", NOT_COLLECTED, reason), "excluded": "ignore"},
+        {**_service("snap.lxd.daemon.service", NOT_COLLECTED, reason), "excluded": "ignore"},
     ]
+    # Check, message and details stay as they are without the units: they are not rated.
+    alone = checker.evaluate(
+        {"mode": "auto"}, {"systemd": {"failed": ["nginx.service"], "enabled_inactive": []}}
+    )
+    assert (status, msg, metrics["_details"]) == (alone[0], alone[1], alone[2]["_details"])
 
 
 def test_auto_mode_object_name_is_capped_and_its_id_is_the_full_unit():

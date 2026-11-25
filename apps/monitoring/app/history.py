@@ -19,8 +19,9 @@ from sqlalchemy import and_, not_
 from sqlalchemy.orm import Session
 
 from app.core.victoria import escape_label_value
+from app.exception_scope import is_maintenance_shaped, load_no_notify
 from app.maintenance import maintenance_intervals
-from app.models import MonitorCheck, MonitorMaintenance, MonitorStatusChange
+from app.models import MonitorCheck, MonitorStatusChange
 
 EVENT_LIMIT = 200
 # A change taken over from the alert log has one row per notified rule; rows of the same
@@ -274,7 +275,9 @@ def server_events(db: Session, server_id: str, start: int, end: int) -> list[dic
 def server_maintenance(db: Session, server_id: str, start: int, end: int) -> list[dict]:
     """The maintenance windows of the server and of all servers in start..end as
     {start, end, note} in unix seconds."""
-    windows = db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled.is_(True)).all()
+    # Only the windows: maintenance_intervals matches on server_id alone, so a check or
+    # check type exception would draw a band over the whole server or every server.
+    windows = [e for e in load_no_notify(db) if is_maintenance_shaped(e)]
     return [
         {"start": _epoch(begin), "end": _epoch(finish), "note": note}
         for begin, finish, note in maintenance_intervals(
