@@ -171,6 +171,21 @@ grep -q 'queue-wait.sh' "$FB" && grep -q 'gh pr merge <n> --match-head-commit' "
   && ! grep -q 'gh pr merge <n> --merge' "$FB" && ! grep -q 'gh pr checks <n> --watch' "$FB" && [ -f "$ROOT/scripts/dev/queue-wait.sh" ] \
   && ok "/feature-build enqueues into the merge queue and waits with queue-wait.sh" \
   || bad "/feature-build still merges by hand or does not wait with queue-wait.sh"
+# The release rule names the FRP pins the frp-consistency job checks (R-1451): the files
+# the job reads a version pin from (FRP_VERSION, the frps base image, PinnedVersion),
+# derived from the job itself, so a pin the job gains turns this red until the rule names it.
+CI_YML="$ROOT/.github/workflows/ci.yml"; REL_RULE="$ROOT/.claude/rules/release.md"
+frp_job=$(awk '/^  frp-consistency:/{f=1;next} f&&/^  [a-z0-9-]+:$/{exit} f' "$CI_YML")
+job_pins=$(grep -E '=\$\(grep -m1 .*(FRP_VERSION|snowdreamtech/frps:|PinnedVersion)' <<<"$frp_job" \
+  | grep -oE '[A-Za-z0-9_./-]+$|[A-Za-z0-9_./-]+ \|' | grep -oE '[A-Za-z0-9_./-]+\.(yml|sh|go)|apps/frps/Dockerfile' \
+  | sed 's#^\.github/workflows/##' | sort -u)
+rule_pins=$(awk '/^\*\*Separat gepinnt:\*\*/{f=1} f{print} f&&/Gleichstand/{exit}' "$REL_RULE" \
+  | grep -oE '`[A-Za-z0-9_./-]+\.(yml|sh|go)`|`apps/frps/Dockerfile`' | tr -d '`' | sort -u)
+n=$(wc -l <<<"$job_pins")
+{ [ -n "$job_pins" ] && [ "$job_pins" = "$rule_pins" ] && [ "$n" = 6 ] \
+  && grep -qF 'an sechs Stellen' "$REL_RULE" && grep -qF 'die sechs `FRP_VERSION`-Pins' "$ROOT/.claude/rules/docs.md"; } \
+  && ok "release.md and docs.md name the FRP pins the frp-consistency job reads ($n)" \
+  || bad "FRP pins: job [$(tr '\n' ' ' <<<"$job_pins")] vs release.md [$(tr '\n' ' ' <<<"$rule_pins")], or the count in docs.md"
 # The path-bound rules do not load for worktree paths; whoever works there reads them.
 unread=""
 for f in "$FB" "$ROOT/.claude/skills/feature-plan/SKILL.md" "$R"; do
