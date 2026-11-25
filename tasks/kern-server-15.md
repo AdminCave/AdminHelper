@@ -39,8 +39,10 @@ Review: approve (.ah-out/review/kern-server-15/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts
 Doku: keine (Vokabular der Oberfläche, nicht dokumentiert)
 
-### T5 — R-1763: Tag-Abgleich wartet nicht auf die Entwarnungen  [ ]
+### T5 — R-1763: Tag-Abgleich wartet nicht auf die Entwarnungen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/tag_sync.py, apps/monitoring/tests/test_tag_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2fb29c167 2026-11-25T05:58:30+01:00
+Review: approve (.ah-out/review/kern-server-15/T5.verdict.json)
 Änderung: `_cleanup_orphans` (tag_sync.py:155) gibt `cleanup_server` ein `send_clears`, das die Entwarnungen in einem Daemon-Thread an den Hub schickt. Fehler werden geloggt. Der Test zeigt mit einem blockierenden Hub, dass der Abgleich zurückkehrt; ohne den Fix ist er rot.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: → T6
