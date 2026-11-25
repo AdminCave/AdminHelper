@@ -301,6 +301,39 @@ def test_a_window_made_here_is_one_of_the_facade(client_db):
     assert [(m["id"], m["serverId"]) for m in client.get("/maintenance").json()] == [(wid, "srv-1")]
 
 
+def _as(actor_id, name):
+    return {"X-AH-Actor-Id": actor_id, "X-AH-Actor-Name": name}
+
+
+def test_the_trail_names_who_created_changed_and_ended(client_db):
+    client, _ = client_db
+    created = client.post("/exceptions", json=_payload(), headers=_as("user:1", "j%C3%BCrgen"))
+    eid = created.json()["id"]
+    assert (created.json()["createdBy"], created.json()["createdById"]) == ("jürgen", "user:1")
+
+    updated = client.put(
+        f"/exceptions/{eid}", json=_payload(), headers=_as("user:2", "anna")
+    ).json()
+    assert (updated["updatedBy"], updated["updatedById"]) == ("anna", "user:2")
+    assert (updated["createdBy"], updated["createdById"]) == ("jürgen", "user:1")
+
+    client.delete(f"/exceptions/{eid}", headers=_as("api_key:5", "deploy"))
+    ended = client.get("/exceptions", params={"include_ended": True}).json()[0]
+    assert (ended["endedBy"], ended["endedById"]) == ("deploy", "api_key:5")
+    assert (ended["updatedBy"], ended["createdBy"]) == ("anna", "jürgen")
+
+
+def test_without_actor_headers_the_trail_stays_empty(client_db):
+    client, _ = client_db
+    eid = client.post("/exceptions", json=_payload()).json()["id"]
+    client.put(f"/exceptions/{eid}", json=_payload())
+    client.delete(f"/exceptions/{eid}")
+    row = client.get("/exceptions", params={"include_ended": True}).json()[0]
+    trail = ("createdBy", "createdById", "updatedBy", "updatedById", "endedBy", "endedById")
+    assert [row[k] for k in trail] == [None] * 6
+    assert row["updatedAt"] and row["endedAt"]
+
+
 def test_history_cleanup_removes_exceptions_ended_over_90_days_ago(client_db):
     _, factory = client_db  # client_db points SessionLocal at the test database
     assert sched.EXCEPTION_ENDED_RETENTION_DAYS == 90

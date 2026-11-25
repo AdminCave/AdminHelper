@@ -16,6 +16,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.actor import Actor, request_actor
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.time import utcnow_naive
@@ -97,9 +98,15 @@ def list_exceptions(
     response_model=ExceptionOut,
     dependencies=[Depends(require_internal)],
 )
-def create_exception(data: ExceptionInput, db: Session = Depends(get_db)):
+def create_exception(
+    data: ExceptionInput,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Creates an exception."""
-    row = MonitorException(id=str(uuid.uuid4()), origin="api")
+    row = MonitorException(
+        id=str(uuid.uuid4()), origin="api", created_by=actor.name, created_by_id=actor.id
+    )
     _apply(db, row, data)
     db.add(row)
     db.commit()
@@ -112,11 +119,18 @@ def create_exception(data: ExceptionInput, db: Session = Depends(get_db)):
     response_model=ExceptionOut,
     dependencies=[Depends(require_internal)],
 )
-def update_exception(exception_id: str, data: ExceptionInput, db: Session = Depends(get_db)):
+def update_exception(
+    exception_id: str,
+    data: ExceptionInput,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Full update of an exception (same payload as create); an ended one is 409."""
     row = _open(db, exception_id)
     _apply(db, row, data)
     row.updated_at = utcnow_naive()
+    row.updated_by = actor.name
+    row.updated_by_id = actor.id
     db.commit()
     db.refresh(row)
     return row.to_dict()
@@ -127,8 +141,14 @@ def update_exception(exception_id: str, data: ExceptionInput, db: Session = Depe
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_internal)],
 )
-def end_exception(exception_id: str, db: Session = Depends(get_db)):
+def end_exception(
+    exception_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Ends an exception: it no longer applies and stays readable with include_ended."""
     row = _open(db, exception_id)
     row.ended_at = utcnow_naive()
+    row.ended_by = actor.name
+    row.ended_by_id = actor.id
     db.commit()

@@ -215,6 +215,16 @@ async def proxy_to_monitoring(
         forward_path = quote(path, safe="/")
 
     target_url = f"{_MONITOR_BASE}/{forward_path}"
+    headers = {
+        "X-Internal-Key": MONITOR_API_KEY,
+        "Content-Type": request.headers.get("content-type", "application/json"),
+    }
+    # Who acts, for the trail of an exception (R-1636): from the session, never from a
+    # client header; the name percent-encoded, as httpx refuses non-ASCII header values.
+    actor = actor_from_request(request)
+    if actor.actor_id is not None:
+        headers["X-AH-Actor-Id"] = f"{actor.actor_type}:{actor.actor_id}"
+        headers["X-AH-Actor-Name"] = quote(actor.actor_label or "", safe="")
     # Hand the connection of the auth checks back before waiting on the monitoring (up to
     # the client timeout): a hanging monitoring would otherwise drain the pool (R-1695).
     # The audit row afterwards takes a fresh one.
@@ -224,10 +234,7 @@ async def proxy_to_monitoring(
             method=request.method,
             url=target_url,
             content=await request.body(),
-            headers={
-                "X-Internal-Key": MONITOR_API_KEY,
-                "Content-Type": request.headers.get("content-type", "application/json"),
-            },
+            headers=headers,
             params=request.query_params,
         )
     except httpx.HTTPError as exc:

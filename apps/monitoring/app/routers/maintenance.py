@@ -17,6 +17,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.actor import Actor, request_actor
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.time import iso_utc, utcnow_naive
@@ -48,6 +49,8 @@ def as_maintenance(row: MonitorException) -> dict:
 def _apply(row: MonitorException, data: MaintenanceInput) -> None:
     row.scope_kind = "all" if data.server_id is None else "server"
     row.server_id = data.server_id
+    row.check_id = None
+    row.check_type = None
     row.effect = "no_notify"
     row.reason = data.note
     row.duration_kind = data.kind
@@ -92,9 +95,15 @@ def list_maintenance(db: Session = Depends(get_db)):
     response_model=MaintenanceOut,
     dependencies=[Depends(require_internal)],
 )
-def create_maintenance(data: MaintenanceInput, db: Session = Depends(get_db)):
+def create_maintenance(
+    data: MaintenanceInput,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Creates a maintenance window."""
-    row = MonitorException(id=str(uuid.uuid4()), origin="maintenance")
+    row = MonitorException(
+        id=str(uuid.uuid4()), origin="maintenance", created_by=actor.name, created_by_id=actor.id
+    )
     _apply(row, data)
     db.add(row)
     db.commit()
@@ -107,11 +116,18 @@ def create_maintenance(data: MaintenanceInput, db: Session = Depends(get_db)):
     response_model=MaintenanceOut,
     dependencies=[Depends(require_internal)],
 )
-def update_maintenance(maintenance_id: str, data: MaintenanceInput, db: Session = Depends(get_db)):
+def update_maintenance(
+    maintenance_id: str,
+    data: MaintenanceInput,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Full update of a maintenance window (same payload as create)."""
     row = _window(db, maintenance_id)
     _apply(row, data)
     row.updated_at = utcnow_naive()
+    row.updated_by = actor.name
+    row.updated_by_id = actor.id
     db.commit()
     db.refresh(row)
     return as_maintenance(row)
@@ -122,10 +138,16 @@ def update_maintenance(maintenance_id: str, data: MaintenanceInput, db: Session 
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_internal)],
 )
-def delete_maintenance(maintenance_id: str, db: Session = Depends(get_db)):
+def delete_maintenance(
+    maintenance_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Deletes a maintenance window."""
     # Gone for the caller (the list and the id answer as before), but the exception is
     # ended, not deleted: its trail stays (R-1636).
     row = _window(db, maintenance_id)
     row.ended_at = utcnow_naive()
+    row.ended_by = actor.name
+    row.ended_by_id = actor.id
     db.commit()

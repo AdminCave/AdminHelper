@@ -51,8 +51,10 @@ Verify: bash scripts/dev/verify.sh monitoring server --strict
 Doku: Präfix-Listen in docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html; übrige Abschnitte → T7
 Abhängt von: T2
 
-### T4 — Akteur: Proxy-Header und Spur an der Ausnahme (R-1636)  [ ]
+### T4 — Akteur: Proxy-Header und Spur an der Ausnahme (R-1636)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/actor.py, apps/monitoring/app/routers/exceptions.py, apps/monitoring/app/routers/maintenance.py, apps/monitoring/tests/test_actor.py, apps/monitoring/tests/test_exceptions_api.py, apps/monitoring/tests/test_maintenance_router.py, apps/server/app/modules/monitoring_proxy/router.py, apps/server/tests/test_monitoring_proxy_audit.py
+Evidenz: run.sh[quick] monitoring server: 5 passed, 0 failed, 13 skipped @624279682 2026-11-25T19:34:19+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1b/T4.verdict.json)
 Änderung: `proxy_to_monitoring` (`monitoring_proxy/router.py:189`, Header-Block `:227`) setzt `X-AH-Actor-Id` (`<actor_type>:<actor_id>`) und `X-AH-Actor-Name` (prozentkodiert) aus `actor_from_request` (`apps/server/app/core/request_context.py:41`); kein Client-Header wird durchgereicht. Neu `app/core/actor.py` (SPDX): dekodieren, Steuerzeichen entfernen, Name auf 64 kürzen, 400 über 1024 Zeichen, ohne Header leer. `/exceptions` und `/maintenance` schreiben `created_*`, `updated_*`, `ended_*`. Tests: Server — gefälschte Akteur-Header des Clients kommen upstream nicht an, Umlaut-Name kommt kodiert an, ohne Anmeldung kein Akteur; Monitoring — Dekodieren, Kappen, 400, Spur an Anlegen/Ändern/Beenden über beide Router.
 Verify: bash scripts/dev/verify.sh monitoring server --strict
 Doku: → T7
@@ -90,3 +92,6 @@ Abhängt von: T1, T2, T3, T4, T5, T6
 - 2026-11-25 T2: `DELETE /maintenance/{id}` setzt nur `ended_at`, `PUT` nur `updated_at`; die Akteursfelder (`*_by`, `*_by_id`) füllt T4 über die Akteurs-Header.
 - 2026-11-25 T2: `cleanup_server` löscht die Ausnahmen des Servers hart, auch beendete; `known_server_ids` zählt sie, damit der Tag-Sync (R-1697) auch einen Server aufräumt, von dem nur noch eine Ausnahme übrig ist (`test_tag_sync.py`, deshalb 23 Dateien).
 - 2026-11-25 T2: `test_response_shapes` legt das sparsame Fenster mit `enabled=False` statt `NULL` an — die Spalte ist `NOT NULL`; dass `NULL` beim Übernehmen `false` wird, prüft `test_migrations_smoke` (gleichwertiger Ersatz).
+- 2026-11-25 T4: `request_actor` liest `request.headers` statt `Header()`-Parametern und hängt nur an den schreibenden Routen — die Akteurs-Header sind Proxy-intern, das OpenAPI-Schema bleibt unverändert (Snapshot grün ohne Update).
+- 2026-11-25 T4: Der Proxy setzt die Akteurs-Header nur bei gebundenem Akteur (`actor_id` gesetzt); Steuerzeichen filtert das Monitoring mit `str.isprintable`, das nimmt auch Zeilen- und Absatztrenner heraus.
+- 2026-11-25 T4: Den Nit des `security`-Urteils zu T2 (`maintenance._apply` ließ `check_id`/`check_type` stehen) behebt T4, weil es `_apply` ohnehin anfasst; Test `test_a_window_put_over_a_check_exception_clears_the_check` mit Gegenprobe rot.

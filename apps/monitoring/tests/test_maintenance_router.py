@@ -159,6 +159,69 @@ def test_delete_ends_the_window_and_keeps_the_row(client_db):
     assert client.put(f"/maintenance/{mid}", json=_once()).status_code == 404
 
 
+def test_a_window_keeps_the_trail_of_who_made_changed_and_ended_it(client_db):
+    client, factory = client_db
+    mid = client.post(
+        "/maintenance",
+        json=_once(server_id="srv-1"),
+        headers={"X-AH-Actor-Id": "user:1", "X-AH-Actor-Name": "j%C3%BCrgen"},
+    ).json()["id"]
+    client.put(
+        f"/maintenance/{mid}",
+        json=_once(),
+        headers={"X-AH-Actor-Id": "user:2", "X-AH-Actor-Name": "anna"},
+    )
+    client.delete(
+        f"/maintenance/{mid}", headers={"X-AH-Actor-Id": "user:3", "X-AH-Actor-Name": "ben"}
+    )
+    row = _exception(factory, mid)
+    assert (row.created_by, row.created_by_id) == ("jürgen", "user:1")
+    assert (row.updated_by, row.updated_by_id) == ("anna", "user:2")
+    assert (row.ended_by, row.ended_by_id) == ("ben", "user:3")
+
+
+def test_a_window_put_over_a_check_exception_clears_the_check(client_db):
+    # A window is a server or all exception; a check id left behind would still match
+    # the check_id filter of GET /exceptions.
+    from app.models import MonitorCheck, MonitorException
+
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                name="c1",
+                server_id="srv-1",
+                check_type="ping",
+                config="{}",
+                interval="5m",
+                severity="critical",
+            )
+        )
+        db.flush()
+        db.add(
+            MonitorException(
+                id="w1",
+                origin="maintenance",
+                scope_kind="server",
+                server_id="srv-1",
+                check_id="c1",
+                check_type="ping",
+                effect="no_notify",
+                duration_kind="once",
+            )
+        )
+        db.commit()
+    assert client.put("/maintenance/w1", json=_once(server_id="srv-2")).status_code == 200
+    row = _exception(factory, "w1")
+    assert (row.scope_kind, row.server_id, row.check_id, row.check_type) == (
+        "server",
+        "srv-2",
+        None,
+        None,
+    )
+
+
 @pytest.mark.parametrize(
     "fields",
     [
