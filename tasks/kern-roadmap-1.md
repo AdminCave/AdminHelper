@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Weckbedingung für zurückgestellte Roadmap-Zeilen — Task-Ledger
-Status: bereit · Branch: feature/kern-roadmap-1 · Review: am Ende
+Status: erledigt · Branch: feature/kern-roadmap-1 · Review: am Ende
 Spec: Roadmap R-1780
 Heavy: none — nur `scripts/dev/roadmap.py` samt Unit-Tests und Markdown (Skill, DEVELOPMENT.md, ein Ledger-Kopf); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
