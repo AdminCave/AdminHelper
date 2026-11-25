@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-agent-24/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T4
 
-### T2 — R-1769: Self-Update-Client prüft das Serverzertifikat wie der Server-Push  [ ]
+### T2 — R-1769: Self-Update-Client prüft das Serverzertifikat wie der Server-Push  [x]
 Komponente: agent · Dateien: apps/agent/internal/selfupdate/client.go, apps/agent/internal/selfupdate/client_test.go, apps/agent/internal/httpclient/httpclient.go, apps/agent/internal/httpclient/httpclient_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @551fee29b 2026-11-25T05:12:10+01:00
+Review: approve (.ah-out/review/kern-agent-24/T2.verdict.json)
 Änderung: Ein enrollter Host holt das Update mit dem CA-Bundle der Enrollment-Zeit und derselben Ausstellerprüfung wie `httpclient.NewMTLS`, ohne Client-Zertifikat. Der Kommentar in `client.go` beschreibt das genau. Tests: Ein enrollter Host übergeht `insecure=true` und ein abweichendes `cacert`, und ein Zertifikat eines anderen Ausstellers scheitert. Risikopfad: `security` je Task. Der Hinweis zu `reprovisionHelps` (`apps/agent/internal/frpc/sync.go:603`) wird gesichtet und als Entscheidung festgehalten.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/ ./internal/httpclient/
 Doku: keine (Verhalten wie dokumentiert: das Self-Update vertraut dem CA-Bundle der Enrollment-Zeit)

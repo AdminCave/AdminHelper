@@ -80,6 +80,35 @@ func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Cli
 	if err != nil {
 		return nil, fmt.Errorf("Client-Zertifikat laden: %w", err)
 	}
+	tlsCfg, err := gatewayTLS(caPath)
+	if err != nil {
+		return nil, err
+	}
+	tlsCfg.Certificates = []tls.Certificate{cert}
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
+		CheckRedirect: noRedirect,
+	}, nil
+}
+
+// NewGateway is NewMTLS without a client certificate, for the gateway's repo plane :8445,
+// which asks for none: the same pinned CA bundle and the same check that the server
+// certificate is issued by the access intermediate (R-1769).
+func NewGateway(caPath string, timeout time.Duration) (*http.Client, error) {
+	tlsCfg, err := gatewayTLS(caPath)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
+		CheckRedirect: noRedirect,
+	}, nil
+}
+
+// gatewayTLS trusts only the CA bundle at caPath and verifies the gateway's issuer.
+func gatewayTLS(caPath string) (*tls.Config, error) {
 	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
 		return nil, fmt.Errorf("CA-Zertifikat lesen: %w", err)
@@ -88,16 +117,10 @@ func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Cli
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("CA-Zertifikat ungueltig")
 	}
-	tlsCfg := &tls.Config{
-		Certificates:     []tls.Certificate{cert},
+	return &tls.Config{
 		RootCAs:          pool,
 		MinVersion:       tls.VersionTLS12,
 		VerifyConnection: verifyGatewayIssuer,
-	}
-	return &http.Client{
-		Timeout:       timeout,
-		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
-		CheckRedirect: noRedirect,
 	}, nil
 }
 
