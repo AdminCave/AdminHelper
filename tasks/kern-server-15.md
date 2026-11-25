@@ -1,5 +1,5 @@
 # kern-server-15 — Task-Ledger
-Status: bereit · Branch: feature/kern-server-15 · Review: pro Task
+Status: aktiv · Branch: feature/kern-server-15 · Review: pro Task
 Spec: docs/features/kern-server-15.md (Roadmap R-1758, R-1763, R-1764, R-1773)
 Heavy: linux-full — docker-compose.yml (Healthchecks von monitoring und ca-issuer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,6 +56,12 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/hooks.html DE+EN · changelog.d/kern-server-15.md
 Task-Review: am Ende
 Abhängt von: T3, T5
+
+### T7 — Abschlussprüfung: Frist des Warte-Tests auf 30 s  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_tag_sync.py
+Änderung: `test_orphan_cleanup_does_not_wait_for_the_hub` wartet 30 s statt 10 s auf die Rückkehr des Abgleichs (`.claude/rules/testing.md`, Fristen); Fund `wichtig` der Abschlussprüfung.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
+Doku: keine (nur Test)
 
 ## Entscheidungen
 - T2: Auch die Alias-Namen WARN und FATAL, die `getLevelName` kennt, stoppen jetzt den Start. So halten es der CA-Issuer und betrieb.html (fünf Namen); ein Test belegt es.
