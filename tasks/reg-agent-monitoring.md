@@ -1,5 +1,5 @@
 # reg-agent-monitoring — Task-Ledger
-Status: bereit · Branch: feature/reg-agent-monitoring · Review: am Ende
+Status: erledigt · Branch: feature/reg-agent-monitoring · Review: am Ende
 Spec: Roadmap R-1779
 Heavy: linux-full — der Schritt agent_monitoring ist im Sammellauf rot; der Fix beweist sich vor dem Merge mit `bash scripts/tests/run.sh all --strict --step agent_monitoring` auf einer Box
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
