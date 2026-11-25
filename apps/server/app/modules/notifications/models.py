@@ -128,7 +128,7 @@ class Notification(Base):
     )
     severity = Column(String, nullable=False)  # info | warning | critical
     # The vocabulary of the bell (R-1079): monitoring | security | tunnel | backup |
-    # ansible | agent | session. A free string: an older sender keeps its own.
+    # ansible | agent | session | hooks. A free string: an older sender keeps its own.
     category = Column(String, nullable=False)
     event_type = Column(String, nullable=False)  # e.g. "monitoring.check.transition"
     title = Column(String, nullable=False)

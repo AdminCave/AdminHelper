@@ -52,6 +52,7 @@ def _run_event(event_type: str, event_data: Any) -> None:
     from app.modules.hooks.script_runner import (
         failed_run_error,
         notify_hook_failure,
+        raised_run_error,
         run_hook_script,
     )
 
@@ -83,7 +84,7 @@ def _run_event(event_type: str, event_data: Any) -> None:
                     notify_hook_failure(db, hook, f"{error} (event {event_type})")
             except Exception as exc:
                 logger.exception("Event-Hook '%s' fehlgeschlagen (event=%s)", hook.name, event_type)
-                notify_hook_failure(db, hook, failed_run_error({"error": repr(exc)}) or "")
+                notify_hook_failure(db, hook, raised_run_error(exc))
     except Exception:
         logger.exception("Event-Dispatch fehlgeschlagen (event=%s)", event_type)
     finally:

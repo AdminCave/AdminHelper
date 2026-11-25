@@ -43,9 +43,11 @@ Es gibt keine Migration und keine Änderung an der API.
 
 ## Trade-offs
 
-- **Entprellung (R-1763):** Ein Prozess-Lock je Hook um Prüfen und Schreiben. Das reicht, weil Hooks nur im
-  Server-Prozess laufen. Bei mehreren Workern bleibt ein seltenes Doppel möglich; ein DB-Lock wäre dafür schwerer und
-  ist nicht belegt nötig.
+- **Entprellung (R-1763):** Ein Prozess-Lock je Hook um Prüfen und Schreiben. Ein Hook ist entweder geplant (läuft
+  im Prozess `scheduler`, ein Lauf zur Zeit) oder ereignisgesteuert (läuft im Web-Worker); doppelte Notizen entstehen
+  also aus gleichzeitigen Event-Läufen in einem Worker, und die deckt das Lock. Restrisiko: Bei `WEB_CONCURRENCY` > 1
+  (Standard 1) kann ein zweiter Worker eine zweite Notiz schreiben. Ein DB-Lock (`pg_advisory_xact_lock`) wäre dafür
+  schwerer und ist für eine doppelte Glocken-Notiz nicht belegt nötig.
 - **Tag-Abgleich:** Die Entwarnungen gehen in einen Daemon-Thread. Der Abgleich wartet nicht auf den Hub, und ein
   Fehler wird nur geloggt, wie beim Senden aus der Hintergrund-Task.
 
