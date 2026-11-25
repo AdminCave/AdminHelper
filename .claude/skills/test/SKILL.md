@@ -151,8 +151,8 @@ candidate unconfirmed; `--base <sha>` overrides the comparison commit.
 ### Rhythm
 
 Every night at 01:30 `all`, on Saturdays `weekly` with the capstone (`nightly.sh`, cron). The
-first runs are noisy (the desktop chain flakes) — that is what the quarantine is for; `R reruns` in the run.sh summary stays 0 on purpose so the
-quarantine calibrates against un-retried suites.
+first runs are noisy (the desktop chain flakes) — that is what the quarantine is for; `R reruns` in
+the run.sh summary stays 0 on purpose so the quarantine calibrates against un-retried suites.
 
 ## Fast loop — warm once → iterate → reap (the default; do NOT stop after each run)
 

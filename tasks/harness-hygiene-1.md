@@ -74,8 +74,10 @@ Beweis: `~/.cache/ah-venv/bin/python -c 'import sqlalchemy;print(sqlalchemy.__ve
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: → T10
 
-### T7 — heavy_test.sh: Negativ-Assertionen ohne pipefail-Falle, Fall rot + Fuzz (R-1347)  [ ]
+### T7 — heavy_test.sh: Negativ-Assertionen ohne pipefail-Falle, Fall rot + Fuzz (R-1347)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy_test.sh, .claude/skills/test/SKILL.md, .claude/skills/feature-build/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6fb2c7cf6 2026-11-25T17:14:27+01:00
+Review: approve (.ah-out/review/harness-hygiene-1/T7.verdict.json)
 Änderung: Negativ-Assertionen auf `report_of` (`heavy_test.sh:478` und gleichartige) erst in eine Variable, dann
 prüfen; ein Fall „roter Schritt plus Fuzz-Fund im Teil-Detail“; die zwei überlangen Skill-Zeilen umbrechen. Der
 CLAUDE.md-Teil des Nits fährt nicht mit.
@@ -112,3 +114,4 @@ Task-Review: am Ende
 - T4: Die drei Agent-Pakete als eigener Block (Proben und Discovery laufen auf dem Host, credentials trägt Geheimnisse), `config.py` bei Auth, `checkers/http.py` bei SSRF, `agent-install.sh` bei Install. Gegenprobe: alte Liste 6 failed.
 - T5: Das Archiv entsteht in einem eigenen 0700-Verzeichnis im Ausgabeordner (`mktemp -d`), das Skript arbeitet darin über relative Namen und prüft Eigentümer, Mode und Inode vor dem Schreiben; kein zusätzliches `chmod 600` (Mode kommt von `mktemp`, die fd-Prüfung verlangt 600, auch unter Default-ACL). Das leere Verzeichnis räumt der EXIT-trap per `rmdir` nur über den Namen. Gegenprobe: alter Stand restore_guard 3 failed, diagnostics 6 Meldungen; je ein Mutant (ohne Inode-Vergleich, Zwischendatei über den Namen) rot. Runde 2 (security, wichtig): ein setgid-Ausgabeordner vererbt das Bit, `2700` gilt als eigen; das Bit bleibt, damit das Archiv wie bisher die Gruppe des Ordners trägt (Gegenprobe ohne `2700`: je 1 rot).
 - T6: pip nimmt den gehashten Lock nicht als Constraint („Constraints cannot have extras“, Hashes ebenso); `pip_dev` in `run.sh` zieht je Komponente einen `name==version`-Auszug nach `AH_OUT_DIR/constraints-<komp>.txt` und installiert `requirements-dev.txt -c` darauf, ein leerer Auszug bricht ab. Beleg: Worktree-Venv danach sqlalchemy 2.1.8 = Lock. Gegenprobe: alter `run.sh` 2 failed, Mutant „Extras im Auszug“ 1 failed.
+- T7: Wurzel statt Einzelstellen: `report_of`/`history_of` geben immer 0 zurück, damit `cat`s SIGPIPE unter `pipefail` weder eine positive Assertion rot noch eine negative grün macht (alle Aufrufer auf einmal); ein Bericht über einem Pipe-Puffer macht den Fall sicher statt 3 %. Neuer Fall 4b3 (roter Schritt + Fuzz-Fund in einem Teil). Gegenprobe: Helfer ohne `return 0` 2 failed, `heavy.sh` ohne Fund-Anhang 1 failed.
