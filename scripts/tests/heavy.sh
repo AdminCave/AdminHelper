@@ -11,7 +11,7 @@
 #     all       scripts/vm/warm.sh desktop, then two parts at once on two boxes:
 #                 rest  scripts/vm/iter.sh all --strict --part rest --exclude server-pytest
 #                       (the CI runs the server suite on every main commit)
-#                 gui  scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
+#                 gui   scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
 #               no GUI box after a retry: part gui after part rest, on the desktop box
 #               PASS only with both parts green
 #     capstone  scripts/tests/multibox.sh --capstone --strict
@@ -286,6 +286,10 @@ infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or not
   local base='no warm box|warm pond not ready|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)'
   base="$base"'|^vm\.py: (capacity|privilege)'
   local pat="$base"'|^vm\.py: (no ip|no ssh|timeout|sync failed|clone .*failed)'
+  # A full box (R-1284): docker and runc could not write, and every step after that
+  # failed for it. Anchored on the two writers: the bare words are in test
+  # fixtures (a PVE backup error, nginx's errno 28) that a failing test prints.
+  pat="$pat"'|^[[:space:]]*(OCI runtime [a-z]+ failed|Error response from daemon): .*[Nn]o space left on device'
   [ "${2:-}" = capstone ] && pat="$base"
   grep -aE "$pat" "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
 }
@@ -705,8 +709,10 @@ RETRIES=3
 # must fail the same WAY, not merely fail — a step that breaks differently each
 # time is not a stable candidate for a regression claim.
 first_marker() {  # first_marker <logfile>
+  # A random port (`tcp-NNNNN`) differs on every retry of the same fault (R-1421).
+  # Plain sed: session_status_test reads the one `sed -E` program here as the log mask.
   grep -aE '^[[:space:]]*(FAIL|strict-failed:|FEHLER|Error:)' "$1" 2>/dev/null \
-    | head -1 | sed 's/^[[:space:]]*//'
+    | head -1 | sed 's/^[[:space:]]*//; s/tcp-[0-9][0-9]*/tcp-<port>/g'
 }
 
 # A rerun by name that run.sh rejected in its dry pass (R-1206): the step never
@@ -718,9 +724,11 @@ step_unaddressable() {  # step_unaddressable <logfile>
 
 # A desktop spec whose `tauri build` failed runs against whatever binary the box
 # still holds, so its red result says nothing about the commit (R-1667: a missing
-# sidecar on the base hid a regression as `extern`).
-build_failed() {  # build_failed <logfile>
-  grep -aqF 'tauri build failed' "$1" 2>/dev/null
+# sidecar on the base hid a regression as `extern`). Only the wdio hook of a
+# desktop spec step says so (R-1672): the launcher unit test prints the same words.
+build_failed() {  # build_failed <step> <logfile>
+  case "$1" in desktop_e2e_*|"desktop-e2e smoke") ;; *) return 1 ;; esac
+  grep -aqF 'HookError [SevereServiceError]: tauri build failed' "$2" 2>/dev/null
 }
 
 # Desktop suites report per spec (`spec <name>: fail`), so the retry can target
@@ -878,12 +886,35 @@ settle_gui_box() {
 # <marker>". They go to the second VM only once both parts have had all their
 # retries (classify_red_step); each check rewrites its step's row.
 CANDIDATES=()
+# The first Node error code in a log: the signature R-1127 compares. Not the
+# marker: ten GUI specs broken by one dependency report ten different markers.
+# Only Node's own codes: an errno (ECONNREFUSED …) has too many unrelated causes
+# to stand for another step, and ERR_ASSERTION/ERR_TEST_FAILURE name any failed
+# test. A green `ok` line may quote a code it expected (ERR_CERT_REVOKED).
+error_code() {  # error_code <logfile>
+  grep -av '^[[:space:]]*ok[[:space:]]' "$1" 2>/dev/null \
+    | grep -oE '\b(UND_ERR_[A-Z_]+|ERR_[A-Z][A-Z0-9_]+)\b' \
+    | grep -vxE 'ERR_(ASSERTION|TEST_FAILURE)' | head -1
+}
+
 judge_candidates() {
-  local c idx step spec marker ebene schritt secs vm
+  local c idx step spec marker ebene schritt secs vm safe code
+  local -A extern_of=()
   for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
     IFS='|' read -r idx step spec marker <<<"$c"
-    note "second VM for '$step'"
-    second_vm_check "$step" "$spec" "$marker"
+    safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
+    code="$(error_code "$OUT/retry-$safe-1.log")"
+    if [ -n "$code" ] && [ -n "${extern_of[$code]-}" ]; then
+      # A counter-check costs a fresh box and two runs; one that already found
+      # this code extern stands for every later step with it (R-1127).
+      CLASS_VERDICT="extern"
+      STEP_DETAIL="3x red ($code), the same code as '${extern_of[$code]}', whose counter-check was extern; no second VM"
+      note "second VM for '$step' skipped: $code as '${extern_of[$code]}' -> extern"
+    else
+      note "second VM for '$step'"
+      second_vm_check "$step" "$spec" "$marker"
+      if [ -n "$code" ] && [ "$CLASS_VERDICT" = extern ]; then extern_of[$code]="$step"; fi
+    fi
     IFS='|' read -r ebene schritt _ secs vm _ <<<"${FINDINGS[$idx]}"
     FINDINGS[$idx]="$ebene|$schritt|$CLASS_VERDICT|$secs|$vm|$STEP_DETAIL"
   done
@@ -891,7 +922,7 @@ judge_candidates() {
 }
 
 second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDICT
-  local step="$1" spec="$2" marker="$3" rc base safe
+  local step="$1" spec="$2" marker="$3" rc base head safe
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
   if [ "$SECOND_VM" = 0 ]; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); --no-second-vm"
@@ -910,6 +941,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  could not create the w2 worktree — candidate stays unconfirmed"
     return 0
   fi
+  head="$(git -C "$W2_DIR" rev-parse HEAD 2>/dev/null)"
   release_gui_box "before the second-VM check"
   if ! AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); second box could not be leased"
@@ -922,7 +954,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  second box: run.sh rejected the step name — candidate stays unconfirmed"
     w2_teardown; return 0
   fi
-  if [ "$rc" != 0 ] && build_failed "$OUT/w2-head-$safe.log"; then
+  if [ "$rc" != 0 ] && build_failed "$step" "$OUT/w2-head-$safe.log"; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); tauri build failed on the second box"
     note "  second box: tauri build failed — the spec ran against an old binary, candidate stays unconfirmed"
     w2_teardown; return 0
@@ -951,7 +983,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  base ${base:0:8}: run.sh rejected the step name — no counter-check, candidate stays unconfirmed"
     w2_teardown; return 0
   fi
-  if [ "$rc" != 0 ] && build_failed "$OUT/w2-base-$safe.log"; then
+  if [ "$rc" != 0 ] && build_failed "$step" "$OUT/w2-base-$safe.log"; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="red on two boxes; tauri build failed on base ${base:0:8}"
     note "  base ${base:0:8}: tauri build failed — no counter-check, candidate stays unconfirmed"
     w2_teardown; return 0
@@ -960,6 +992,13 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     CLASS_VERDICT="reg"; STEP_DETAIL="base ${base:0:8} green, HEAD red on two boxes ($marker)"
     note "  base green, HEAD red -> REG"
     reg_finding "$step" "$marker" "$base"
+  elif ! git -C "$W2_DIR" diff --quiet "$base" "$head" -- scripts/vm/bootstrap_linux.sh 2>/dev/null; then
+    # The box was warmed from HEAD's bootstrap: when that changed since the base,
+    # a red base may be the new box, not the base (R-1126). An unreadable diff
+    # counts as changed.
+    CLASS_VERDICT="unbestaetigt"
+    STEP_DETAIL="red on two boxes; base ${base:0:8} red too, but it ran on a box bootstrapped from HEAD"
+    note "  base red, but bootstrap_linux.sh differs since ${base:0:8} -> unbestaetigt"
   else
     # Red on the base too, so nothing since the base broke it. The roadmap's
     # wording ("counter-check red => REG") is a slip; this is the meant logic
@@ -1090,7 +1129,7 @@ AUDIT_LINE=""
 check_audit() {
   local json concl when
   json="$(curl -fsSL --max-time 10 \
-    'https://api.github.com/repos/AdminCave/AdminHelper/actions/workflows/audit.yml/runs?per_page=1' 2>/dev/null)" \
+    'https://api.github.com/repos/AdminCave/AdminHelper/actions/workflows/audit.yml/runs?branch=main&per_page=1' 2>/dev/null)" \
     || { AUDIT_LINE="nicht abfragbar (Netz/Rate-Limit)"; return 0; }
   concl="$(printf '%s' "$json" | sed -n 's/.*"conclusion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
   when="$(printf '%s' "$json" | sed -n 's/.*"created_at"[[:space:]]*:[[:space:]]*"\([^"T]*\)T.*/\1/p' | head -1)"

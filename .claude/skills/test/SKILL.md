@@ -135,10 +135,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 
 | Verdict | How it is reached | What it means |
 |---|---|---|
-| `infra` | the box could not be had, or the step could not RUN: no warm box, a failed server lease, `vm.py: capacity/privilege`, on the one-box layer also `vm.py: no ip/no ssh/timeout/sync failed/clone … failed`, `strict-failed: no step ran`, `strict-failed: … (SKIP)`, wrapper exit 74 | never a regression, report reads UNVERIFIED |
+| `infra` | the box could not be had, or the step could not RUN: no warm box, a failed server lease, `vm.py: capacity/privilege`, on the one-box layer also `vm.py: no ip/no ssh/timeout/sync failed/clone … failed`, `strict-failed: no step ran`, `strict-failed: … (SKIP)`, wrapper exit 74, on the one-box layer a full disk (`no space left on device` from `OCI runtime … failed` / `Error response from daemon`) | never a regression, report reads UNVERIFIED |
 | `flaky` | green within 3 retries on the same box (`AH_NO_SYNC=1`) | quarantined in `tasks/private/seen.md`, does not fail the run |
-| `unbestaetigt` | 3× red, but green on a fresh second VM — or no PASS commit to compare against, or `--no-second-vm` | Kevin looks; never a REG |
-| `extern` | red on the second VM AND on the last PASS commit | environment/dependency, not the change |
+| `unbestaetigt` | 3× red, but green on a fresh second VM — or no PASS commit to compare against, or `--no-second-vm`, or a red base on a box built from HEAD's changed `scripts/vm/bootstrap_linux.sh` | Kevin looks; never a REG |
+| `extern` | red on the second VM AND on the last PASS commit (same bootstrap); a later candidate whose first retry log has the same Node code (`UND_ERR_*`, `ERR_*`) takes that verdict without a second VM | environment/dependency, not the change |
 | `reg` | red on the second VM, green on the last PASS commit | roadmap row (class REG, `neu`) + `tasks/reg-<datum>-<schritt>.md` |
 | `fail` | red all three times, but failing DIFFERENTLY each time | reproducibly broken without the stable signature a regression claim needs — no second VM |
 | `fund` | a red `schemathesis` step, at once: no retry, no second VM, no counter-check (a fuzz find does not repeat on demand) | the run is red; a BUG row, or a neutral SEC row for auth, enrollment, tokens or a risk path (`/feature-build` §5); no quarantine, no REG |

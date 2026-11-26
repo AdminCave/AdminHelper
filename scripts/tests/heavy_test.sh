@@ -573,6 +573,26 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 grep -q 'AH_SPEC=theme-toggle' "$SHIM_STATE/iter.args" \
   && ok "the desktop retry names the failing spec" || bad "retry args: $(cat "$SHIM_STATE/iter.args")"
 
+# ── 4f2: a random port in the marker is no different fault (R-1421) ──────────
+port_case() {  # port_case <port2> <port3> <port4>
+  mk_case
+  export SHIM_ITER_SEQ="1 1 1 1" SHIM_W2_HEAD_RC=0
+  export SHIM_ITER_OUT1="  FAIL  web vitest
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+  export SHIM_ITER_OUT2="  FAIL tunnel tcp-$1 refused" SHIM_ITER_OUT3="  FAIL tunnel tcp-$2 refused"
+  export SHIM_ITER_OUT4="  FAIL tunnel tcp-$3 refused"
+  artifact "web vitest:fail:19"
+}
+port_case 40113 51207 33480
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' && grep -qF 'FAIL tunnel tcp-<port> refused' <<<"$out" \
+  && ok "markers differing only in the port -> candidate" || bad "port markers: $(history_of)"
+port_case 40113 40113 40113
+export SHIM_ITER_OUT4="  FAIL session tcp-40113 refused"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,fail,' \
+  && ok "markers differing beyond the port stay differing" || bad "differing markers: $(history_of)"
+
 # ── 4g: the second VM ─────────────────────────────────────────────────────────
 # Shared setup for the candidate cases: red three times on the first box.
 candidate_case() {
@@ -662,6 +682,86 @@ history_of | grep -q ',all,web vitest,extern,' \
   && ok "base red as well -> extern, never reg" \
   || bad "rows: $(history_of)"
 
+# Two candidates with the same error code: the first one's extern counter-check
+# stands for the second, which needs no box of its own (R-1127). Calls 2-4 are
+# the first step's retries, 5-7 the second's.
+two_candidates_case() {
+  mk_case
+  seed_pass_history
+  unset SHIM_ITER_OUT5  # a case below gives the second step a code of its own
+  export SHIM_ITER_SEQ="1 1"
+  export SHIM_ITER_OUT1="  FAIL  web vitest
+  FAIL  scripts (hermetic)
+  run.sh[all]: 39 passed, 2 failed, 3 skipped, 0 test-skips, 0 reruns"
+  export SHIM_ITER_OUT="  FAIL  spec
+TypeError: fetch failed [cause: UND_ERR_INVALID_ARG]"
+  artifact "web vitest:fail:19" "scripts (hermetic):fail:30"
+  export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+}
+two_candidates_case
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+{ history_of | grep -q ',all,web vitest,extern,' \
+    && history_of | grep -q ',all,scripts (hermetic),extern,'; } \
+  && ok "the same error code after an extern -> extern too" || bad "rows: $(history_of)"
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 1 ] \
+  && ok "only the first candidate took the second box" \
+  || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+report_of | grep -qF "the same code as 'web vitest'" \
+  && ok "the report names the step whose counter-check it took" \
+  || bad "table: $(report_of | grep '^| all')"
+# Counter-check: another code, so the second step gets its own box.
+two_candidates_case
+export SHIM_ITER_OUT5="  FAIL  spec
+TypeError: fetch failed [cause: UND_ERR_SOCKET]"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "another error code -> its own second box" \
+  || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+history_of | grep -q ',all,scripts (hermetic),extern,' \
+  && ok "its own counter-check still decides" || bad "rows: $(history_of)"
+# An errno has too many causes to stand for another step: both get a box.
+two_candidates_case
+export SHIM_ITER_OUT="  FAIL  spec
+Error: connect ECONNREFUSED 192.0.2.1:5432"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "the same errno (ECONNREFUSED) -> still a second box each" \
+  || bad "errno: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+# A code quoted by a green line is no signature.
+two_candidates_case
+export SHIM_ITER_OUT="  ok   the replaced cert is refused (403 ERR_CERT_REVOKED)
+  FAIL  spec"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "a code only in an ok line -> still a second box each" \
+  || bad "ok line: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+
+# The second box is warmed from HEAD's bootstrap: a base whose
+# bootstrap_linux.sh differs ran on a box it was never built for (R-1126).
+BOOT_SHA=$(
+  export GIT_INDEX_FILE="$WORK/boot.index"
+  git -C "$FIX" read-tree "$BASE_SHA"
+  blob=$(printf 'old bootstrap\n' | git -C "$FIX" hash-object -w --stdin)
+  git -C "$FIX" update-index --add --cacheinfo "100755,$blob,scripts/vm/bootstrap_linux.sh"
+  git -C "$FIX" commit-tree "$(git -C "$FIX" write-tree)" -p "$BASE_SHA" -m "older bootstrap"
+)
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+out=$(bash "$HEAVY" all --base "$BOOT_SHA" 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' \
+  && ok "base red, but its bootstrap differs from HEAD -> unbestaetigt, not extern" \
+  || bad "rows: $(history_of)"
+report_of | grep -qF 'bootstrapped from HEAD' \
+  && ok "the report says the base ran on HEAD's box" || bad "table: $(report_of | grep '^| all')"
+# Counter-check: the same red base with an unchanged bootstrap stays extern.
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+out=$(bash "$HEAVY" all --base "$BASE_SHA" 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,extern,' \
+  && ok "an unchanged bootstrap keeps a red base extern" || bad "rows: $(history_of)"
+
 candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
@@ -725,25 +825,55 @@ report_of | grep -qF 'step not addressable by --step on base' \
 # ── 4g3: a second-box run whose tauri build failed is no evidence (R-1667) ───
 # The Sammellauf of 2026-11-20: the base build lacked the frpc sidecar, the spec
 # ran against an old binary, and a real regression was reported as `extern`.
-candidate_case
+# Only a desktop spec step builds through the wdio hook (R-1672).
+desktop_candidate_case() {
+  mk_case
+  export SHIM_ITER_SEQ="1 1 1 1"
+  export SHIM_ITER_OUT="  FAIL  desktop_e2e_misc"
+  export SHIM_ITER_OUT1="  FAIL  desktop_e2e_misc
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+  artifact "desktop_e2e_misc:fail:120"
+}
+HOOK_LINE="ERROR @wdio/cli:launcher: HookError [SevereServiceError]: tauri build failed (1)"
+desktop_candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
-export SHIM_W2_BASE_OUT="HookError [SevereServiceError]: tauri build failed (1)"
+export SHIM_W2_BASE_OUT="$HOOK_LINE"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-history_of | grep -q ',all,web vitest,unbestaetigt,' \
+history_of | grep -q ',all,desktop_e2e_misc,unbestaetigt,' \
   && ok "the base build failed -> unbestaetigt, not extern" || bad "rows: $(history_of)"
 report_of | grep -qF 'tauri build failed on base' \
   && ok "the report says the base was not built" || bad "table: $(report_of | grep '^| all')"
 
-candidate_case
+desktop_candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
-export SHIM_W2_HEAD_OUT="HookError [SevereServiceError]: tauri build failed (1)"
+export SHIM_W2_HEAD_OUT="$HOOK_LINE"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-history_of | grep -q ',all,web vitest,unbestaetigt,' \
+history_of | grep -q ',all,desktop_e2e_misc,unbestaetigt,' \
   && ok "the HEAD build failed on the second box -> unbestaetigt, not reg" || bad "rows: $(history_of)"
 [ "$(cat "$SHIM_STATE/w2.n")" = 1 ] \
   && ok "no counter-check after HEAD was not built" || bad "$(cat "$SHIM_STATE/w2.n") w2 runs"
+
+# The same hook line in a step that is no desktop spec (a unit test printing it):
+# the base is a counter-check like any other.
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+export SHIM_W2_BASE_OUT="$HOOK_LINE"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,extern,' \
+  && ok "the hook line outside a desktop spec step is no failed build" || bad "rows: $(history_of)"
+
+# A desktop spec step whose log carries the words without the hook (the launcher
+# unit test's message): no failed build either.
+desktop_candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+export SHIM_W2_BASE_OUT="AssertionError: expected tauri build failed (1) in the output"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,desktop_e2e_misc,extern,' \
+  && ok "the bare words without the hook are no failed build" || bad "rows: $(history_of)"
 
 # ── 4h: a confirmed regression becomes a roadmap row + a short ledger ────────
 roadmap_of() { cat "$AH_PRIVATE_DIR/ROADMAP.md" 2>/dev/null; }
@@ -938,6 +1068,11 @@ report_of | grep -q 'success (Lauf 2026-09-09)' \
   && ok "the report carries the audit.yml verdict" \
   || bad "audit line: $(report_of | grep -A2 'audit.yml')"
 [ "$(roadmap_of | grep -c '^| R-')" = 1 ] && ok "a green audit adds no row" || bad "green audit added a row"
+# The newest run of ANY branch would decide the line: a green feature branch hid a
+# red main (R-0737). The query names the branch.
+grep -F 'actions/workflows/audit.yml/runs?' "$SHIM_STATE/curl.args" 2>/dev/null | grep -qF 'branch=main' \
+  && ok "the audit query asks for main only" \
+  || bad "audit query: $(grep -F 'audit.yml' "$SHIM_STATE/curl.args" 2>/dev/null)"
 
 mk_case
 artifact "ruff check:pass:3"
@@ -1836,6 +1971,33 @@ out=$(bash "$HEAVY" all --no-second-vm 2>&1); rc=$?
 h="$(report_of | head -1)"
 [ "$rc" = 74 ] && grep -qF -- '-8192 MiB (rest); FAIL in part gui)' <<<"$h" \
   && ok "rest infra, gui red (judged later) -> UNVERIFIED, the reason names the FAIL in gui" || bad "rest infra + gui red -> rc=$rc head '$h'"
+
+# A full box (R-1284): runc could not write, every later step failed for it. The
+# part is infra, not a FAIL of the code.
+mk_case
+artifact "ruff check:pass:3"
+artifact_for gui "desktop_e2e_misc:fail:300"
+export SHIM_ITER_RC_GUI=1
+export SHIM_ITER_OUT_GUI="OCI runtime exec failed: write /tmp/runc-process1: no space left on device
+  FAIL  desktop_e2e_misc
+  run.sh[all]: 0 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+out=$(bash "$HEAVY" all --no-second-vm 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF 'no space left on device (gui))' <<<"$h" \
+  && ok "a full box (runc: no space left on device) -> UNVERIFIED, not FAIL" || bad "full box -> rc=$rc head '$h'"
+# Counter-check: the same words inside a test's own output (a fixture of a backup
+# error) are no full box; the red step stays FAIL.
+mk_case
+artifact "ruff check:pass:3"
+artifact_for gui "desktop_e2e_misc:fail:300"
+export SHIM_ITER_SEQ_GUI="1 1 1 1"
+export SHIM_ITER_OUT_GUI="    expected: ERROR: Backup of VM 102 failed - no space left on device
+  FAIL  desktop_e2e_misc
+  run.sh[all]: 0 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+out=$(bash "$HEAVY" all --no-second-vm 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" != 74 ] && [ "$rc" != 0 ] && grep -q '^FAIL' <<<"$h" \
+  && ok "the words in a test fixture are no full box -> FAIL stays" || bad "fixture enospc -> rc=$rc head '$h'"
 
 # ── 11d: no GUI box -> part gui runs after part rest, on the desktop box ─────
 # Kevin 2026-10-21: when warm.sh gui fails on its retry too, part gui runs after
