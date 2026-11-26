@@ -1,5 +1,5 @@
 # ca-issuer: Client-Identitaet nur vom Gateway — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-14 · Review: pro Task
 Spec: docs/features/kern-ca-14.md (Roadmap R-0840)
 Heavy: linux-full — apps/ca-issuer und integration_stack_test.sh (Erneuerung ueber den echten Gateway); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,9 +26,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
 Abhängt von: T1
 
-### T3 — Doku: ca-issuer prueft die Gegenstelle, CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-ca-14.md
+### T3 — Doku: ca-issuer prueft die Gegenstelle, CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-ca-14.md, docker-compose.yml, apps/ca-issuer/app/config.py, scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4b6b60e4e 2026-11-26T13:53:49+01:00
+Review: approve (.ah-out/review/kern-ca-14/T3.verdict.json)
 Änderung: Architektur und Installation DE+EN: der ca-issuer wertet die `X-Client-*`-Header wie der Server nur vom Dienst `gateway` aus, uvicorn ohne Proxy-Header. CHANGELOG-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-ca-14.md
-Task-Review: am Ende

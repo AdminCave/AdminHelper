@@ -348,6 +348,9 @@ services:
     # from its peers on the `pki` network below, the gateway (its enroll listener)
     # and postgres — ENFORCED by that network, not merely asserted (1.1); never from
     # frps, the other services of the default net, or the host (no port mapping).
+    # postgres reaches it as well, so the network is no boundary for the gateway's
+    # certificate headers: the issuer takes them only from the gateway's own address
+    # (app/gateway_peer.py).
     expose:
       - "8090"
     volumes:

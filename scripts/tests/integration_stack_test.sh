@@ -314,9 +314,10 @@ out=$(e2e_dc exec -T postgres wget -S -q -O /dev/null -T 10 \
 direct=$(grep -m1 -oE 'HTTP/[0-9.]+ [0-9]{3}' <<<"$out" | awk '{print $2}')
 via=$(curl -k -s "${CERT[@]}" -o /dev/null -w '%{http_code}' --max-time 5 \
     "$E2E_SERVER_URL/ca/trust" 2>/dev/null || echo 000)
-[ "$direct" = "401" ] && [ "$via" = "200" ] \
+[ -n "$leaf_escaped" ] && [ "$direct" = "401" ] && [ "$via" = "200" ] \
     && ok "certificate headers straight from postgres to the ca-issuer: 401, through the gateway: 200" \
-    || bad "ca-issuer header boundary: straight from postgres '${direct:-none}' (expected 401)," \
+    || bad "ca-issuer header boundary: leaf $([ -n "$leaf_escaped" ] && echo found || echo missing)," \
+        "straight from postgres '${direct:-none}' (expected 401)," \
         "through the gateway '$via' (expected 200)"
 
 # ── 8b. Per-device revocation through the gateway (R-0224) ────────────────────
