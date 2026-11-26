@@ -364,6 +364,9 @@ warm_lease() {  # warm_lease <slot> <log> -> the exit code of the last warm.sh c
 # part_job runs in the background. It leases its slot unless that is desktop
 # (run_all holds that box already), runs the part and writes $OUT/<part>.rc:
 # "<exit code> <seconds> <stage>", stage `lease` when the box was never had.
+# Once the box is had the job writes stage `leased` first: a job that dies before
+# its run ends (killed, out of memory) still leaves the lease on record, so the
+# GUI box it holds is released or kept for inspection, not forgotten (R-0745).
 # The file, not the status of `wait`: wait answers 127 for a pid that is no child
 # of this shell, and that must never be read as a result. The seconds include the
 # lease — a cold GUI box is part of what its part costs.
@@ -384,6 +387,7 @@ part_job() {  # part_job <part> <slot>
       return 0
     fi
     slot_flag=(--slot "$slot")
+    echo "0 $((SECONDS - t0)) leased" > "$OUT/$part.rc"
   fi
   AH_OUT_DIR="$OUT/$part" bash "$WRAPPERS/iter.sh" ${slot_flag[@]+"${slot_flag[@]}"} \
     all --strict --part "$part" ${exclude[@]+"${exclude[@]}"} >"$OUT/all-$part.log" 2>&1 </dev/null || rc=$?
@@ -494,6 +498,11 @@ run_all() {
         # (release_gui_box). Run on the desktop box, part gui holds none.
         [ "$slot" = gui ] && GUI_HELD=1
         evaluate_all "$OUT/all-$part.log" "$rc" "${part_box[$part]}" "$OUT/$part" "$part" "$slot" "${part_since[$part]}" ;;
+      leased)
+        # The job had its box and died before its run ended: no result, but the
+        # box is this run's to release or keep.
+        [ "$slot" = gui ] && GUI_HELD=1
+        PART_RESULT=infra PART_DETAIL="the part ended without a result (died after the lease)" ;;
       lease)
         # Only a refusal is left here: any other failed lease has run the part
         # on the desktop box (above).
@@ -1058,8 +1067,11 @@ reg_finding() {  # reg_finding <step> <marker> <base>
     note "reg '$step' already reported within 30 days — history.csv only"
     return 0
   fi
-  slug="$(printf '%s' "$step" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')"
-  name="reg-$DATE-$slug"
+  # The name is the slug of the REG worktree and its lane (worktree-setup.sh):
+  # lowercase [a-z0-9-], at most 40 characters, no dash at either end (R-1123).
+  slug="$(printf '%s' "$step" | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz' \
+    | tr -c 'abcdefghijklmnopqrstuvwxyz0123456789' '-' | tr -s '-' | sed 's/^-//; s/-$//')"
+  name="$(printf 'reg-%s-%s' "$DATE" "$slug" | cut -c1-40 | sed 's/-*$//')"
   roadmap_append REG \
     "$step rot im Wochenlauf $DATE" \
     "weekly $DATE · ${COMMIT:0:8} · Zweit-VM rot · Basis ${base:0:8} grün" \

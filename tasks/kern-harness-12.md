@@ -20,8 +20,10 @@ Beweis: Dedup-Key REF:harness:SKILL.md:test_frps_image (R-0441), R-1754
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
 
-### T2 — heavy.sh: geleaste GUI-Box nach totem Job festhalten, gueltige REG-Slugs  [ ]
+### T2 — heavy.sh: geleaste GUI-Box nach totem Job festhalten, gueltige REG-Slugs  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @aa5ef4b29 2026-11-26T11:21:47+01:00
+Review: approve (.ah-out/review/kern-harness-12/T2.verdict.json)
 Änderung: part_job schreibt nach erfolgreichem `warm_lease` die Stage `leased`; die Auswertung setzt bei `leased` (wie bei `run`) `GUI_HELD=1` und meldet den Teil als infra. `reg_finding` bildet den Slug kleingeschrieben und kuerzt den Namen `reg-<datum>-<slug>` auf hoechstens 40 Zeichen ohne Bindestrich am Ende. Tests: toter Job nach Lease → Box freigegeben bzw. notiert; Schrittname mit Grossbuchstaben und Ueberlaenge → Slug besteht die Pruefung aus `worktree-setup.sh`.
 Beweis: R-0745, R-1123 (reg-2026-11-03-backup-restore-crown-jewel-DR, 42 Zeichen)
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test

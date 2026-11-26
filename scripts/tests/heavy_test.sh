@@ -903,6 +903,33 @@ REG_LINT=$(ls "$FIX"/tasks/reg-*-web-lint.md 2>/dev/null | head -1)
   && ok "the reg ledger carries the marker masked, the Beweis: line stays" \
   || bad "reg ledger marker: rc=$rc $(grep -n 'web lint' "$REG_LINT" 2>/dev/null | head -3)"
 
+# ── 4i-f: the REG name is a valid worktree slug (R-1123) ──────────────────────
+# worktree-setup.sh takes only lowercase [a-z0-9-], at most 40 characters, with
+# no dash at either end; a step name with capitals and a long name broke that.
+candidate_case
+seed_pass_history
+long_step="backup_restore (crown-jewel DR)"
+export SHIM_ITER_OUT="  FAIL  $long_step"
+export SHIM_ITER_OUT1="  FAIL  $long_step
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "$long_step:fail:19"
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+REG_LEDGER=$(ls "$FIX"/tasks/reg-*.md 2>/dev/null | head -1)
+reg_name="$(basename "${REG_LEDGER:-none}" .md)"
+case "$reg_name" in
+  -*|*-|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) name_ok=0 ;;
+  *) name_ok=1 ;;
+esac
+[ -n "$REG_LEDGER" ] && [ "$name_ok" = 1 ] && [ "${#reg_name}" -le 40 ] \
+  && [ "$reg_name" = "reg-${reg_name:4:10}-backup-restore-crown-jewe" ] \
+  && ok "a long step name with capitals -> REG name '$reg_name' passes worktree-setup.sh's check" \
+  || bad "REG name '$reg_name' (${#reg_name} chars), rows: $(roadmap_of | grep '^| R-0018')"
+roadmap_of | grep -q "^| R-0018 | .* | tasks/$reg_name.md | " \
+  && ok "the Ledger column names that bounded ledger file" || bad "ledger cell: $(roadmap_of | grep '^| R-0018')"
+grep -q '^Status: geplant · Branch: feature/'"$reg_name"' · ' "$REG_LEDGER" 2>/dev/null \
+  && ok "the branch of the REG ledger is feature/<bounded name>" || bad "branch: $(grep '^Status:' "$REG_LEDGER" 2>/dev/null)"
+
 # ── 4j: audit.yml ────────────────────────────────────────────────────────────
 mk_case
 artifact "ruff check:pass:3"
@@ -1973,7 +2000,9 @@ unset SHIM_ITER_SLEEP
 # "<exit code> <seconds> <stage>" says no more: either way the part is infra and
 # the run UNVERIFIED, though the box pulled a green artifact and printed a green
 # summary line before the job died. With that branch cut short, part gui kept
-# the result of part rest, judged just before it, and the run passed.
+# the result of part rest, judged just before it, and the run passed. A job on
+# the gui slot writes stage `leased` once it has its box, so the box it died
+# holding is kept for inspection, not forgotten until its ttl (R-0745).
 mk_case
 artifact "ruff check:pass:3"
 printf 'desktop=3001\ngui=3002\n' > "$AH_VM_STATE_DIR/warm.env"
@@ -1982,11 +2011,14 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 rows="$(history_of)"
 [ -s "$SHIM_STATE/killed-gui" ] && [ "$(cat "$SHIM_STATE/iter-gui.n" 2>/dev/null)" = 1 ] \
   && ls "$AH_OUT_DIR"/weekly/*/gui/last-all.json >/dev/null 2>&1 \
-  && ! ls "$AH_OUT_DIR"/weekly/*/gui.rc >/dev/null 2>&1 \
-  && ok "the job of part gui died after its run had pulled, before it wrote gui.rc" \
-  || bad "probe: killed '$(cat "$SHIM_STATE/killed-gui" 2>/dev/null)', $(ls "$AH_OUT_DIR"/weekly/*/ "$AH_OUT_DIR"/weekly/*/gui 2>&1)"
-[ "$rc" = 74 ] && report_of | head -1 | grep -qxF 'UNVERIFIED (the part ended without a result (no gui.rc) (gui))' \
-  && ok "no gui.rc -> UNVERIFIED, the reason names gui.rc and the part" || bad "no gui.rc -> rc=$rc head '$(report_of | head -1)'"
+  && grep -qxE '0 [0-9]+ leased' "$AH_OUT_DIR"/weekly/*/gui.rc \
+  && ok "the job of part gui died after its run had pulled; gui.rc holds only the lease" \
+  || bad "probe: killed '$(cat "$SHIM_STATE/killed-gui" 2>/dev/null)', gui.rc '$(cat "$AH_OUT_DIR"/weekly/*/gui.rc 2>&1)'"
+[ "$rc" = 74 ] && report_of | head -1 | grep -qxF 'UNVERIFIED (the part ended without a result (died after the lease) (gui))' \
+  && ok "a job dead after the lease -> UNVERIFIED, the reason names the part" || bad "dead after lease -> rc=$rc head '$(report_of | head -1)'"
+report_of | grep -qF -- '- gui box 3002 kept for inspection (part gui: infra)' \
+  && ok "the GUI box the dead job held is kept for inspection, with a note" \
+  || bad "no kept-for-inspection note: $(report_of | grep -F 'gui box')"
 grep -qE ',all,-,infra,[0-9]+,3001\+3002$' <<<"$rows" && ! grep -q ',all,-,pass,' <<<"$rows" \
   && ok "history.csv: the layer row is infra, there is no layer row pass" || bad "layer rows: $(grep ',all,-,' <<<"$rows")"
 # A result file that is there but broken: the exit code or the seconds not a
