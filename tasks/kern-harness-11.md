@@ -58,7 +58,7 @@ Beweis: R-1631 kern-monitoring-50 T3, task-close.sh:103
 Verify: bash scripts/dev/verify.sh scripts --strict -- task_close_test
 Doku: Kopfkommentar task-close.sh
 
-### T5 — queue-wait: Kommentare nach §4.7 (R-1745)  [ ]
+### T5 — queue-wait: Kommentare nach §4.7 (R-1745)  [~] (bereits stimmig: /feature-build 4.7 reiht gleich nach gh pr create ein, die Kommentare queue-wait.sh:53 und queue_wait_test.sh:71 sagen genau das)
 Komponente: scripts · Dateien: scripts/dev/queue-wait.sh, scripts/tests/queue_wait_test.sh
 Änderung: Die Kommentare queue-wait.sh:53 und queue_wait_test.sh:71 beschreiben das Einreihen gleich nach
 `gh pr create`, auf die Pflicht-Checks wartend; kein Verhalten aendert sich.
