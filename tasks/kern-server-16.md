@@ -1,5 +1,5 @@
 # Server: engere Rechte der Datenbank-Rollen — Task-Ledger
-Status: bereit · Branch: feature/kern-server-16 · Review: am Ende
+Status: erledigt · Branch: feature/kern-server-16 · Review: am Ende
 Spec: docs/features/kern-server-16.md (Roadmap R-0939)
 Heavy: linux-full — Rechte der Dienst-Rollen im Stack (db-init, Server-Entrypoint, ca-issuer)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
