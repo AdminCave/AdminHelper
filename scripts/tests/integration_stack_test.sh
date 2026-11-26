@@ -14,6 +14,7 @@
 #   5. cert + login :443           -> JWT
 #   6. cert + JWT GET :443/api/...  -> 200 (real routing + DB + admin authz)
 #   8. /ca/renew with the enrolled cert -> a renewed cert
+#   8a. the same cert's headers sent straight to the ca-issuer from postgres -> 401
 #   8b. re-enrolling the device names the first cert as replaced: the first cert
 #       neither renews nor reaches the API, the new one does — until the device
 #       revokes itself (R-0224)
@@ -296,6 +297,27 @@ except Exception as e:
 PY
 )
 [ "$code" = "ok" ] && ok "/ca/renew through the gateway returned a cert (6.48)" || bad "/ca/renew failed: got '$code'"
+
+# ── 8a. The issuer takes the certificate headers from the gateway only (R-0840) ─
+# postgres shares the pki network with the gateway and the ca-issuer. From there the headers
+# the gateway would set for the cert of step 2 go straight to ca-issuer:8090 and get a 401,
+# while the same GET /ca/trust through the gateway gets a 200. Only an exact 401 passes: a
+# failed exec or lookup leaves no status.
+leaf_escaped=$(python3 -c '
+import sys, urllib.parse
+pem = open(sys.argv[1]).read()
+end = "-----END CERTIFICATE-----"
+print(urllib.parse.quote(pem[: pem.index(end) + len(end)] + "\n"))' "$E2E_WORK/client-fullchain.pem")
+out=$(e2e_dc exec -T postgres wget -S -q -O /dev/null -T 10 \
+    --header 'X-Client-Verify: SUCCESS' --header "X-Client-Cert: $leaf_escaped" \
+    http://ca-issuer:8090/trust 2>&1)
+direct=$(grep -m1 -oE 'HTTP/[0-9.]+ [0-9]{3}' <<<"$out" | awk '{print $2}')
+via=$(curl -k -s "${CERT[@]}" -o /dev/null -w '%{http_code}' --max-time 5 \
+    "$E2E_SERVER_URL/ca/trust" 2>/dev/null || echo 000)
+[ "$direct" = "401" ] && [ "$via" = "200" ] \
+    && ok "certificate headers straight from postgres to the ca-issuer: 401, through the gateway: 200" \
+    || bad "ca-issuer header boundary: straight from postgres '${direct:-none}' (expected 401)," \
+        "through the gateway '$via' (expected 200)"
 
 # ── 8b. Per-device revocation through the gateway (R-0224) ────────────────────
 # Re-enrolling the same device names its first certificate as replaced; the issuer

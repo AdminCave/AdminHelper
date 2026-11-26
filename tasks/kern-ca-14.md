@@ -17,8 +17,10 @@ Review: approve (.ah-out/review/kern-ca-14/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_peer.py tests/test_enroll_renew.py tests/test_trust_generation.py
 Doku: → T3
 
-### T2 — Stack-Test: Header aus einem anderen pki-Container  [ ]
+### T2 — Stack-Test: Header aus einem anderen pki-Container  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3f8460eb2 2026-11-26T13:37:56+01:00
+Review: approve (.ah-out/review/kern-ca-14/T2.verdict.json)
 Änderung: Nach Schritt 8 schickt der postgres-Container (busybox `wget`) `X-Client-Verify: SUCCESS` und das echte, escapte Leaf des Geraets direkt an `ca-issuer:8090/trust`; erwartet 401. Gegenprobe im selben Schritt: dieselbe Anfrage ueber den Gateway liefert 200.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
