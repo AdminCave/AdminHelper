@@ -32,8 +32,10 @@ Review: approve (.ah-out/review/kern-harness-13/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- toolchain_lockstep_test
 Doku: → T5
 
-### T3 — Stack-Lauf mit zwei Workern und leerem ADMIN_PASSWORD (R-0843)  [ ]
+### T3 — Stack-Lauf mit zwei Workern und leerem ADMIN_PASSWORD (R-0843)  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @05357b6e7 2026-11-26T22:41:45+01:00
+Review: approve (.ah-out/review/kern-harness-13/T3.verdict.json)
 Änderung: Neuer letzter Abschnitt nach dem Wipe. `.env` mit `ADMIN_PASSWORD=` und `WEB_CONCURRENCY=2`, dann
 `down -v` und `e2e_up gateway`. Erwartet:
 - zwei uvicorn-Worker;
@@ -79,3 +81,5 @@ Task-Review: am Ende
 - T4: der Test prueft beide Richtungen: jeder PR-Check aus ci.yml steht in der Liste, und jeder Listeneintrag
   kommt aus ci.yml. Ein umbenannter Job hinterliesse sonst einen Pflicht-Check, den niemand meldet, und die
   Queue wartete endlos.
+- T3: der Abschnitt faehrt mit MTLS_ENFORCE=false: unter mTLS verlangt /api/auth/bootstrap ein Client-Zertifikat,
+  das es vor dem ersten Admin nicht gibt; geprueft wird der Multi-Worker-Start, nicht das Gateway.
