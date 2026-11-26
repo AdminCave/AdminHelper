@@ -125,7 +125,9 @@ Prüfrunde auslöst. Die übrigen Nits eines Zugs ordnet sie vor dem PR so:
 - Nits, die die Bedingungen oben erfüllen, in **eine** Zeile: Klasse REF, Titel „Nachlese <zug>: <n> Nits“, Beweis
   die Task-IDs mit `datei:zeile`; der Dauerauftrag legt sie in einen `klein-nachlese-<n>`-Zug (bis CLAUDE.md §4 ihn
   nennt: `neu`).
-- Nits auf Harness-Pfaden in eine Zeile, die gleich `zurückgestellt` wird (CLAUDE.md §4).
+- Nits auf Harness-Pfaden in eine Zeile, die gleich `zurückgestellt` wird (CLAUDE.md §4): `roadmap.py status R-nnnn
+  zurückgestellt --until <heute+28> --note "Harness-Nit …"` (Kevin 2026-11-25: Datum in vier Wochen; danach
+  steht sie unter „Wieder fällig“).
 - Nits des `security`-Agenten und Nits zu Risikopfaden in eine `neu`-Zeile mit neutralem Titel für Kevins Triage;
   Einzelheiten nur unter `tasks/private/`.
 
