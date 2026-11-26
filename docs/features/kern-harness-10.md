@@ -47,13 +47,13 @@ GitHub REST „List workflow runs for a workflow“ nimmt den Query-Parameter `b
 - **R-1126:** (a) Basis rot und `scripts/vm/bootstrap_linux.sh` unterscheidet sich zwischen Basis und HEAD →
   `unbestaetigt` mit Detail (Empfehlung: billig, ehrlich); (b) die Basis auf frisch gebauter Box — 10–20 min mehr je
   Kandidat.
-- **R-1127:** Signatur = erster Node-/errno-Fehlercode im ersten Retry-Log (`UND_ERR_*`, `ENOSPC`, `ECONNREFUSED`,
-  …). Marker taugen nicht: jede Spec meldet ihren eigenen (`FAIL connect GUI specs failed`, …); `WebDriverError`
+- **R-1127:** Signatur = erster Node-Fehlercode im ersten Retry-Log (`UND_ERR_*`, `ERR_*` ohne `ERR_ASSERTION` und
+  `ERR_TEST_FAILURE`; keine errno wie `ECONNREFUSED`, die hat zu viele Ursachen; `ok`-Zeilen zaehlen nicht). Marker taugen nicht: jede Spec meldet ihren eigenen (`FAIL connect GUI specs failed`, …); `WebDriverError`
   ist zu allgemein. Ohne Fehlercode bleibt die volle Gegenprobe. Risiko: eine echte Regression mit demselben Code im
   selben Lauf wird `extern` — sie bleibt rot im Report („Kevin sichtet“), sperrt Merges wie jedes `extern`, und das
   Detail nennt den Schritt, dessen Gegenprobe uebernommen wurde.
 - **R-1672:** auf Desktop-Spec-Schritte (`desktop_e2e_*`, `desktop-e2e smoke`) und die Hook-Zeile
-  `Error in hook: SevereServiceError: tauri build failed` beschraenken.
+  `HookError [SevereServiceError]: tauri build failed` beschraenken.
 
 ## Risiken & Rollback
 Fehlklassifizierung im Sammellauf (zu milde Klasse verdeckt eine Regression). Jede Aenderung bekommt in

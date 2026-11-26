@@ -1,5 +1,5 @@
 # Harness: heavy.sh-Klassifizierer und Audit-Abfrage — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-10 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-10 · Review: pro Task
 Spec: docs/features/kern-harness-10.md (Roadmap R-0737, R-1126, R-1127, R-1284, R-1369, R-1421, R-1672, R-0121, R-1128, R-1133)
 Heavy: none — nur heavy.sh und Doku; heavy.sh wird hermetisch in heavy_test.sh geprueft (Shims statt Boxen)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,8 +71,10 @@ Code die volle Gegenprobe. Fall (zwei Kandidaten, eine w2-Runde) und Gegenprobe 
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: → T6
 
-### T6 — Klassen-Tabelle DE+EN und /test (R-1284, R-1126, R-1127)  [ ]
-Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/skills/test/SKILL.md
+### T6 — Klassen-Tabelle DE+EN und /test (R-1284, R-1126, R-1127)  [x]
+Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/skills/test/SKILL.md, docs/features/kern-harness-10.md, scripts/tests/heavy.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f4786acf5 2026-11-26T16:11:23+01:00
+Review: approve (.ah-out/review/kern-harness-10/T6.verdict.json)
 Änderung: Zeilen `infra`, `unbestaetigt`, `extern` der Klassen-Tabelle (cicd.html:267-270, en :263-266,
 SKILL.md:138-141) nennen volle Platte, den Bootstrap-Unterschied und die uebernommene Gegenprobe.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

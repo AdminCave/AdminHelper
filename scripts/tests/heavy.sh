@@ -885,7 +885,7 @@ settle_gui_box() {
 # <marker>". They go to the second VM only once both parts have had all their
 # retries (classify_red_step); each check rewrites its step's row.
 CANDIDATES=()
-# The first Node or errno code in a log: the signature R-1127 compares. Not the
+# The first Node error code in a log: the signature R-1127 compares. Not the
 # marker: ten GUI specs broken by one dependency report ten different markers.
 # Only Node's own codes: an errno (ECONNREFUSED …) has too many unrelated causes
 # to stand for another step, and ERR_ASSERTION/ERR_TEST_FAILURE name any failed
