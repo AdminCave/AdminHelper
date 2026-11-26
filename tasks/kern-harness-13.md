@@ -45,8 +45,10 @@ Den echten Stack-Lauf fährt die Session lokal, seine Summary steht im Commit-Bo
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: → T5
 
-### T4 — Pflicht-Checks des Rulesets als Liste, jeder PR-Job von ci.yml darin (R-1753)  [ ]
+### T4 — Pflicht-Checks des Rulesets als Liste, jeder PR-Job von ci.yml darin (R-1753)  [x]
 Komponente: scripts · Dateien: scripts/dev/required-checks.txt, scripts/tests/harness_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @25e75f499 2026-11-26T22:35:38+01:00
+Review: approve (.ah-out/review/kern-harness-13/T4.verdict.json)
 Änderung:
 - Neue Liste `scripts/dev/required-checks.txt`: SPDX-Kopf als `#`-Kommentar, der `gh api`-Befehl, der sie erzeugt,
   ein Check-Name je Zeile.
@@ -74,3 +76,6 @@ Task-Review: am Ende
   definiert ist. 2d verlangt Box-Go >= go.mod-`toolchain` (sonst `go`), nicht Gleichheit: nur ein Box-Go
   darunter laedt per GOTOOLCHAIN=auto nach (R-1060), ein hoeherer Patch schadet nicht. 2e prueft dazu jedes
   `python3.N` in bootstrap_linux.sh und run.sh, die R-1419 als zweite Fundstelle nennt.
+- T4: der Test prueft beide Richtungen: jeder PR-Check aus ci.yml steht in der Liste, und jeder Listeneintrag
+  kommt aus ci.yml. Ein umbenannter Job hinterliesse sonst einen Pflicht-Check, den niemand meldet, und die
+  Queue wartete endlos.

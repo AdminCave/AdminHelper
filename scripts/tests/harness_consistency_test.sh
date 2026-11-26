@@ -324,5 +324,92 @@ grep -qE '^          key: pkg-tool-\$\{\{ steps\.image\.outputs\.image \}\}-' "$
   && grep -qE 'image=\$\{ImageOS:-unknown\}-\$\{ImageVersion:-unknown\}' "$CI_YML" \
   && ok "the pkg-tool cache key names the runner image version" || bad "pkg-tool cache key without the image version"
 
+echo "── required checks ──"
+# Auto-merge waits only for the checks the ruleset requires (R-1753). Every check
+# a PR gets from ci.yml must be in scripts/dev/required-checks.txt, the ruleset's
+# list, and every entry there must come from ci.yml: a renamed job leaves a
+# required check nobody reports, and the queue waits forever. Not required:
+# `changes` and the shards, whose result jobs are.
+REQ="$ROOT/scripts/dev/required-checks.txt"
+req_check() {
+  python3 - "${2:-$CI_YML}" "$1" <<'PY'
+import re, sys
+jobs, cur, in_jobs = {}, None, False
+for line in open(sys.argv[1], encoding="utf-8").read().split("\n"):
+    if line == "jobs:":
+        in_jobs = True
+        continue
+    if in_jobs:
+        m = re.match(r"^  ([A-Za-z0-9_-]+):$", line)
+        if m:
+            cur = m.group(1)
+            jobs[cur] = []
+        elif cur:
+            jobs[cur].append(line)
+checks = set()
+for job, body in jobs.items():
+    text = "\n".join(body)
+    if job == "changes":
+        continue
+    # GitHub reports a job without name: under its job id.
+    m = re.search(r"^    name: (.+)$", text, re.M)
+    name = m.group(1).strip().strip("'\"") if m else job
+    keys = re.findall(r"\$\{\{ matrix\.([A-Za-z0-9_-]+) \}\}", name)
+    if "shard" in keys:
+        continue
+    names = [name]
+    for k in dict.fromkeys(keys):
+        vals = []
+        lm = re.search(r"^        " + re.escape(k) + r": \[(.*)\]\s*$", text, re.M)
+        if lm:
+            vals = [v.strip().strip("'\"") for v in lm.group(1).split(",") if v.strip()]
+        else:
+            vals = re.findall(r"^          - " + re.escape(k) + r": ['\"]?([^'\"\s]+)['\"]?\s*$", text, re.M)
+        if not vals:
+            print(f"BAD {job}: no values for matrix.{k} in its name")
+            names = []
+            break
+        names = [n.replace("${{ matrix." + k + " }}", v) for n in names for v in vals]
+    checks.update(names)
+req = {l.strip() for l in open(sys.argv[2], encoding="utf-8") if l.strip() and not l.startswith("#")}
+for c in sorted(checks - req):
+    print(f"MISSING {c}")
+for c in sorted(req - checks):
+    print(f"STALE {c}")
+print(f"COUNT {len(checks)}")
+PY
+}
+OUT="$(req_check "$REQ")"
+n_bad="$(grep -cE '^(MISSING|STALE|BAD) ' <<< "$OUT" || true)"
+if [ "$n_bad" = 0 ] && grep -qE '^COUNT [1-9]' <<< "$OUT"; then
+  ok "every PR check of ci.yml is required, every required check comes from ci.yml ($(sed -n 's/^COUNT //p' <<< "$OUT") checks)"
+else
+  while IFS= read -r l; do
+    case "$l" in
+      MISSING*) bad "ci.yml check '${l#MISSING }' is not in scripts/dev/required-checks.txt — auto-merge does not wait for it; Kevin adds it to the ruleset, then the list follows" ;;
+      STALE*) bad "required check '${l#STALE }' comes from no ci.yml job — the queue would wait for it forever; Kevin drops it from the ruleset, then the list follows" ;;
+      BAD*) bad "${l#BAD }" ;;
+    esac
+  done <<< "$OUT"
+  grep -qE '^COUNT [1-9]' <<< "$OUT" || bad "no check names read from ci.yml"
+fi
+# Counter-check: a list without one of the checks is red, naming it.
+OUT="$(req_check <(grep -vxF 'Gateway (nginx -t)' "$REQ"))"
+[ "$(grep -c '^MISSING ' <<< "$OUT" || true)" = 1 ] && grep -qxF 'MISSING Gateway (nginx -t)' <<< "$OUT" \
+  && ok "counter-check: a list without 'Gateway (nginx -t)' names exactly that check" \
+  || bad "counter-check: dropping 'Gateway (nginx -t)' from the list is not caught"
+# Counter-check: a list entry no job reports is red, naming it.
+OUT="$(req_check <(cat "$REQ"; echo 'Gone job (x)'))"
+[ "$(grep -cE '^(MISSING|STALE) ' <<< "$OUT" || true)" = 1 ] && grep -qxF 'STALE Gone job (x)' <<< "$OUT" \
+  && ok "counter-check: a list entry no ci.yml job reports is named stale" \
+  || bad "counter-check: a stale list entry is not caught"
+# Counter-check: a job without name: and one with a quoted name count under
+# the names GitHub reports, the job id and the unquoted name.
+OUT="$(req_check "$REQ" <(cat "$CI_YML"; printf '  new-job:\n    runs-on: x\n  quoted:\n    name: "Quoted (y)"\n'))"
+[ "$(grep -cE '^(MISSING|STALE) ' <<< "$OUT" || true)" = 2 ] && grep -qxF 'MISSING new-job' <<< "$OUT" \
+  && grep -qxF 'MISSING Quoted (y)' <<< "$OUT" \
+  && ok "counter-check: an unnamed job counts as its id, a quoted name without quotes" \
+  || bad "counter-check: an unnamed or quoted-name job is not read as GitHub reports it"
+
 echo "harness_consistency_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
