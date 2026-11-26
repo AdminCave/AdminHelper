@@ -7,9 +7,12 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Entscheidungen
 - Kevin 2026-11-25 (Notizen R-0854, R-0867): faellig.
+- T1: das Programm und wt startet der Desktop ueber `which_in` (nur absolute PATH-Eintraege, `<name>` und `<name>.exe`, kein PATHEXT); ein reines `ssh.cmd`/`ansible-playbook.bat` gilt daher als nicht gefunden. Bewusst: die Spec waehlt `which`, ein PATHEXT-Shim waere wieder ein Startweg ueber cmd.
 
-### T1 — Windows-Konsole: Programm per absolutem Pfad, cmd mit /D (R-0867)  [ ]
+### T1 — Windows-Konsole: Programm per absolutem Pfad, cmd mit /D (R-0867)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/terminal.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @12f56ccec 2026-11-26T13:55:29+01:00
+Review: approve (.ah-out/review/kern-desktop-5/T1.verdict.json)
 Änderung: `open_windows_terminal` löst `command` mit `which` auf (fehlt es: `AppError::Connection`, nichts startet) und gibt wt und cmd den absoluten Pfad; `cmd_console_line` stellt `/D` vor `/S /V:OFF /K`. Tests: die bestehenden `cmd_console_line_*`-Erwartungen und `run_once_line` auf `/D`; neuer Test, dass ein Programm nur im Arbeitsverzeichnis nicht aufgelöst wird und `open_windows_terminal` dann ablehnt (Auflösung als testbare Funktion über `which_in`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- terminal::
 Doku: → T2
