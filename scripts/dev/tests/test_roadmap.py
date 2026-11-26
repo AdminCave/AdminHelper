@@ -693,6 +693,32 @@ def approve(p: pathlib.Path, *args: str) -> int:
     return roadmap.main(["--file", str(p), "--today", "2026-09-25", "approve", *args])
 
 
+def code_repo(tmp_path: pathlib.Path, *branches: str) -> pathlib.Path:
+    """A stand-in for the public repository, with the plan branches named."""
+    repo = tmp_path / "code"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "-c", "user.email=f@example.invalid", "-c", "user.name=F", "commit", "-q",
+        "--allow-empty", "-m", "base")  # fmt: skip
+    for b in branches:
+        git(repo, "branch", b)
+    return repo
+
+
+# R-0003 as the session may approve it: its ledger, Kevin's word in the note.
+READY = CLEAN.replace(
+    "| R-0003 | FEAT | Etwas | geplant | kevin 2026-09-01 | — |",
+    "| R-0003 | FEAT | Etwas | geplant (Kevin 2026-09-24: angenommen) | kevin 2026-09-01 | tasks/x-1.md |",
+)
+
+
+@pytest.fixture
+def plan_branch(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    repo = code_repo(tmp_path, "feature/x-1")
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    return repo
+
+
 def placed(p: pathlib.Path, rid: str) -> tuple[str, roadmap.Row]:
     [hit] = [
         (s, r) for s, r in roadmap.Roadmap(p.read_text(encoding="utf-8")).rows() if r.id == rid
@@ -746,13 +772,15 @@ def test_closed_to_neu_in_particular_is_forbidden(
     )
 
 
-def test_the_life_of_a_row(tmp_path: pathlib.Path) -> None:
+def test_the_life_of_a_row(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The live probe of the Abschluss, on a fixture repository: every step one
     commit, and the throwaway row ends abgelehnt so it counts for nothing."""
     repo = fixture_repo(tmp_path)
+    monkeypatch.setattr(roadmap, "ROOT", code_repo(tmp_path, "feature/wegwerf"))
     p = aged(repo / "ROADMAP.md")
     assert add(p, "--class", "FEAT", "--title", "Wegwerf", "--source", "kevin 2026-09-25") == 0
-    for step in (["status", "R-0010", "geplant"], ["approve", "R-0010"], ["status", "R-0010", "aktiv"],
+    for step in (["status", "R-0010", "geplant", "--ledger", "tasks/wegwerf.md",
+                  "--note", "Kevin 2026-09-25: diktiert"], ["approve", "R-0010"], ["status", "R-0010", "aktiv"],
                  ["status", "R-0010", "bereit"], ["status", "R-0010", "pr"],
                  ["status", "R-0010", "abgeschlossen", "--note", "PR #99"],
                  ["status", "R-0010", "abgelehnt", "--note", "Probe"]):  # fmt: skip
@@ -766,7 +794,7 @@ def test_the_life_of_a_row(tmp_path: pathlib.Path) -> None:
         "roadmap: status R-0010 bereit",
         "roadmap: status R-0010 aktiv",
         "roadmap: approve R-0010",
-        "roadmap: status R-0010 geplant",
+        "roadmap: status R-0010 geplant --ledger tasks/wegwerf.md",
         "roadmap: add R-0010",
     ]
     assert findings(p.read_text(encoding="utf-8")) == []
@@ -998,24 +1026,27 @@ def test_the_closed_heading_names_the_days_rows_are_kept(tmp_path: pathlib.Path)
     assert "## Abgeschlossen (letzte 7 Tage)" in out and "letzte 30 Tage" not in out
 
 
-def test_approve_and_revoke(tmp_path: pathlib.Path) -> None:
-    p = aged(write(tmp_path, CLEAN))
+def test_approve_and_revoke(tmp_path: pathlib.Path, plan_branch: pathlib.Path) -> None:
+    p = aged(write(tmp_path, READY))
     assert approve(p, "R-0003") == 0
     assert placed(p, "R-0003")[1].status == "freigegeben"
     assert approve(p, "R-0003", "--revoke") == 0
     assert placed(p, "R-0003")[1].status == "geplant"
 
 
-def test_approve_and_revoke_keep_the_note(tmp_path: pathlib.Path) -> None:
+def test_approve_and_revoke_keep_the_note(
+    tmp_path: pathlib.Path, plan_branch: pathlib.Path
+) -> None:
     """The note of a geplant row often carries Kevin's word for the plan:
     approve changes only the word, both ways."""
-    p = aged(write(tmp_path, CLEAN.replace("| geplant |", "| geplant (Semantik-Frage: x) |")))
+    note = "(Kevin 2026-09-24: Semantik-Frage x)"
+    p = aged(write(tmp_path, READY.replace("(Kevin 2026-09-24: angenommen)", note)))
     assert approve(p, "R-0003") == 0
     section, r = placed(p, "R-0003")
-    assert (section, r.cells[roadmap.STATUS]) == ("Geplant", "freigegeben (Semantik-Frage: x)")
+    assert (section, r.cells[roadmap.STATUS]) == ("Geplant", f"freigegeben {note}")
     assert approve(p, "R-0003", "--revoke") == 0
     section, r = placed(p, "R-0003")
-    assert (section, r.cells[roadmap.STATUS]) == ("Geplant", "geplant (Semantik-Frage: x)")
+    assert (section, r.cells[roadmap.STATUS]) == ("Geplant", f"geplant {note}")
     assert findings(p.read_text(encoding="utf-8")) == []
 
 
@@ -1028,6 +1059,48 @@ def test_approve_only_from_geplant_and_revoke_only_from_freigegeben(
     p = aged(write(tmp_path, CLEAN))
     assert approve(p, rid, *args) == 2
     assert p.read_text(encoding="utf-8") == CLEAN
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "says"),
+    [
+        ("| tasks/x-1.md |", "| — |", "names no ledger tasks/<slug>.md"),
+        ("| tasks/x-1.md |", "| tasks/x-2.md |", "no branch feature/x-2, local or on origin"),
+        (
+            "(Kevin 2026-09-24: angenommen)",
+            "(Session 2026-09-24: angenommen)",
+            "no 'Kevin JJJJ-MM-TT'",
+        ),
+        ("(Kevin 2026-09-24: angenommen)", "(kevin 2026-09-24)", "no 'Kevin JJJJ-MM-TT'"),
+        ("(Kevin 2026-09-24: angenommen)", "", "no 'Kevin JJJJ-MM-TT'"),
+    ],
+)
+def test_approve_refuses_a_row_not_ready(
+    tmp_path: pathlib.Path,
+    plan_branch: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    old: str,
+    new: str,
+    says: str,
+) -> None:
+    """R-0579/R-0580: without a ledger, a plan branch or Kevin's word in the
+    note (the source does not count) the row stays geplant, the file as it was."""
+    text = READY.replace(old, new).replace("geplant  |", "geplant |")
+    p = aged(write(tmp_path, text))
+    assert approve(p, "R-0003") == 2
+    assert says in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == text
+
+
+def test_approve_takes_the_plan_branch_from_origin(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = code_repo(tmp_path)
+    git(repo, "update-ref", "refs/remotes/origin/feature/x-1", "HEAD")
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    p = aged(write(tmp_path, READY))
+    assert approve(p, "R-0003") == 0
+    assert placed(p, "R-0003")[1].status == "freigegeben"
 
 
 @pytest.mark.parametrize(

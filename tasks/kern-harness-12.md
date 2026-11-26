@@ -48,8 +48,10 @@ Beweis: R-1755
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: keine (Verhalten entspricht der dokumentierten Absicht von --range)
 
-### T5 — roadmap.py approve: Ledger, Plan-Branch und Kevins Marke  [ ]
+### T5 — roadmap.py approve: Ledger, Plan-Branch und Kevins Marke  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, CLAUDE.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/skills/roadmap/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bdcdaa9c3 2026-11-26T11:33:11+01:00
+Review: approve (.ah-out/review/kern-harness-12/T5.verdict.json)
 Änderung: `approve` verweigert (Exit ≠ 0, Grund auf stderr) eine Zeile ohne Spalte `Ledger`, ohne Branch `feature/<slug>` (lokal oder `origin`) und ohne `Kevin JJJJ-MM-TT` in der Notiz. Regeltext in CLAUDE.md §4 und den drei Skills: ein diktiertes Vorhaben bekommt am Gate die Notiz `Kevin JJJJ-MM-TT: diktiert`. Tests je Verweigerungsgrund und der Erfolgsfall.
 Beweis: R-0580, R-0579 (Details privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test

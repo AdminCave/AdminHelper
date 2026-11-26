@@ -62,8 +62,9 @@ Roadmap-Zeile (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE; Status neu → 
 pr → abgeschlossen) → `/feature-plan` (ein Zug: `--zug tasks/<slug>.md`) committet `docs/features/<slug>.md` und
 `tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → die Session gibt sofort selbst frei, wenn
 Kevin die Zeile angenommen (`/roadmap triage` oder der Dauerauftrag im roadmap-Skill, Kevin 2026-11-11) oder das
-Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21) → `/feature-build` (Kopf
-`aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
+Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21; es verweigert ohne Spalte
+`Ledger`, ohne Branch `feature/<slug>` und ohne `Kevin JJJJ-MM-TT: angenommen|diktiert` in der Notiz) →
+`/feature-build` (Kopf `aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
 Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in der Session oder in der
 Notiz der Zeile) trifft, stellt das Gate als Frage mit Empfehlung; ihre Task steht auf `[?]`, die übrigen baut die
 Session; hängt jede Task an einer Frage, bleibt die Zeile `geplant`. Die Roadmap ist die einzige Reihenfolge-Wahrheit,

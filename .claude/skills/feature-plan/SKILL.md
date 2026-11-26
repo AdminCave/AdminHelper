@@ -185,5 +185,7 @@ Bei Zug und Mitnehmen gilt jeder Roadmap-Schritt des Gates für jede enthaltene 
 - **Freigabe:** gleich nach dem Bericht gibt die Session frei, `python3 scripts/dev/roadmap.py approve R-nnnn`
   (beim Bündel je Zeile; die Notiz bleibt), wenn Kevin die Zeile angenommen oder das Vorhaben diktiert hat und
   nicht jede Task auf `[?]` steht; danach `/feature-build tasks/<slug>.md`. Nie für eine Zeile ohne committeten Plan
-  (CLAUDE.md §4, §11).
+  (CLAUDE.md §4, §11). `approve` verweigert eine Zeile ohne Spalte `Ledger`, ohne Branch `feature/<slug>` (lokal oder
+  auf `origin`) und ohne `Kevin JJJJ-MM-TT` in der Notiz; ein diktiertes Vorhaben bekommt am Gate die Notiz
+  `Kevin JJJJ-MM-TT: diktiert` (`status R-nnnn geplant --note …`, die alte Notiz dahinter).
 - **Implementiere nichts.** Kein Produktivcode, kein weiterer Branch, nichts auf `main`.

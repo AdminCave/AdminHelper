@@ -31,7 +31,8 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Kopf `aktiv` → weiter mit der ersten offenen Task (nach einer Unterbrechung CLAUDE.md §13).
 - Roadmap `geplant` (von Kevin angenommen oder diktiert, CLAUDE.md §4), Kopf `geplant`, das Ledger auf
   `feature/<slug>` committet und nicht jede Task `[?]` → die Session gibt frei (`python3 scripts/dev/roadmap.py
-  approve R-nnnn`, CLAUDE.md §4), dann wie im ersten Punkt.
+  approve R-nnnn`, CLAUDE.md §4), dann wie im ersten Punkt. Fehlt der Notiz `Kevin JJJJ-MM-TT`, verweigert
+  `approve`: Kevins Wort fehlt, die Zeile ist eine Frage an ihn.
 - Sonst nicht `freigegeben` → melden, nicht bauen.
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
 
