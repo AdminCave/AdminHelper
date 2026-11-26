@@ -1,5 +1,5 @@
 # ca-issuer: Client-Identitaet nur vom Gateway — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-14 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ca-14 · Review: pro Task
 Spec: docs/features/kern-ca-14.md (Roadmap R-0840)
 Heavy: linux-full — apps/ca-issuer und integration_stack_test.sh (Erneuerung ueber den echten Gateway); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
