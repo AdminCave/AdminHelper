@@ -21,16 +21,25 @@ import (
 	"adminhelper-agent/internal/enroll"
 )
 
-// The frpc service actions are seams so tests can stub them (they shell out to systemctl and frpc).
-var (
-	restartService = restartFrpc
-	disableService = disableFrpc
-	enableService  = enableFrpcService
-	isActive       = frpcActive
-	reloadService  = reloadFrpc
-	isDown         = frpcDown
-	ownsAdminPort  = frpcOwnsAdminPort
-)
+// serviceOps is the test seam of the frpc service: its actions shell out to systemctl and frpc
+// (service(8) on FreeBSD, the supervisor on Windows). A test stubs the fields it needs and restores
+// the whole value at once.
+type serviceOps struct {
+	restart, disable, enable, reload func(context.Context) error
+	active, down                     func(context.Context) (bool, error)
+	ownsAdminPort                    func(port int) bool
+}
+
+// frpcService holds the actions of this platform (platform_*.go).
+var frpcService = serviceOps{
+	restart:       restartFrpc,
+	disable:       disableFrpc,
+	enable:        enableFrpcService,
+	reload:        reloadFrpc,
+	active:        frpcActive,
+	down:          frpcDown,
+	ownsAdminPort: frpcOwnsAdminPort,
+}
 
 // ensureDataDir secures a directory of the agent's data; a seam, so that a test can have it fail.
 var ensureDataDir = config.EnsureDataDir
@@ -241,7 +250,7 @@ func frpcStuck(ctx context.Context) (bool, error) {
 	if _, err := os.Stat(config.FrpConfigFile()); err != nil {
 		return false, nil
 	}
-	return isDown(ctx)
+	return frpcService.down(ctx)
 }
 
 // configWithoutTunnel reports whether frpc.toml is in place without a tunnel. An older agent may
@@ -390,39 +399,39 @@ func refuseServerConfig(ctx context.Context, refusal error) error {
 // frpc reloads over its admin API on adminPort, which keeps unchanged tunnels and their
 // connections; frp takes only the proxies from a reload, so it stands in for a restart only while
 // the common part is the one frpc started on. The reload goes only to the agent's own frpc
-// (ownsAdminPort). The provisioning (mayReload false) always restarts: it may have enrolled a new
+// (frpcService.ownsAdminPort). The provisioning (mayReload false) always restarts: it may have enrolled a new
 // identity, and a reload does not connect to frps anew, only a restart does. Without an answer
 // from systemd the reload is the only way to drop a removed tunnel while others remain.
 func startFrpc(ctx context.Context, frpcToml []byte, adminPort int, mayReload bool) (string, error) {
 	common := hashConfig(commonPart(frpcToml))
 	reloadable := mayReload && startedCommon() == common
-	active, err := isActive(ctx)
+	active, err := frpcService.active(ctx)
 	if err != nil {
 		// Fails like a start: the hash stays for the next run, the provisioning only warns.
-		if !reloadable || !ownsAdminPort(adminPort) {
+		if !reloadable || !frpcService.ownsAdminPort(adminPort) {
 			return "", fmt.Errorf("%w: %w", errFrpcService, err)
 		}
-		if reloadErr := reloadService(ctx); reloadErr != nil {
+		if reloadErr := frpcService.reload(ctx); reloadErr != nil {
 			return "", fmt.Errorf("%w: %w; the reload over the admin API failed too: %v", errFrpcService, err, reloadErr)
 		}
 		return "reloaded without an answer from systemd", nil
 	}
 	if !active {
-		if err := startedOn(ctx, common, enableService, "enable and start frpc"); err != nil {
+		if err := startedOn(ctx, common, frpcService.enable, "enable and start frpc"); err != nil {
 			return "", err
 		}
 		return "enabled and started", nil
 	}
 	if reloadable {
-		if !ownsAdminPort(adminPort) {
+		if !frpcService.ownsAdminPort(adminPort) {
 			logger.Warnf("frpc does not listen on its admin port 127.0.0.1:%d, restarting frpc instead of a reload", adminPort)
-		} else if err := reloadService(ctx); err != nil {
+		} else if err := frpcService.reload(ctx); err != nil {
 			logger.Warnf("frpc reload failed, restarting frpc instead: %v", err)
 		} else {
 			return "reloaded", nil
 		}
 	}
-	if err := startedOn(ctx, common, restartService, "restart frpc"); err != nil {
+	if err := startedOn(ctx, common, frpcService.restart, "restart frpc"); err != nil {
 		return "", err
 	}
 	return "restarted", nil
@@ -507,7 +516,7 @@ func frpcGone() bool {
 // tunnels over the admin API (dropTunnels): frpc must not keep a tunnel the server no longer
 // sends for as long as systemd does not answer.
 func stopFrpc(ctx context.Context) error {
-	if err := disableService(ctx); err != nil {
+	if err := frpcService.disable(ctx); err != nil {
 		stopErr := fmt.Errorf("%w: stop and disable frpc: %w", errFrpcService, err)
 		if dropErr := dropTunnels(ctx); dropErr != nil {
 			return fmt.Errorf("%w; dropping the tunnels over the admin API failed as well: %v", stopErr, dropErr)
@@ -546,7 +555,7 @@ func dropTunnels(ctx context.Context) error {
 			return fmt.Errorf("activate frpc.toml without tunnels: %w", err)
 		}
 	}
-	if err := reloadService(ctx); err != nil {
+	if err := frpcService.reload(ctx); err != nil {
 		return err
 	}
 	logger.Warnf("systemd did not stop frpc: its tunnels are dropped over the admin API, the next run stops frpc again")
