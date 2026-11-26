@@ -222,6 +222,25 @@ DOCKER_PY="$(sed -n 's/^FROM python:\([0-9]*\.[0-9]*\)-.*/\1/p' "$ROOT"/apps/*/D
   && ok "box python $BOX_PY has the Dockerfiles' minor $DOCKER_PY" \
   || bad "box python '$BOX_PY', Dockerfiles FROM python: $(tr '\n' ' ' <<<"$DOCKER_PY")"
 
+echo "── box downloads ──"
+# A single upstream blip failed whole bakes (R-1795, R-1797); every download of
+# the bootstrap goes through dl(), which retries and bounds a stalled transfer.
+DL_DEF="$(sed -n '/^dl() {/,/^}/p' "$BOOT")"
+grep -q -- '--retry ' <<<"$DL_DEF" && grep -q -- '--connect-timeout ' <<<"$DL_DEF" && grep -q -- '--speed-time ' <<<"$DL_DEF" \
+  && ok "bootstrap_linux.sh dl() retries and bounds stalls" \
+  || bad "bootstrap_linux.sh dl() lacks --retry, --connect-timeout or --speed-time"
+RAW_CURL=$(sed '/^dl() {/,/^}/d' "$BOOT" | grep -v '^[[:space:]]*#' | grep -cE '(^|[^-[:alnum:]_])curl[[:space:]]+-' || true)
+[ "$RAW_CURL" -eq 0 ] && ok "bootstrap_linux.sh downloads only through dl()" \
+  || bad "bootstrap_linux.sh calls curl directly ($RAW_CURL lines): use dl()"
+PIPED=$(grep -v '^[[:space:]]*#' "$BOOT" | grep -cE '(^|[[:space:]])dl[[:space:]].*\|' || true)
+[ "$PIPED" -eq 0 ] && ok "bootstrap_linux.sh pipes no download (a retry would repeat the body)" \
+  || bad "bootstrap_linux.sh pipes a download ($PIPED lines): write it to a file"
+RAW_PIP=$(sed '/^pip_install() {/,/^}/d' "$BOOT" | grep -v '^[[:space:]]*#' | grep -cE 'pip3? install' || true)
+[ "$RAW_PIP" -eq 0 ] && ok "bootstrap_linux.sh installs pip packages only through pip_install()" \
+  || bad "bootstrap_linux.sh calls pip install directly ($RAW_PIP lines): use pip_install()"
+grep -q 'Acquire::Retries' "$BOOT" && ok "bootstrap_linux.sh sets apt Acquire::Retries" \
+  || bad "bootstrap_linux.sh sets no apt Acquire::Retries"
+
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$ROOT/scripts/tests/run.sh")"
 grep -qw 'harness_consistency_test' <<<"$LIST" && ok "registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 # The tests under .github/scripts/ ran only as CI steps, so a task's evidence did not cover them (R-1352).

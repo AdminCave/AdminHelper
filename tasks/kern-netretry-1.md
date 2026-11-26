@@ -16,8 +16,10 @@ Beweis: bake linux-full 3903 / linux-server 3905 2026-11-25, „warm the caches 
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: DEVELOPMENT.md (vm.py-Tabelle, Zeile `bake`) · changelog.d/kern-netretry-1.md
 
-### T2 — bootstrap_linux.sh: Downloads mit Wiederholung und Stall-Grenze  [ ]
+### T2 — bootstrap_linux.sh: Downloads mit Wiederholung und Stall-Grenze  [x]
 Komponente: scripts · Dateien: scripts/vm/bootstrap_linux.sh, scripts/tests/harness_consistency_test.sh, changelog.d/kern-netretry-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f1abaa30d 2026-11-26T06:53:25+01:00
+Review: am Ende (Branch-Review)
 Änderung: apt bekommt `Acquire::Retries` und `Acquire::http(s)::Timeout` als Datei unter `/etc/apt/apt.conf.d/`; die pip3-Installs laufen mit `PIP_RETRIES`/`PIP_DEFAULT_TIMEOUT` und einer aeusseren Wiederholung; jede curl traegt `--retry 5 --retry-all-errors --connect-timeout 30 --speed-limit 1024 --speed-time 60` (auch Docker-GPG und rustup); `cargo install` mit `CARGO_NET_RETRY`. `harness_consistency_test.sh` prueft, dass jede curl des Bootstraps `--retry` und `--connect-timeout` traegt.
 Beweis: bake linux-server 2026-11-25 ReadTimeoutError files.pythonhosted.org bei `pip3 install pytest` · Dedup-Key: BUG:scripts:bootstrap_linux.sh:pip-retry (R-1795), R-1797, R-1798
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
