@@ -12,7 +12,9 @@
 #
 # The tag and its commit are both pinned: the clone is checked against the commit, so a moved tag
 # stops the build instead of building other sources. A prefix that already holds this pin
-# (<prefix>/.pkg-pin) is reused, which is what the CI cache keys on.
+# (<prefix>/.pkg-pin) is reused, which is what the CI cache keys on, but only if its pkg still
+# runs and reports the pinned version: a cached binary may not load on a newer runner image.
+# PKG_TOOL_CLANG_BINDIR overrides where clang-18 is looked for (the tests point it nowhere).
 #
 # The build follows freebsd/pkg's own CI (.github/workflows/build.yaml at the tag: Ubuntu 24.04,
 # clang-18, configure --with-libarchive.pc --with-openssl.pc), without its tests.
@@ -25,7 +27,7 @@ PKG_REPO_URL="https://github.com/freebsd/pkg.git"
 PKG_BUILD_DEPS="clang-18 libsqlite3-dev libbsd-dev libarchive-tools libarchive-dev libssl-dev
 liblzma-dev liblua5.2-dev liblzo2-dev libattr1-dev libacl1-dev build-essential zlib1g-dev
 libbz2-dev python3 pkg-config m4 git ca-certificates"
-CLANG_BINDIR="/usr/lib/llvm-18/bin"
+CLANG_BINDIR="${PKG_TOOL_CLANG_BINDIR:-/usr/lib/llvm-18/bin}"
 
 if [ "${1:-}" = "--deps" ]; then
     echo $PKG_BUILD_DEPS
@@ -40,8 +42,11 @@ PREFIX="$(cd "$1" && pwd)"
 PIN="$PKG_TAG $PKG_COMMIT"
 
 if [ -x "$PREFIX/sbin/pkg" ] && [ "$(cat "$PREFIX/.pkg-pin" 2>/dev/null)" = "$PIN" ]; then
-    echo "pkg $PKG_TAG already in $PREFIX"
-    exit 0
+    if [ "$("$PREFIX/sbin/pkg" --version 2>/dev/null)" = "$PKG_TAG" ]; then
+        echo "pkg $PKG_TAG already in $PREFIX"
+        exit 0
+    fi
+    echo "pkg in $PREFIX does not run or is not $PKG_TAG; rebuilding" >&2
 fi
 [ -x "$CLANG_BINDIR/clang" ] || {
     echo "ERROR: clang-18 not found in $CLANG_BINDIR; install: $(echo $PKG_BUILD_DEPS)" >&2

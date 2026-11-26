@@ -749,7 +749,7 @@ session_status_test run_flags_test verify_test log_digest_test harness_consisten
 desktop_e2e_skip_test check_versions_test image_pins_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
 multibox_test worktree_setup_test pg_url_test schemathesis_determinism_test nightly_test
-.github/scripts/retry_test .github/scripts/apt_archives_verify_test .github/scripts/tauri_cli_pins_test
+build_pkg_tool_test .github/scripts/retry_test .github/scripts/apt_archives_verify_test .github/scripts/tauri_cli_pins_test
 .github/scripts/cache_settings_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
