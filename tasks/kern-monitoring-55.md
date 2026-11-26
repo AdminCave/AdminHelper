@@ -1,5 +1,5 @@
 # Zertifikat der 3CX-Weboberfläche — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-55 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-55 · Review: am Ende
 Spec: docs/features/kern-monitoring-55.md (Roadmap R-1443)
 Heavy: none — nur ein Katalog-Eintrag des Monitoring-Dienstes (kein Stack-, Gateway-, PKI- oder Install-Pfad, kein Agent-Code)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -12,5 +12,12 @@ Review: am Ende (Branch-Review)
 Änderung: Check `web_certificate` (Sensor `tls`, `loopback` mit `alternatives` 443/5001, `instance` `3CXPhoneSystemMC01.service`, stündlich, `days_left` < 22 warning, < 9 critical), Kartenfeld, `version` 2, Docstring; Tests: nur die Konsolen-Instanz bekommt den Check, Port-Wahl 443/5001, ungebunden ohne beide, Regeln.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_threecx.py tests/test_catalog.py
 Doku: changelog.d/kern-monitoring-55.md
+
+### T2 — Admin-Doku: Modul-Tabelle nennt den Zertifikats-Check von 3CX (R-1443)  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-monitoring-55.md
+Änderung: Zeile `3cx` der Modul-Tabelle (Spalte Checks, DE+EN) um den Check `web_certificate` ergänzen; Doku-Impact der Spec berichtigen (Fund der Abschlussprüfung).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/monitoring.html DE+EN
+Task-Review: am Ende
 
 ## Entscheidungen
