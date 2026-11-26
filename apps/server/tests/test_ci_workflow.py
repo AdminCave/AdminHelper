@@ -518,3 +518,29 @@ def test_docker_grants_package_and_oidc_writes_only_to_the_jobs_that_need_them()
         "packages": "write",
         "id-token": "write",
     }
+
+
+@pytest.mark.parametrize("name", ["audit.yml", "docker.yml", "release.yml"])
+def test_every_job_has_a_timeout_below_the_github_default(name):
+    # Without one a hung step holds the runner for GitHub's 360 minutes (R-1799).
+    jobs = yaml.safe_load(_CI.with_name(name).read_text(encoding="utf-8"))["jobs"]
+    missing = [
+        job_name for job_name, job in jobs.items() if not 0 < job.get("timeout-minutes", 0) < 360
+    ]
+    assert not missing
+
+
+def test_every_download_of_the_release_retries():
+    # One GitHub Releases blip must not fail a tag's release run (R-1799).
+    release = yaml.safe_load(_CI.with_name("release.yml").read_text(encoding="utf-8"))
+    curls = [
+        line
+        for job in release["jobs"].values()
+        for step in job["steps"]
+        for line in step.get("run", "").splitlines()
+        if re.search(r"(^|\s)curl\s", line)
+    ]
+    assert curls
+    assert [
+        line for line in curls if "--retry " not in line or "--connect-timeout " not in line
+    ] == []

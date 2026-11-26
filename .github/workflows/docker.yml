@@ -25,6 +25,7 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.image }} image
+    timeout-minutes: 60
     # The release event only moves "latest"; the image of its tag is already built.
     if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-26.04
@@ -140,6 +141,7 @@ jobs:
   # docker.yml of the tagged commit, so this works for tags cut after the job came.
   latest:
     name: Tag the stable release as latest
+    timeout-minutes: 10
     if: ${{ github.event_name == 'release' }}
     runs-on: ubuntu-26.04
     permissions:
