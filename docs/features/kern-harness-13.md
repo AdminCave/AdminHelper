@@ -27,8 +27,10 @@ freigegeben“.
 ## Lösung
 - **T1:** Die Texte nennen den heutigen Nachfolger. Der Test, der den alten Text greppt, zieht mit.
 - **T2:** `toolchain-lockstep.sh` bekommt zwei Offline-Prüfungen:
-  - (1d) `PY_VERSION` hat Major.Minor jedes `FROM python:X.Y` unter `apps/*/Dockerfile`.
-  - (1e) Der Default von `GO_VERSION` ist genau die `toolchain`-Direktive von `apps/agent/go.mod`.
+  - (2d) Der Default von `GO_VERSION` ist mindestens die `toolchain`-Direktive von `apps/agent/go.mod` (ohne sie die
+    `go`-Direktive); Gleichheit braucht es nicht, nur ein niedrigeres Box-Go laedt nach (`## Entscheidungen`).
+  - (2e) `PY_VERSION` hat Major.Minor jedes `FROM python:X.Y` in `Dockerfile` und `apps/*/Dockerfile`, und jedes
+    `python3.N` in `bootstrap_linux.sh` und `scripts/tests/run.sh` ist dieselbe.
 
   `GO_VERSION` und SHA-256 gehen auf 1.27.4. Den SHA nennt das Release-JSON von go.dev:
   `7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840`.

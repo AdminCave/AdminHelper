@@ -1,5 +1,5 @@
 # Harness: veraltete Verweise, Toolchain-Gleichlauf, Multi-Worker-Stack, Pflicht-Checks — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-13 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-13 · Review: pro Task
 Spec: docs/features/kern-harness-13.md (Roadmap R-0377, R-1419, R-1060, R-0843, R-1753)
 Heavy: none — Harness-Skripte und Texte; der Stack-Abschnitt laeuft im PR-Job integration-stack, die Lockstep- und Konsistenz-Pruefungen hermetisch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,8 +71,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html DE+EN
 Task-Review: am Ende
 
-### T6 — Doku: DEVELOPMENT.md und Spec auf die gebauten Pruefungen 2d/2e (R-1419, R-1060)  [ ]
+### T6 — Doku: DEVELOPMENT.md und Spec auf die gebauten Pruefungen 2d/2e (R-1419, R-1060)  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, docs/features/kern-harness-13.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @edb2c1010 2026-11-26T23:07:18+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Aus der Abschlusspruefung: `DEVELOPMENT.md` nennt fuer `GO_VERSION` noch „der Patch ist frei“; es nennt den
 go.mod-Boden (2d) und das Box-Python (2e). Die Spec spricht von 1d/1e und „genau“; sie nennt 2d (>=) und 2e.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
