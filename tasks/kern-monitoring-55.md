@@ -1,5 +1,5 @@
 # Zertifikat der 3CX-Weboberfläche — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-55 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-55 · Review: am Ende
 Spec: docs/features/kern-monitoring-55.md (Roadmap R-1443)
 Heavy: none — nur ein Katalog-Eintrag des Monitoring-Dienstes (kein Stack-, Gateway-, PKI- oder Install-Pfad, kein Agent-Code)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
