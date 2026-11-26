@@ -14,6 +14,8 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - T2: `infra_marker` greift nur an den Schreibern (`OCI runtime … failed` / `Error response from daemon` am
   Zeilenanfang), nicht an den blanken Worten: Fixtures unter `apps/` (PVE-Backup, nginx errno 28) tragen sie, ein
   roter Test, der sie druckt, waere sonst `infra`. Beleg: .ah-out/weekly/2026-11-10-1027/gui/last.out.log:392.
+- T3: `build_failed` greift an `HookError [SevereServiceError]: tauri build failed`, nicht an `Error in hook: …`:
+  so pinnt es apps/desktop/e2e/test/unit/launcher.test.js:61, und so steht es in den w2-Logs der Sammellaeufe.
 
 ### T1 — check_audit liest nur main; Kopfkommentar buendig (R-0737, R-1369)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
@@ -41,7 +43,7 @@ Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1747d4cf2 2026-1
 Review: approve (.ah-out/review/kern-harness-10/T3.verdict.json)
 Änderung: `first_marker` (heavy.sh:707) ersetzt `tcp-<Ziffern>` durch `tcp-<port>`; `build_failed` (heavy.sh:722)
 bekommt den Schritt und greift nur bei Desktop-Spec-Schritten und der Hook-Zeile
-`Error in hook: SevereServiceError: tauri build failed`. Faelle mit Gegenprobe in heavy_test.sh.
+`HookError [SevereServiceError]: tauri build failed`. Faelle mit Gegenprobe in heavy_test.sh.
 Beweis: R-1421 report 2026-11-13-0130 desktop_e2e_monitoring „3x red, differing markers“; R-1672 launcher.test.js:61
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Detail-Texte unveraendert)
