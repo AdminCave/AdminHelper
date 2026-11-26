@@ -7,8 +7,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Semantik: keine Stelle in docs/ — gesucht `WARMUP`, `warm the caches`, `retry` in docs/ und DEVELOPMENT.md; die Absicht steht im Kommentar `scripts/vm/vm.py:1976` („this is what fills ~/.cargo, ~/go and node_modules“). Der Fix stellt diese Absicht her.
 
-### T1 — vm.py: Aufwaermen ohne Testschritte, rsync mit I/O-Grenze  [ ]
+### T1 — vm.py: Aufwaermen ohne Testschritte, rsync mit I/O-Grenze  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, DEVELOPMENT.md, changelog.d/kern-netretry-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8da5da870 2026-11-26T06:48:52+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Warm-Schritt in `bake_linux` faehrt `run.sh unit --exclude monitoring-pytest ca-issuer-pytest server-pytest schemathesis scripts vm-pytest dev-pytest`; `rsync()` setzt `--timeout=300`. Tests: der Warm-Befehl schliesst genau die Testschritte aus und jede ausgeschlossene ID ist eine Step-ID von `run.sh`; `rsync` traegt `--timeout`.
 Beweis: bake linux-full 3903 / linux-server 3905 2026-11-25, „warm the caches exited 255“ in server pytest · Dedup-Key: BUG:scripts:vm.py:warmup-limit (R-1794), REF:scripts:vm.py:rsync-timeout (R-1798)
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
