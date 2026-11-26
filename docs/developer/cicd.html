@@ -77,8 +77,9 @@
           &uuml;ber einen Release-Branch geschnitten statt an der Regel vorbei. <code>ci.yml</code> l&auml;uft
           auch auf <code>merge_group</code>: seit 2026-11-23 verlangt das Ruleset eine Merge Queue (Merge-Methode Merge,
           Build-Konkurrenz&nbsp;3, Gruppengr&ouml;&szlig;e bis&nbsp;3, Check-Timeout 60&nbsp;min, nur gr&uuml;ne Eintr&auml;ge;
-          seit 2026-11-24 ist jeder Check eines Pull Requests Pflicht au&szlig;er <code>Changed paths</code> und den
-          Shards, deren Sammel-Jobs Pflicht sind).
+          seit 2026-11-24 ist jeder Check aus <code>ci.yml</code> Pflicht au&szlig;er <code>Changed paths</code> und den
+          Shards, deren Sammel-Jobs Pflicht sind; die Checks aus <code>nightly.yml</code>, das bei eigener &Auml;nderung
+          auch auf Pull Requests l&auml;uft, sind es nicht).
           Sie testet <code>main</code> plus Pull Request vor dem Merge; <code>gh pr merge</code> reiht nur ein, auch schon w&auml;hrend die PR-CI l&auml;uft (Auto-Merge wartet auf die Pflicht-Checks),
           <code>scripts/dev/queue-wait.sh</code> wartet auf den Merge-Commit.</p>
 

@@ -11,8 +11,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   `ci.yml` in ihrer Quelle).
 - R-1753 und R-1189 fahren nicht mit (verschoben 2026-11-26: kern-harness-11 bzw. kern-ruff-1).
 
-### T1 — Texte: frps-Image im test-Skill, Pflicht-Checks in feature-build und cicd  [ ]
+### T1 — Texte: frps-Image im test-Skill, Pflicht-Checks in feature-build und cicd  [x]
 Komponente: scripts · Dateien: .claude/skills/test/SKILL.md, .claude/skills/feature-build/SKILL.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c7aff3129 2026-11-26T11:10:55+01:00
+Review: approve (.ah-out/review/kern-harness-12/T1.verdict.json)
 Änderung: test/SKILL.md nennt frps als lokal gebautes `adminhelper-test/frps` (aus `apps/frps`, `docker-compose.test.yml`). feature-build §4.7 und cicd.html DE+EN: Pflicht sind die Checks aus `ci.yml`; `nightly.yml` laeuft bei eigener Aenderung auch auf PRs, ist dort nicht Pflicht.
 Beweis: Dedup-Key REF:harness:SKILL.md:test_frps_image (R-0441), R-1754
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

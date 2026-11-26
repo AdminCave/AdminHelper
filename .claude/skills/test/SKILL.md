@@ -264,7 +264,8 @@ prompts for it (D17), so the restraint is yours.
   bridge; peer addresses come from `vm.py wait`, which asks the hypervisor's guest agent.
 - **Bring up ONLY `gateway server ca-issuer monitoring`** — `scheduler` pulls the not-yet-
   published `ghcr.io/admincave/*` tag → `unauthorized`; first-party images build from checkout
-  as `adminhelper-test/*`. frps is public (snowdreamtech) and is brought up by `--tunnel`.
+  as `adminhelper-test/*`. frps is built locally too (`adminhelper-test/frps` from `apps/frps`,
+  `docker-compose.test.yml`) and is brought up by `--tunnel`.
 - **`DOMAIN=<server-IP>` before the first `up`** (ca-issuer mints the gateway/frps leaf IP-SAN
   once; changing later needs `down -v`).
 - **Desktop GUI blank screen = `LANG=C`** → the webview feeds "C" to `Intl.NumberFormat` →
