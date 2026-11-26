@@ -682,6 +682,32 @@ history_of | grep -q ',all,web vitest,extern,' \
   && ok "base red as well -> extern, never reg" \
   || bad "rows: $(history_of)"
 
+# The second box is warmed from HEAD's bootstrap: a base whose
+# bootstrap_linux.sh differs ran on a box it was never built for (R-1126).
+BOOT_SHA=$(
+  export GIT_INDEX_FILE="$WORK/boot.index"
+  git -C "$FIX" read-tree "$BASE_SHA"
+  blob=$(printf 'old bootstrap\n' | git -C "$FIX" hash-object -w --stdin)
+  git -C "$FIX" update-index --add --cacheinfo "100755,$blob,scripts/vm/bootstrap_linux.sh"
+  git -C "$FIX" commit-tree "$(git -C "$FIX" write-tree)" -p "$BASE_SHA" -m "older bootstrap"
+)
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+out=$(bash "$HEAVY" all --base "$BOOT_SHA" 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' \
+  && ok "base red, but its bootstrap differs from HEAD -> unbestaetigt, not extern" \
+  || bad "rows: $(history_of)"
+report_of | grep -qF 'bootstrapped from HEAD' \
+  && ok "the report says the base ran on HEAD's box" || bad "table: $(report_of | grep '^| all')"
+# Counter-check: the same red base with an unchanged bootstrap stays extern.
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+out=$(bash "$HEAVY" all --base "$BASE_SHA" 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,extern,' \
+  && ok "an unchanged bootstrap keeps a red base extern" || bad "rows: $(history_of)"
+
 candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0

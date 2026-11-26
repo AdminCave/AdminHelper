@@ -48,8 +48,10 @@ Beweis: R-1421 report 2026-11-13-0130 desktop_e2e_monitoring „3x red, differin
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Detail-Texte unveraendert)
 
-### T4 — extern nur bei gleichem Box-Bootstrap (R-1126)  [ ]
+### T4 — extern nur bei gleichem Box-Bootstrap (R-1126)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7bb58520b 2026-11-26T15:15:25+01:00
+Review: approve (.ah-out/review/kern-harness-10/T4.verdict.json)
 Änderung: In `second_vm_check` (heavy.sh:893) wird „Basis rot“ nur `extern`, wenn `scripts/vm/bootstrap_linux.sh`
 auf Basis und HEAD gleich ist; sonst `unbestaetigt` mit Detail „base ran on a box bootstrapped from HEAD“. Fall
 und Gegenprobe in heavy_test.sh.

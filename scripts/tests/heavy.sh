@@ -898,7 +898,7 @@ judge_candidates() {
 }
 
 second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDICT
-  local step="$1" spec="$2" marker="$3" rc base safe
+  local step="$1" spec="$2" marker="$3" rc base head safe
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
   if [ "$SECOND_VM" = 0 ]; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); --no-second-vm"
@@ -917,6 +917,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  could not create the w2 worktree — candidate stays unconfirmed"
     return 0
   fi
+  head="$(git -C "$W2_DIR" rev-parse HEAD 2>/dev/null)"
   release_gui_box "before the second-VM check"
   if ! AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); second box could not be leased"
@@ -967,6 +968,13 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     CLASS_VERDICT="reg"; STEP_DETAIL="base ${base:0:8} green, HEAD red on two boxes ($marker)"
     note "  base green, HEAD red -> REG"
     reg_finding "$step" "$marker" "$base"
+  elif ! git -C "$W2_DIR" diff --quiet "$base" "$head" -- scripts/vm/bootstrap_linux.sh 2>/dev/null; then
+    # The box was warmed from HEAD's bootstrap: when that changed since the base,
+    # a red base may be the new box, not the base (R-1126). An unreadable diff
+    # counts as changed.
+    CLASS_VERDICT="unbestaetigt"
+    STEP_DETAIL="red on two boxes; base ${base:0:8} red too, but it ran on a box bootstrapped from HEAD"
+    note "  base red, but bootstrap_linux.sh differs since ${base:0:8} -> unbestaetigt"
   else
     # Red on the base too, so nothing since the base broke it. The roadmap's
     # wording ("counter-check red => REG") is a slip; this is the meant logic
