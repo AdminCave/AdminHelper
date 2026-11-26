@@ -232,26 +232,28 @@ trim_blanks() {
 # 0 if $1, the text in front of '=' or ':' or a line without either, is a key
 # compose takes (compose-go dotenv, locateKeyName): letters, digits and _ . - [ ];
 # blanks are skipped, but a space between two of its characters is an error ("key
-# cannot contain a space"), unless $2 is 0: the last line of .env, without a line
-# break and without '=' or ':', is a value to compose, not a key. Letters and
+# cannot contain a space"), and so is a key of blanks only or none ("key cannot be
+# empty"). Compose before v5.8.0 (compose-go v2.17.0) took an empty key, and took
+# the last line of .env without a line break and without '=' or ':' as a value;
+# this check follows v5.8.0, which reads that line as a key. Letters and
 # digits beyond ASCII are told by [[:alpha:]] and [[:digit:]] under C.UTF-8, whose
 # classes come close to Go's unicode.IsLetter and IsNumber (a '²' is a number to
 # Go only). Without a UTF-8 locale such a character passes: better compose stop an
 # update than this check stop one that compose would run.
 env_key_ok() {
-    local k="$1" spaced="$2" c n i=0 seen=0 gap=0 utf8=0 probe=$'\xc3\x84'
+    local k="$1" c n i=0 seen=0 gap=0 utf8=0 probe=$'\xc3\x84'
     local LC_ALL=C.UTF-8 2>/dev/null
     [ "${#probe}" -ne 1 ] || utf8=1
     while [ "$i" -lt "${#k}" ]; do
         c=${k:i:1}; i=$((i + 1))
         case $c in
-            ' ') [ "$seen" -eq 0 ] || gap=$spaced; continue ;;
+            ' ') [ "$seen" -eq 0 ] || gap=1; continue ;;
             $'\t'|$'\v'|$'\f'|$'\r') continue ;;
             []_.[-]|[0123456789]|[abcdefghijklmnopqrstuvwxyz]|[ABCDEFGHIJKLMNOPQRSTUVWXYZ]) ;;
             *)
                 printf -v n '%d' "'$c"
                 [ "$n" -ge 128 ] || return 1
-                [ "$utf8" -eq 1 ] || continue
+                [ "$utf8" -eq 1 ] || { seen=1; continue; }
                 # U+0085 and U+00A0 are blanks to compose.
                 case $n in 133|160) continue ;; esac
                 [[ $c == [[:alpha:][:digit:]] ]] || return 1 ;;
@@ -259,6 +261,7 @@ env_key_ok() {
         [ "$gap" -eq 0 ] || return 1
         seen=1
     done
+    [ "$seen" -eq 1 ]
 }
 
 # compose reads the values in .env as templates, and a '${' that starts no valid
@@ -275,13 +278,12 @@ env_key_ok() {
 # mistake reads as a key once it holds '=' or ':', and compose's own message quotes
 # them all. For a value it is the line its entry starts in.
 check_env_templates() {
-    local line key name val lit more q rest eol spaced n=0 start QUOTED QUOTED_REST TRIMMED
+    local line key name val lit more q rest n=0 start QUOTED QUOTED_REST TRIMMED
     local ENV_STATE TPL_S TPL_I TPL_LEAK
     local -A ENV_SEEN=()
     [ -f .env ] || return 0
     while :; do
-        # eol=0: the line ends .env without a line break.
-        eol=1; IFS= read -r line || { eol=0; [ -n "$line" ] || break; }
+        IFS= read -r line || [ -n "$line" ] || break
         n=$((n + 1)); name=""; start=$n
         [ "$n" -gt 1 ] || line=${line#$'\xef\xbb\xbf'}
         # One assignment per pass: after a closing quote, compose reads on.
@@ -292,11 +294,10 @@ check_env_templates() {
             case $line in
                 export[$' \t\f\r']*) trim_blanks "${line#export}" value; line=$TRIMMED ;;
             esac
-            key=${line%%[=:]*}; spaced=1
-            [ "$key" != "$line" ] || spaced=$eol
-            if ! env_key_ok "$key" "$spaced"; then
+            key=${line%%[=:]*}
+            if ! env_key_ok "$key"; then
                 [ -z "$name" ] || die ".env: the value starting in line ${start} has text after its closing quote that docker compose reads as a key and rejects, which makes every compose call fail. Write a quote inside the value as \\\" or \\', or remove the text. Aborting (nothing changed)."
-                die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
+                die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank, not empty), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
             fi
             [ "$key" != "$line" ] || break
             key=${key%"${key##*[![:space:]]}"}; name=${name:-$key}
@@ -309,7 +310,6 @@ check_env_templates() {
                     q=${val:0:1}; val=${val:1}
                     until read_quoted "$q" "$val"; do
                         IFS= read -r more || {
-                            eol=0
                             [ -n "$more" ] || die ".env: the value starting in line ${start} has a quote that is never closed, which makes every compose call fail. Close the quote. Aborting (nothing changed)."
                         }
                         n=$((n + 1)); val+=$'\n'$more
@@ -323,10 +323,8 @@ check_env_templates() {
                 || die ".env: the value starting in line ${start} holds a '\${' that starts no valid placeholder, which makes every compose call fail with 'Invalid template'. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
             ! env_value_quoted_by_compose "$val" \
                 || die ".env: the value starting in line ${start} holds a '\$' that docker compose reads as a variable that is not set (\$NAME, \${NAME} or \${NAME?...}): compose drops that part of the value or stops, and quotes it in its messages. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
-            # A value in single quotes is literal; one with a template may be empty. An empty
-            # key names nothing a template could use.
-            if [ -z "$key" ]; then :
-            elif [ -n "$val" ]; then
+            # A value in single quotes is literal; one with a template may be empty.
+            if [ -n "$val" ]; then
                 case ${val//\$\$/} in *'$'*) ENV_SEEN[$key]='tpl' ;; *) ENV_SEEN[$key]='set' ;; esac
             elif [ -n "$lit" ]; then ENV_SEEN[$key]='set'
             else ENV_SEEN[$key]='empty'
