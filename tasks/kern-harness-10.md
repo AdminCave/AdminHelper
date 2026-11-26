@@ -11,6 +11,9 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - R-0121, R-1128, R-1133 sind auf main 8984d1230 behoben (T7–T9, `[~]` mit Beleg); `roadmap.py status` kennt
   `geplant -> abgeschlossen` nicht, sie schliessen mit diesem Zug.
 - Nach `overlap.sh` verschoben in kern-harness-13 (2026-11-26): R-0843, R-0377, R-1364, R-1419, R-1060.
+- T2: `infra_marker` greift nur an den Schreibern (`OCI runtime … failed` / `Error response from daemon` am
+  Zeilenanfang), nicht an den blanken Worten: Fixtures unter `apps/` (PVE-Backup, nginx errno 28) tragen sie, ein
+  roter Test, der sie druckt, waere sonst `infra`. Beleg: .ah-out/weekly/2026-11-10-1027/gui/last.out.log:392.
 
 ### T1 — check_audit liest nur main; Kopfkommentar buendig (R-0737, R-1369)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
