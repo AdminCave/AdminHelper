@@ -1,5 +1,5 @@
 # Harness: heavy.sh-Klassifizierer und Audit-Abfrage — Task-Ledger
-Status: geplant · Branch: feature/kern-harness-10 · Review: pro Task
+Status: aktiv · Branch: feature/kern-harness-10 · Review: pro Task
 Spec: docs/features/kern-harness-10.md (Roadmap R-0737, R-1126, R-1127, R-1284, R-1369, R-1421, R-1672, R-0121, R-1128, R-1133)
 Heavy: none — nur heavy.sh und Doku; heavy.sh wird hermetisch in heavy_test.sh geprueft (Shims statt Boxen)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
