@@ -43,8 +43,9 @@ dann das Zertifikat der Weboberfläche liefert, ist nicht verifiziert (ein Serve
 Gering: ein Katalog-Eintrag. Rollback: Revert des Commits.
 
 ## Doku-Impact
-`changelog.d/kern-monitoring-55.md`; der Docstring des Moduls. `docs/admin/monitoring.html` listet die Checks je Modul
-nicht einzeln, die Entwickler-Doku nennt den Fall schon (Abschnitt Katalog, `instance` eines Checks).
+`changelog.d/kern-monitoring-55.md`; der Docstring des Moduls; die Zeile `3cx` der Modul-Tabelle in
+`docs/admin/monitoring.html` DE+EN (Spalte Checks). Die Entwickler-Doku nennt den Fall schon (Abschnitt Katalog,
+`instance` eines Checks).
 
 ## Offene Fragen
 Keine aus Kevins Bereich.
