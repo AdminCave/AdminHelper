@@ -106,7 +106,9 @@ Abhängt von: T<k>   (nur falls nötig)
 Test-Löschung: <datei>::<test> — <Grund>   (nur falls nötig; ganze Datei: <datei>::*)
 ```
 Löscht eine Task einen Test oder eine Testdatei, kündigt der Plan das an (`tasks/README.md`): die
-Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorthin.
+Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorthin. Trifft die Datei ein Muster
+aus `scripts/dev/review-risk.txt`, steht die Task auf `[?]`, bis Kevin entscheidet; seine Antwort wird ein Punkt
+`Kevin JJJJ-MM-TT: …` unter `## Entscheidungen`, der die Datei nennt (`ledger.sh lint` prüft das).
 
 ## 3a. Die kurzen Wege: `--kurz` und `--zug`
 
@@ -185,5 +187,7 @@ Bei Zug und Mitnehmen gilt jeder Roadmap-Schritt des Gates für jede enthaltene 
 - **Freigabe:** gleich nach dem Bericht gibt die Session frei, `python3 scripts/dev/roadmap.py approve R-nnnn`
   (beim Bündel je Zeile; die Notiz bleibt), wenn Kevin die Zeile angenommen oder das Vorhaben diktiert hat und
   nicht jede Task auf `[?]` steht; danach `/feature-build tasks/<slug>.md`. Nie für eine Zeile ohne committeten Plan
-  (CLAUDE.md §4, §11).
+  (CLAUDE.md §4, §11). `approve` verweigert eine Zeile ohne Spalte `Ledger`, ohne Branch `feature/<slug>` (lokal oder
+  auf `origin`) und ohne `Kevin JJJJ-MM-TT` in der Notiz; ein diktiertes Vorhaben bekommt am Gate die Notiz
+  `Kevin JJJJ-MM-TT: diktiert` (`status R-nnnn geplant --note …`, die alte Notiz dahinter).
 - **Implementiere nichts.** Kein Produktivcode, kein weiterer Branch, nichts auf `main`.

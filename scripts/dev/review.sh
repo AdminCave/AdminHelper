@@ -341,6 +341,13 @@ case "$VERB" in
     # --no-renames: a moved file counts by where it came from as well, or a
     # refactor that carries auth code out of its directory reads as standard.
     # -z: a name git would quote (`"`, `\`, a control character) stays a name.
+    # A range is what the branch brings, read from the merge base as `a...b`
+    # does: after main moved on, `origin/main..HEAD` read two-dot counted main's
+    # own new files as the branch's (R-1755).
+    case "$RANGE" in
+      ''|*...*) ;;
+      *) DIFF_ARGS=("${RANGE%%..*}...${RANGE#*..}") ;;
+    esac
     if [ "$STAGED" = 1 ] || [ -n "$RANGE" ]; then
       CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
         || die "could not read the diff"

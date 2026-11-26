@@ -74,8 +74,9 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
 3. **Fragen, 2–4 Zeilen je Runde** in **einem** `AskUserQuestion`-Aufruf, eine Frage je
    Zeile. Header `R-nnnn`, Frage: Klasse, Titel, Quelle in einem Satz. Die **Empfehlung
    zuerst**, mit „(Empfohlen)" und einem Halbsatz Begründung in der Beschreibung:
-   - **Annehmen in <zug>** → `roadmap.py status R-nnnn geplant --ledger tasks/<zug>.md`; die
-     Option nennt den Zug. Einzeln: `--ledger tasks/<slug>.md` und `/feature-plan --kurz R-nnnn`
+   - **Annehmen in <zug>** → `roadmap.py status R-nnnn geplant --ledger tasks/<zug>.md --note
+     "Kevin <JJJJ-MM-TT>: angenommen"`; die Option nennt den Zug. Ohne diese Marke verweigert
+     `approve` die Freigabe (R-0580). Einzeln: `--ledger tasks/<slug>.md` und `/feature-plan --kurz R-nnnn`
      *vorschlagen*, nicht starten — bei SEC nicht: SEC kommt in einen neutral benannten Kern-Zug
      (feature-plan 3a).
    - **Ablehnen** → `roadmap.py status R-nnnn abgelehnt --note "<Grund>"`. Ohne Grund
@@ -85,7 +86,7 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
      Bedingung erfüllt, nennt „Als Nächstes“ (und der AH-STATUS) die Zeile unter „Wieder fällig“; der Status
      bleibt, die Session legt sie Kevin in der nächsten Triage vor.
    - **REG**: die Annehmen-Option heißt „Annehmen, Regression bestätigt" und setzt
-     `status R-nnnn geplant --note "Regression bestätigt"` — der Haken ist die Notiz.
+     `status R-nnnn geplant --note "Kevin <JJJJ-MM-TT>: Regression bestätigt"` — der Haken ist die Notiz.
      Hält Kevin sie für nicht reproduziert: Ablehnen mit diesem Grund.
    Empfehlung, in dieser Reihenfolge: SEC/REG/BUG mit Beweis → Annehmen · „Beweis fehlt"
    → Zurückstellen · abgelaufenes REF/IDEE (`Ablauf` vorbei) → Ablehnen, Grund

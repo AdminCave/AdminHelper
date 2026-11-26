@@ -307,6 +307,57 @@ with_deletion() { with_decl Test-Löschung "$1"; }
 with_deletion "apps/server/tests/test_x.py::test_dead — der Code hat keinen Nutzer mehr; apps/web/src/x.test.ts::adds up — ersetzt durch den genaueren Test"
 l lint fixture
 [ $rc -eq 0 ] && ok "a well-formed Test-Löschung: line lints clean" || bad "valid deletion: rc=$rc out=$OUT"
+# A deletion under a risk path is Kevin's to decide (R-0578): [?] on the task, or
+# his dated item under ## Entscheidungen naming the file.
+printf 'apps/agent/internal/enroll/\napps/gateway/*\n' > "$TREE/scripts/dev/review-risk.txt"
+RISKY="apps/agent/internal/enroll/enroll_test.go::TestRenew — ersetzt durch TestRenewRotates"
+with_deletion "$RISKY"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  T2: Test-Löschung under a risk path (apps/agent/internal/enroll/enroll_test.go)" <<<"$OUT" \
+  && ok "a deletion under a risk path without Kevin's decision is an error" || bad "risk deletion: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead — kein Nutzer mehr; $RISKY"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "risk path (apps/agent/internal/enroll/enroll_test.go)" <<<"$OUT" \
+  && ok "so is one behind another entry of the line" || bad "risk second entry: rc=$rc out=$OUT"
+with_deletion "$RISKY"; l mark-question fixture T2 "darf TestRenew gehen?"
+l lint fixture
+[ $rc -eq 0 ] && ok "the same deletion on a [?] task lints clean" || bad "risk deletion [?]: rc=$rc out=$OUT"
+with_deletion "$RISKY"; sed -i 's/^Status: [^ ]*/Status: erledigt/' "$FIX"
+l lint fixture
+n=$(grep -c "risk path" <<<"$OUT" || true)
+[ "$n" -eq 0 ] && ok "a ledger with Status: erledigt is not checked any more" || bad "risk erledigt: rc=$rc out=$OUT"
+with_deletion "$RISKY"; printf 'Status: erledigt\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "risk path" <<<"$OUT" && ok "a stray Status: erledigt below the head does not switch it off" || bad "risk stray status: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead — kein Nutzer mehr"
+printf '\n## Entscheidungen\nTest-Löschung: apps/agent/internal/enroll/enroll_test.go::* — weg\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  Test-Löschung outside a task" <<<"$OUT" \
+  && ok "a Test-Löschung under a ## section after the last task is an error" || bad "risk outside task: rc=$rc out=$OUT"
+with_deletion "$RISKY"
+printf '\n## Entscheidungen\n- Kevin 2026-11-25: TestRenew geht,\n  apps/agent/internal/enroll/enroll_test.go ist ersetzt\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 0 ] && ok "a Kevin item under ## Entscheidungen naming the file lints clean" || bad "risk deletion decided: rc=$rc out=$OUT"
+with_deletion "$RISKY"
+printf '\n## Entscheidungen\n- Session 2026-11-25: apps/agent/internal/enroll/enroll_test.go geht\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "risk path" <<<"$OUT" && ok "a decision not dated by Kevin does not count" || bad "risk not kevin: rc=$rc out=$OUT"
+with_deletion "$RISKY"
+printf '\n## Entscheidungen\n- Session 2026-11-25: nach Kevin 2026-11-25: apps/agent/internal/enroll/enroll_test.go geht\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "risk path" <<<"$OUT" && ok "Kevin's mark counts only at the start of the item" || bad "risk mark mid-item: rc=$rc out=$OUT"
+with_deletion "$RISKY"
+printf '\n## Entscheidungen\n- Kevin 2026-11-25: apps/gateway/nginx.conf bleibt\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "risk path" <<<"$OUT" && ok "Kevin's word on another file does not count" || bad "risk other file: rc=$rc out=$OUT"
+with_deletion "apps/gateway/conf_test.sh::* — der Schritt ist weg"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "risk path (apps/gateway/conf_test.sh)" <<<"$OUT" \
+  && ok "a whole file under a glob pattern counts too" || bad "risk glob: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead — der Code hat keinen Nutzer mehr"
+l lint fixture
+[ $rc -eq 0 ] && ok "a deletion outside the risk paths needs no decision" || bad "plain deletion with list: rc=$rc out=$OUT"
+rm -f "$TREE/scripts/dev/review-risk.txt"
 with_deletion "apps/server/tests/test_x.py::test_dead"
 l lint fixture
 [ $rc -eq 1 ] && grep -q "Test-Löschung: 'apps/server/tests/test_x.py::test_dead'" <<<"$OUT" \

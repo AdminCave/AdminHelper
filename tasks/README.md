@@ -115,6 +115,10 @@ Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die Beschreibung au
 3. **Eine gelöschte oder weg-umbenannte Testdatei** (unter `tests/` oder `test/`, oder `*_test.*`,
    `test_*`, `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.live.*`) ohne passende Zeile dieser Task lässt
    `task-close.sh` nicht durch (Exit 3).
+4. **Unter einem Risikopfad entscheidet Kevin.** Trifft eine angekündigte Datei ein Muster aus
+   `scripts/dev/review-risk.txt`, verlangt `ledger.sh lint` die Task auf `[?]` oder einen Punkt
+   `Kevin JJJJ-MM-TT: …` unter `## Entscheidungen`, der die Datei nennt (ein Ledger mit `Status: erledigt`
+   prüft es nicht mehr).
 
 Ob ein Test schwächer geworden ist (`|| true`, `skip`, eine gestrichene oder triviale Assertion),
 prüft der `reviewer` (Kriterium „Tests“ in `.claude/agents/reviewer.md`), kein Skript.

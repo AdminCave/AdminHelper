@@ -887,7 +887,7 @@ layer_unit() {
   # Rust/Tauri backend — needs tauri system libs + the frpc sidecar (externalBin).
   if ! only desktop desktop-rs; then skip desktop-cargo "cargo test (desktop)" "AH_ONLY"
   elif have cargo && [ -f "$FRPC_SIDECAR" ]; then
-    run_step desktop-cargo "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test $AH_ARGS'
+    run_step desktop-cargo "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test $AH_ARGS'
   else skip desktop-cargo "cargo test (desktop)" "cargo or frpc sidecar ($FRPC_SIDECAR) missing"; fi
 
   # Desktop UI (Svelte) — check + lint + vitest.

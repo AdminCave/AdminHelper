@@ -11,7 +11,7 @@ Ansible-Playbooks zentral. Lauffähiges liegt unter `apps/`, Doku unter `docs/` 
 | Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest -q` · ruff wie oben |
 | CA-Issuer (PKI fürs mTLS-Enrollment) | `apps/ca-issuer/` | Python · FastAPI · cryptography | `pytest -q` · ruff wie oben |
 | Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `gofmt -l .` · `go vet ./...` · `go test ./...` |
-| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo fmt` · `cargo clippy -- -D warnings` · `cargo test` |
+| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo fmt` · `cargo clippy --all-targets -- -D warnings` · `cargo test` |
 | Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript strict · Vite | `npm run check` · `npm run lint` · `npm run test` |
 | Web-Frontend | `apps/web/` | Svelte · TypeScript strict · Vite | `npm run check` · `npm run lint` · `npm run test:unit` · E2E `npm run test:e2e` |
 | Gateway (Reverse-Proxy, mTLS, Ratelimit) | `apps/gateway/` | nginx | `nginx -t`; real nur in `scripts/tests/integration_stack_test.sh` |
@@ -62,8 +62,9 @@ Roadmap-Zeile (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE; Status neu → 
 pr → abgeschlossen) → `/feature-plan` (ein Zug: `--zug tasks/<slug>.md`) committet `docs/features/<slug>.md` und
 `tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → die Session gibt sofort selbst frei, wenn
 Kevin die Zeile angenommen (`/roadmap triage` oder der Dauerauftrag im roadmap-Skill, Kevin 2026-11-11) oder das
-Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21) → `/feature-build` (Kopf
-`aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
+Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21; es verweigert ohne Spalte
+`Ledger`, ohne Branch `feature/<slug>` und ohne `Kevin JJJJ-MM-TT: angenommen|diktiert` in der Notiz) →
+`/feature-build` (Kopf `aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
 Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in der Session oder in der
 Notiz der Zeile) trifft, stellt das Gate als Frage mit Empfehlung; ihre Task steht auf `[?]`, die übrigen baut die
 Session; hängt jede Task an einer Frage, bleibt die Zeile `geplant`. Die Roadmap ist die einzige Reihenfolge-Wahrheit,

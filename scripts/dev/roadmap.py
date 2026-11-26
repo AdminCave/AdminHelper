@@ -843,6 +843,29 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+KEVIN_MARK = re.compile(r"\bKevin \d{4}-\d{2}-\d{2}\b")
+
+
+def refuse_unready(row: Row) -> None:
+    """Approve only what CLAUDE.md §4 lets the session approve: a row Kevin
+    accepted or dictated, with its plan committed on feature/<slug> (R-0579,
+    R-0580). Kevin's word counts as `Kevin JJJJ-MM-TT` in the note; the source
+    does not, the session writes it as well (`add --source`)."""
+    m = re.fullmatch(r"tasks/([a-z0-9][a-z0-9-]*)\.md", row.cells[LEDGER])
+    if not m:
+        raise UsageError(f"{row.id} names no ledger tasks/<slug>.md: plan it first (/feature-plan)")
+    branch = f"feature/{m[1]}"
+    refs = branches()
+    if f"refs/heads/{branch}" not in refs and f"refs/remotes/origin/{branch}" not in refs:
+        raise UsageError(
+            f"{row.id}: no branch {branch}, local or on origin: the plan is not committed"
+        )
+    if not KEVIN_MARK.search(row.cells[STATUS][len(row.status) :]):
+        raise UsageError(
+            f"{row.id}: the note carries no 'Kevin JJJJ-MM-TT' — Kevin has not accepted or dictated it"
+        )
+
+
 def cmd_approve(args: argparse.Namespace) -> int:
     was, new = ("freigegeben", "geplant") if args.revoke else ("geplant", "freigegeben")
 
@@ -850,6 +873,8 @@ def cmd_approve(args: argparse.Namespace) -> int:
         _, row = roadmap.find(args.id)
         if row.state != was:
             raise UsageError(f"{args.id} is {row.status or 'without status'}, not {was}")
+        if not args.revoke:
+            refuse_unready(row)
         # Only the word changes, unlike `status` without --note: the note of a
         # geplant row often carries Kevin's word for the plan.
         note = row.cells[STATUS][len(row.status) :]

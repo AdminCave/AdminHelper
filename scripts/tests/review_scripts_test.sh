@@ -882,6 +882,23 @@ r risk --range HEAD~1..HEAD
   && ok "a range judges by the list of its start" || bad "range list: rc=$rc out=$OUT"
 git -C "$FIX" reset -q --hard HEAD~1
 rreset
+# A range reads from the merge base (R-1755): main moving on with a risk file
+# after the branch forked does not make it the branch's.
+rreset; git -C "$FIX" branch -q r1755-main; put README-r1755.md
+git -C "$FIX" commit -qm "branch work" >/dev/null
+git -C "$FIX" checkout -q r1755-main; put apps/gateway/nginx-r1755.conf
+git -C "$FIX" commit -qm "main moves on" >/dev/null; git -C "$FIX" checkout -q -
+r risk --range r1755-main..HEAD
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a two-dot range reads from the merge base" \
+  || bad "two-dot range after main moved: rc=$rc out=$OUT"
+r risk --range r1755-main...HEAD
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a three-dot range reads the same" \
+  || bad "three-dot range: rc=$rc out=$OUT"
+r risk --range HEAD..r1755-main
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/gateway/nginx-r1755.conf' <<<"$OUT" \
+  && ok "the other side still counts what it brings itself" || bad "reverse range: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1; git -C "$FIX" branch -qD r1755-main
+rreset
 r risk --range HEAD
 [ $rc -eq 2 ] && ok "a range without .. -> 2" || bad "range without ..: rc=$rc out=$OUT"
 r risk --range nosuch..HEAD

@@ -31,7 +31,8 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Kopf `aktiv` → weiter mit der ersten offenen Task (nach einer Unterbrechung CLAUDE.md §13).
 - Roadmap `geplant` (von Kevin angenommen oder diktiert, CLAUDE.md §4), Kopf `geplant`, das Ledger auf
   `feature/<slug>` committet und nicht jede Task `[?]` → die Session gibt frei (`python3 scripts/dev/roadmap.py
-  approve R-nnnn`, CLAUDE.md §4), dann wie im ersten Punkt.
+  approve R-nnnn`, CLAUDE.md §4), dann wie im ersten Punkt. Fehlt der Notiz `Kevin JJJJ-MM-TT`, verweigert
+  `approve`: Kevins Wort fehlt, die Zeile ist eine Frage an ihn.
 - Sonst nicht `freigegeben` → melden, nicht bauen.
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
 
@@ -129,8 +130,9 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
    final WT/tasks/<slug>.md > <Scratchpad>/final.md && gh pr merge <n> --match-head-commit "$(git -C WT rev-parse
    HEAD)"` reiht in die Merge Queue ein, gebunden an den geprüften Stand (ohne Merge-Methode, die setzt die Queue; nie
    `--admin`, das umginge sie; ohne `--delete-branch`: gh entfernt sonst den Worktree). Auto-Merge wartet auf die
-   Pflicht-Checks; seit 2026-11-24 ist jeder Check eines PRs Pflicht außer `Changed paths` und den Shards, deren
-   Sammel-Jobs Pflicht sind. Ein neuer Job in `ci.yml` braucht daher Kevins Ruleset-Eintrag, sonst wartet
+   Pflicht-Checks; seit 2026-11-24 ist jeder Check aus `ci.yml` Pflicht außer `Changed paths` und den Shards, deren
+   Sammel-Jobs Pflicht sind (die Checks aus `nightly.yml`, das bei eigener Änderung auch auf PRs läuft, nicht). Ein
+   neuer Job in `ci.yml` braucht daher Kevins Ruleset-Eintrag, sonst wartet
    Auto-Merge nicht auf ihn. Rote PR-CI reiht so nie ein. Dann `bash
    WT/scripts/dev/queue-wait.sh <n>` aus `WT` als Hintergrund-Wächter; die Session baut solange ein anderes Vorhaben
    (CLAUDE.md §2). Exit 0 → die Zeile `merged <sha>` gibt den Merge-Commit für 8, den
