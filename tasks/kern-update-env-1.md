@@ -1,5 +1,5 @@
 # .env-Prüfung für Compose ab v5.8.0 — Task-Ledger
-Status: aktiv · Branch: feature/kern-update-env-1 · Review: am Ende
+Status: bereit · Branch: feature/kern-update-env-1 · Review: am Ende
 Spec: Roadmap R-1804
 Heavy: none — nur die .env-Vorprüfung in update.sh/install.sh (kein Stack-, Gateway-, PKI- oder Datenpfad); der hermetische Differential-Test läuft gegen echtes docker compose, lokal zusätzlich gegen compose v5.8.0, und der nächtliche Sammellauf über main fährt ihn auf der Box mit v5.8.0
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -12,8 +12,10 @@ den Compose nicht annimmt, jeden docker compose-Aufruf […] update.sh prüft al
 wie jede andere (ein Leerzeichen darin: „key cannot contain a space“). Die Prüfung lässt beides durch; das Update
 scheitert dann erst am ersten Compose-Aufruf.
 
-### T1 — .env-Prüfung lehnt leeren Schlüssel und Leerzeichen im Schlüssel der letzten Zeile ab  [ ]
+### T1 — .env-Prüfung lehnt leeren Schlüssel und Leerzeichen im Schlüssel der letzten Zeile ab  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/install.sh, scripts/tests/update_test.sh, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-update-env-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @088b99d5e 2026-11-26T18:02:27+01:00
+Review: am Ende (Branch-Review)
 Änderung: `check_env_templates` (Block „env check“, update.sh:295–296, install.sh:485–486 byteweise gleich) lehnt
 einen leeren Schlüssel ab und behandelt die letzte Zeile ohne `=`/`:` wie jede andere Schlüsselzeile (Sonderfall
 `spaced=$eol` entfällt). update_test: `=zz9v` (update_test.sh:1150) und der eof-Fall (update_test.sh:1200) erwarten

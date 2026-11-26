@@ -57,6 +57,12 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # the name. It needs no daemon.
 AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose version >/dev/null 2>&1 \
   || { echo "SKIP: docker compose missing — the .env check cannot be held against it"; exit 75; }
+# Compose v5.8.0 (compose-go v2.17.0) stops at an empty key and reads the last line
+# without a line break as a key; the check follows it. An older compose takes such
+# a .env, so there its yes to the lines in ENV_V58 counts as a no (test 32).
+COMPOSE_V58=0
+compose_v=$("$AH_TEST_REAL_DOCKER" compose version --short 2>/dev/null) || compose_v=""
+[ "$(printf '%s\n' 5.8.0 "${compose_v#v}" | sort -V | head -n 1)" != 5.8.0 ] || COMPOSE_V58=1
 
 # --- a docker stub: succeeds at everything; `compose up --help` names --wait and
 # --wait-timeout unless AH_TEST_NO_WAIT=1; a `compose up --wait` fails its health
@@ -1105,6 +1111,8 @@ DIFF_ENV=()
 # shellcheck disable=SC2016
 ENV_LAZY=('SMTP_PASSWORD=ab${ZZ:+$YY}' 'X=ab${zz9q+$zz9r}' 'X=ab${DOMAIN:-$zz9r}' 'X=ab${DOMAIN:?$zz9r}'
   $'E=\nX=${E:+$zz9r}')
+# shellcheck disable=SC2016
+ENV_V58=('=zz9v' '=ab$zz9q' ' =zz9v')
 env_differential() {
   local line="$1"
   n=$((n + 1)); shown=${line//$'\n'/\\n}
@@ -1121,6 +1129,7 @@ env_differential() {
   local lazy=0 l
   for l in "${ENV_LAZY[@]}"; do [ "$l" != "$line" ] || lazy=1; done
   [ "$lazy" -eq 1 ] || ! grep -q 'variable is not set' "$INST.compose" || theirs=1
+  for l in "${ENV_V58[@]}"; do [ "$l" != "$line" ] || [ "$COMPOSE_V58" -eq 1 ] || theirs=1; done
   # A refusal has to be the check's own, not --check failing for another reason.
   { [ "$((ours != 0))" = "$((theirs != 0))" ] \
       && { [ "$ours" -eq 0 ] || grep -qE 'FEHLER: \.env: the (value starting|entry) in line' <<<"$out"; }; } \
@@ -1147,7 +1156,7 @@ ENV_VARS=('X=ab$zz9q' 'X=ab${zz9q}' 'X="ab$zz9q"' 'X=ab${zz9q?zz9w}' 'X=ab${zz9q
   'X=ab$DOMAIN' 'X=ab${zz9q:-d}' 'X=ab${zz9q+$zz9r}' 'X=ab${zz9q:-$zz9r}' 'X=ab${DOMAIN:-$zz9r}'
   'X=ab${DOMAIN:+$zz9r}' 'X=ab${DOMAIN:?$zz9r}' 'X=ab${zz9q-${zz9r?zz9w}}' 'X=ab$$zz9q' 'X=$zz9q # c'
   $'E=\nX=${E?zz9w}' $'E=\nX=${E:?zz9w}' $'E=\nX=${E:-$zz9r}' $'E=\nX=${E:+$zz9r}' $'zz9q\nX=$zz9q'
-  $'X=$zz9l\nzz9l=1' $'E=\'v\'\nX=${E:?zz9w}' $'X=a\nX=${X:?zz9w}' '=zz9v' '=ab$zz9q')
+  $'X=$zz9l\nzz9l=1' $'E=\'v\'\nX=${E:?zz9w}' $'X=a\nX=${X:?zz9w}')
 # The environment ranks above a key of the file: empty there, a key set above
 # does not help; set there, a key left empty above does not count.
 ENV_VARS_ENV=('zz9e=|'$'zz9e=v\nX=${zz9e:?zz9w}' 'zz9e=|'$'zz9e=v\nX=${zz9e:-$zz9r}'
@@ -1177,7 +1186,7 @@ ENV_KEYS=('SMTP_PASSWORD="zz9secret' "SMTP_PASSWORD='zz9secret" 'SMTP_PASSWORD="
   "P='zz9a'zz9b=\"zz9c" "P='zz9a'zz9b='zz9c'zz9d!" "P='zz9a'zz9b=zz9c\${q"
   $'Q="zz9a\nzz9b"\nzz9bad!key' $'P="zz9a\nzz9b"zz9c"' $'SMTP\tPASSWORD=zz9v'
   $'\xc2\xa0# zz9c' $'\xc2\xa0export K=zz9v' $'P="zz9a"\xc2\xa0# c' $'\xe2\x80\x87# zz9c'
-  $'\xe2\x80\xaf# zz9c' $'\xe2\x80\x83# zz9c' $'X=\xc2\xa0\'zz9${q\'')
+  $'\xe2\x80\xaf# zz9c' $'\xe2\x80\x83# zz9c' $'X=\xc2\xa0\'zz9${q\'' '=zz9v' '=ab$zz9q' ' =zz9v')
 # Characters beyond ASCII in a key are judged under C.UTF-8; without it test 39
 # ends the run with 75. A BOM within .env, a no-break space before the '=', a
 # U+2000 after "export " (compose skips it in front of a statement, not there).
@@ -1195,17 +1204,30 @@ for line in "${ENV_KEYS[@]}"; do
     && ok "[$shown]: the refusal names '${want% }' and nothing of the value" || bad "[$shown]: $out"
 done
 # A BOM at the start of .env is compose's to drop, not a character of the first key
-# (bom); the last line, without a line break and without '=' or ':', is a value to
-# compose, not a key, so a space in it is no error (eof).
-for how in bom eof; do
+# (bom); the last line, without a line break and without '=' or ':', is a key like
+# any other since compose v5.8.0: a name alone passes (eof), a space in it is an
+# error (eof-space), and the refusal names the line and nothing of it.
+for how in bom eof eof-space; do
   INST="$WORK/inst32-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
-  if [ "$how" = bom ]; then sed -i '1s/^/\xef\xbb\xbf/' "$INST/.env"; else printf 'zz9a zz9b' >> "$INST/.env"; fi
+  case $how in
+    bom) sed -i '1s/^/\xef\xbb\xbf/' "$INST/.env" ;;
+    eof) printf 'zz9a' >> "$INST/.env" ;;
+    eof-space) printf 'zz9a zz9b' >> "$INST/.env" ;;
+  esac
+  base=$(grep -c '' "$INST/.env")
   out=$(run_update "$INST" --check 2>&1); ours=$?
   ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
     >/dev/null 2>"$INST.compose"; theirs=$?
-  { [ "$ours" -eq 0 ] && [ "$theirs" -eq 0 ]; } \
-    && ok "$how: --check and docker compose accept the .env" \
-    || bad "$how: --check rc=$ours, docker compose config rc=$theirs $out"
+  if [ "$how" = eof-space ]; then
+    { [ "$ours" -ne 0 ] && { [ "$COMPOSE_V58" -eq 0 ] || [ "$theirs" -ne 0 ]; } \
+        && grep -qF "the entry in line $base " <<<"$out" && ! grep -q zz9 <<<"$out"; } \
+      && ok "$how: --check refuses the .env, names line $base and nothing of it" \
+      || bad "$how: --check rc=$ours, docker compose config rc=$theirs $out"
+  else
+    { [ "$ours" -eq 0 ] && [ "$theirs" -eq 0 ]; } \
+      && ok "$how: --check and docker compose accept the .env" \
+      || bad "$how: --check rc=$ours, docker compose config rc=$theirs $out"
+  fi
 done
 
 # ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
