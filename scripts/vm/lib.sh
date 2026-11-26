@@ -62,7 +62,7 @@ vm_py() {
 }
 
 # --- lane identity -----------------------------------------------------------
-# Parallel lanes (git worktrees, scripts/dev/lane.sh) must not sweep each
+# Parallel lanes (git worktrees, scripts/dev/worktree-setup.sh) must not sweep each
 # other's VMs: vm.py reaps by the `lane-` tag, so a shared name would let lane A
 # destroy lane B's boxes. Same precedence and same spelling rules as vm.py's
 # current_lane(), or the two would disagree about which VMs are whose.
@@ -71,13 +71,13 @@ vm_py() {
 # whether `lane-a-b` and `lane-a--b` are one lane or two — and one side would
 # sweep what the other believes is leased. Non-ASCII is the documented limit:
 # `tr` counts bytes where Python counts codepoints, so an umlaut lane falls back
-# to `main` here and may not there. `lane.sh new` only ever writes [a-z0-9-].
+# to `main` here and may not there. worktree-setup.sh writes the slug, [a-z0-9-].
 # The checkout's own .vm is gitignored state: in a checkout that tracks paths under
 # .vm it is not read, whether the lane comes from AH_LANE, --lane or the lane file,
 # and a git that cannot say counts as tracked; an inherited GIT_DIR, GIT_WORK_TREE
 # or GIT_INDEX_FILE would make git read another index. reap.sh, warm.sh and iter.sh call
 # this before they touch warm.env. A state dir elsewhere is its caller's to vouch
-# for (lane.sh done, the tests). vm.py's current_lane() refuses the same way, with
+# for (worktree-teardown.sh, the tests). vm.py's current_lane() refuses the same way, with
 # the same exit code.
 vm_lane() {
   local lane="${AH_LANE:-}" tracked own=0
@@ -92,7 +92,7 @@ vm_lane() {
   lane="$(printf '%s' "$lane" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
   while [ "${lane#-}" != "$lane" ]; do lane="${lane#-}"; done
   while [ "${lane%-}" != "$lane" ]; do lane="${lane%-}"; done
-  # A worktree made by hand, its own .vm and no lane at all: lane.sh's lanes write
+  # A worktree made by hand, its own .vm and no lane at all: worktree-setup.sh writes
   # .vm/lane, and this one would otherwise run on the main checkout's lane without
   # saying so, its reap and sweeps included. vm.py's current_lane refuses alike.
   if [ -z "$lane" ] && [ "$own" = 1 ] && vm_linked_worktree; then

@@ -5,8 +5,10 @@ Heavy: none — Harness-Skripte und Texte; der Stack-Abschnitt laeuft im PR-Job 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Verweise auf geloeschte Teile durch die heutigen Nachfolger ersetzen (R-0377)  [ ]
+### T1 — Verweise auf geloeschte Teile durch die heutigen Nachfolger ersetzen (R-0377)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, scripts/vm/lib.sh, scripts/vm/vm.py, scripts/dev/tree-hash.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @28e0bd19e 2026-11-26T22:20:02+01:00
+Review: approve (.ah-out/review/kern-harness-13/T1.verdict.json)
 Änderung:
 - `run.sh:169`, `:333` und `:375` (Hinweis bei unlesbarem Shared-Lock) nennen nicht mehr `runner-setup.sh`;
   `run_flags_test.sh:1379` greppt den neuen Text.

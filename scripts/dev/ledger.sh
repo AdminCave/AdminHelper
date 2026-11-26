@@ -279,10 +279,10 @@ case "$CMD" in
       /^## / { flush(); open = 0 }
       END { flush() }' "$LEDGER")
 
-    # A declared test deletion or assertion change (review.sh diff-scan --task,
-    # R-0206) needs the test and a reason: the gate passes an assertion over
-    # only for the <file>::<test> named here, and a deletion or change nobody
-    # can explain is the one thing it exists to stop.
+    # A declared test deletion or assertion change (R-0206) needs the test and a
+    # reason: task-close.sh lets a test go only for the <file>::<test> named in a
+    # committed Test-Löschung: line, and a deletion or change nobody can explain
+    # is the one thing it exists to stop.
     for field in Test-Löschung Assertion-Änderung; do
       while IFS= read -r entry; do
         echo "ERROR  $field: '$entry' is not <file>::<test> — <reason>" >&2
@@ -348,7 +348,7 @@ case "$CMD" in
       /^## / { id = "" }
       id != "" && match($0, /^(Test-Löschung|Assertion-Änderung):/) {
         f = substr($0, 1, RLENGTH - 1)
-        if (++n[id, f] == 2) print id ": two " f ": lines — diff-scan reads only the first; join the entries with ; (tasks/README.md)"
+        if (++n[id, f] == 2) print id ": two " f ": lines — a task declares them on one line; join the entries with ; (tasks/README.md)"
       }' "$LEDGER")
 
     # Heavy: none | linux-full | scenario <flags> | windows replaces Fast-Suite: and
