@@ -1,5 +1,5 @@
 # Harness: veraltete Verweise, Toolchain-Gleichlauf, Multi-Worker-Stack, Pflicht-Checks — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-13 · Review: pro Task
+Status: erledigt · Branch: feature/kern-harness-13 · Review: pro Task
 Spec: docs/features/kern-harness-13.md (Roadmap R-0377, R-1419, R-1060, R-0843, R-1753)
 Heavy: none — Harness-Skripte und Texte; der Stack-Abschnitt laeuft im PR-Job integration-stack, die Lockstep- und Konsistenz-Pruefungen hermetisch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
