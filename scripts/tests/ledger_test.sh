@@ -394,7 +394,7 @@ CHG1="apps/server/tests/test_x.py::test_shape — der Sollwert trägt jetzt den 
 CHG2="apps/server/tests/test_x.py::test_size — die Grenze ist jetzt 2"
 with_lines '^### T2 ' "Assertion-Änderung: $CHG1" "Assertion-Änderung: $CHG2"
 l lint fixture
-[ $rc -eq 1 ] && grep -q "ERROR  T2: two Assertion-Änderung: lines — diff-scan reads only the first" <<<"$OUT" \
+[ $rc -eq 1 ] && grep -q "ERROR  T2: two Assertion-Änderung: lines — a task declares them on one line" <<<"$OUT" \
   && ok "two Assertion-Änderung: lines in one task are an error, with task and field" || bad "two change lines: rc=$rc out=$OUT"
 with_lines '^### T2 ' "Assertion-Änderung: $CHG1; $CHG2"
 l lint fixture

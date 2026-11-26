@@ -889,7 +889,11 @@ Pruefung verlangt neben jeder `go-version` im selben `with:`-Block
 Runner-Images, und der Release liefert womoeglich einen anderen stdlib-Stand aus,
 als der Audit prueft. Ebenso muss der Default von `GO_VERSION` in
 `scripts/vm/bootstrap_linux.sh`, das Go der Test-Boxen, dieselbe Minor haben wie
-`go-version`; der Patch ist frei, die SHA-256 zieht beim Heben mit.
+`go-version` und mindestens die `toolchain`-Zeile von `apps/agent/go.mod` erreichen
+(ohne sie die `go`-Direktive), sonst laedt `go` auf der Box eine Toolchain nach; die
+SHA-256 zieht beim Heben mit. Das Python der Test-Boxen (`PY_VERSION` dort) traegt
+die Minor jedes `FROM python:X.Y` in `Dockerfile` und `apps/*/Dockerfile`, und jedes
+`python3.N` in `bootstrap_linux.sh` und `scripts/tests/run.sh` ist dieselbe.
 
 ---
 

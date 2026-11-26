@@ -660,7 +660,7 @@ def current_lane(override: str | None = None, environ=None) -> str:
     """--lane, else AH_LANE, else .vm/lane, else `main` (the shared checkout).
 
     A worktree that `git worktree add` made, with its own .vm and no lane at all, is
-    refused: lane.sh's lanes write .vm/lane, and one made by hand would otherwise run
+    refused: worktree-setup.sh writes .vm/lane, and one made by hand would otherwise run
     on the main checkout's lane without saying so — its reap and sweeps included."""
     environ = os.environ if environ is None else environ
     own = own_state(VM_STATE_DIR)
@@ -1781,7 +1781,7 @@ def worktree_warm_vmids() -> set:
     """The warm slots of the repository's other worktrees (`git worktree list`): a box
     is no leak while any checkout's warm.env claims it, the main checkout's for a
     worktree on lane main, a worker's for the main checkout. Read only from the
-    checkout's own .vm: a state dir elsewhere (the tests, lane.sh done) answers for
+    checkout's own .vm: a state dir elsewhere (the tests, worktree-teardown.sh) answers for
     itself. A worktree git cannot list, or a warm.env that cannot be read, adds
     nothing."""
     if not own_state(VM_STATE_DIR):

@@ -25,10 +25,10 @@ tmpd="$(mktemp -d)"
 trap 'rm -rf "$tmpd"' EXIT
 export GIT_INDEX_FILE="$tmpd/index"
 
-# Add everything, then drop the three excluded trees from the temp index. The
+# Add everything, then drop the two excluded trees from the temp index. The
 # obvious `:(exclude)…` pathspecs cannot be used: naming a path that .gitignore
 # already covers makes `git add` exit 1 ("paths are ignored"), which would turn
 # a hash request into a hard error on any box that has .ah-out/.
 git add -A -- .
-git rm -r -q -f --cached --ignore-unmatch -- tasks .ah-out .crabbox-out
+git rm -r -q -f --cached --ignore-unmatch -- tasks .ah-out
 git write-tree

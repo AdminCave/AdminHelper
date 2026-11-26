@@ -18,6 +18,8 @@
 #   8b. re-enrolling the device names the first cert as replaced: the first cert
 #       neither renews nor reaches the API, the new one does — until the device
 #       revokes itself (R-0224)
+#  21. two web workers without ADMIN_PASSWORD: one setup token, one banner, and the
+#      token creates the first admin once (R-0843)
 #
 # Hermetic boot/seed/teardown is shared via lib_e2e_stack.sh. Needs docker
 # (+ compose v2), openssl, curl, python3. SKIPs cleanly when docker is
@@ -2054,6 +2056,47 @@ recreate_after_wipe() {
     fi
 }
 recreate_after_wipe
+
+# ── 21. Two web workers and no ADMIN_PASSWORD: one setup token per start (R-0843) ──
+# Every uvicorn worker runs the lifespan; the file lock in app/main.py lets exactly one write
+# the token and show the banner. Permissive, because the first bootstrap without an admin has
+# no certificate to show (app/core/identity.py require_cert_if_enforced). Last again: it
+# throws away the stack 20 recreated.
+multi_worker_bootstrap() {
+    local n token code pw
+    if ! e2e_dc down -v --remove-orphans >"$E2E_WORK/mw-down.log" 2>&1; then
+        bad "two workers: docker compose down -v failed"; tail -10 "$E2E_WORK/mw-down.log"; return
+    fi
+    sed -i -e 's/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=/' -e 's/^MTLS_ENFORCE=.*/MTLS_ENFORCE=false/' "$E2E_WORK/.env"
+    echo "WEB_CONCURRENCY=2" >> "$E2E_WORK/.env"
+    e2e_up gateway || { bad "two workers: the gateway did not come up"; return; }
+    n=0
+    for _ in $(seq 1 60); do
+        n=$(e2e_dc logs server 2>/dev/null | grep -c 'Application startup complete' || true)
+        [ "$n" -ge 2 ] && break
+        sleep 2
+    done
+    [ "$n" = 2 ] && ok "two workers: both uvicorn workers finished their startup" \
+        || { bad "two workers: $n workers finished their startup, expected 2"; e2e_dc logs --tail 40 server; return; }
+    n=$(e2e_dc logs server 2>/dev/null | grep -c 'Setup-Token (gilt einmal)' || true)
+    [ "$n" = 1 ] && ok "two workers: exactly one setup banner in the server log" \
+        || bad "two workers: $n setup banners in the server log, expected 1"
+    token=$(e2e_dc exec -T server python -c 'from app.core import config; print(config.BOOTSTRAP_SETUP_FILE.read_text().strip())' 2>/dev/null | tr -d '\r\n')
+    [ -n "$token" ] || { bad "two workers: the setup file could not be read"; return; }
+    pw="e2e-$(e2e_rand)"
+    bootstrap_code() {
+        curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST "$E2E_SERVER_URL/api/auth/bootstrap" \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$token\",\"username\":\"firstadmin\",\"password\":\"$pw\"}" 2>/dev/null || echo 000
+    }
+    code=$(bootstrap_code)
+    [ "$code" = 201 ] && ok "two workers: the token from the setup file creates the first admin (201)" \
+        || bad "two workers: bootstrap with the setup token expected 201, got '$code'"
+    code=$(bootstrap_code)
+    [ "$code" = 409 ] && ok "two workers: the same token a second time is refused (409)" \
+        || bad "two workers: the second bootstrap expected 409, got '$code'"
+}
+multi_worker_bootstrap
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

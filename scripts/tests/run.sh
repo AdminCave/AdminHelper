@@ -166,7 +166,7 @@ export AH_ARGS
 # subshells via the exported PATH/VIRTUAL_ENV. Ephemeral boxes reuse it too (6.140).
 # Under the home, not /tmp: systemd-tmpfiles clears /tmp after ten days, and a
 # venv half gone there turned four suites red without a code change (2026-09-21).
-# The path .devenv.sh and runner-setup.sh set. Without HOME (an `env -i` shell)
+# The path .devenv.sh sets. Without HOME (an `env -i` shell)
 # the home comes from passwd, as for AH_PY_LOCK_FILE below.
 AH_VENV="${AH_VENV:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/ah-venv}"
 # python3.14 where it is installed: the Dockerfiles' Python, which a box gets
@@ -329,8 +329,8 @@ run_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # take a lock that all of this user's checkouts share, so a lane and the main
 # checkout queue up instead; every other step stays parallel (Kevin, gate
 # 2026-09-23). Which file, in this order: AH_PY_LOCK_FILE from the environment;
-# the file Kevin and the runner share (AH_PY_LOCK_SHARED, created by
-# scripts/dev/runner-setup.sh) once its directory exists — decided by the
+# the file shared across users (AH_PY_LOCK_SHARED, a directory the box's admin
+# creates; DEVELOPMENT.md) once its directory exists — decided by the
 # directory, not the file, because a file this user cannot see (directory not
 # searchable, file not there yet) must not read as "no shared lock": from then
 # on a run never falls back to a file of its own, that would split the lock
@@ -372,7 +372,7 @@ py_lock() {
     if ! { exec 9<"$AH_PY_LOCK_FILE"; } 2>/dev/null; then
       echo "  cannot open the python lock $AH_PY_LOCK_FILE — $1 NOT run"
       if [ "$AH_PY_LOCK_FILE" = "$AH_PY_LOCK_SHARED" ]; then
-        echo "  (run sudo bash scripts/dev/runner-setup.sh again, or set AH_PY_LOCK=0)"
+        echo "  (have it created with sudo, open to every user of the box — DEVELOPMENT.md — or set AH_PY_LOCK=0)"
       else
         echo "  (make it readable for $(id -un), or set AH_PY_LOCK=0)"
       fi

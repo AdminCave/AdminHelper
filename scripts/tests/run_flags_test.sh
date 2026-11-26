@@ -1376,7 +1376,7 @@ if [ "$(id -u)" != 0 ]; then
   EMPTY="$WORK/shared-empty"; mkdir "$EMPTY"; chmod 555 "$EMPTY"; : > "$LOCKF"
   SHARED_LOCK="$EMPTY/py.lock" run_step_alone empty "server pytest" --only server
   grep -q "cannot open the python lock $EMPTY/py.lock" "$WORK/run-empty.log" \
-    && grep -q "runner-setup.sh again" "$WORK/run-empty.log" && grep -q "SKIP  server pytest" "$WORK/run-empty.log" \
+    && grep -q "have it created with sudo" "$WORK/run-empty.log" && grep -q "SKIP  server pytest" "$WORK/run-empty.log" \
     && [ ! -s "$LOCKF" ] \
     && ok "a shared directory without the file is a SKIP that names the fix" || bad "empty dir: $(tail -8 "$WORK/run-empty.log")"
   CLOSED="$WORK/shared-closed"; mkdir "$CLOSED"; : > "$CLOSED/py.lock"; chmod 000 "$CLOSED"; : > "$LOCKF"

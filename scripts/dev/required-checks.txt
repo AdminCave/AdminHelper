@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The status checks the ruleset of main requires, one name per line (R-1753).
+# Auto-merge waits only for these: a ci.yml job missing here merges without it.
+# scripts/tests/harness_consistency_test.sh holds this list and ci.yml together.
+# A new or renamed job needs Kevin's ruleset entry first, then this list,
+# regenerated with:
+#   gh api repos/AdminCave/AdminHelper/rulesets/23772038 \
+#     --jq '.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context' | LC_ALL=C sort
+CA-Issuer (pytest)
+CA-Issuer (pytest, image lock)
+Desktop (embedded RDP vs xrdp)
+Desktop (tauri build smoke, Linux)
+Desktop-Backend (cargo test, Windows)
+Desktop-Backend (fmt + clippy + test)
+Desktop-UI (svelte-check + lint + vitest) + E2E lint
+FreeBSD pkg repo (build + signature)
+From-outside stack (mTLS gateway)
+Gateway (nginx -t)
+Go Agent (gofmt + vet + test)
+Go Agent (test, Windows)
+Monitoring (pytest)
+Monitoring (pytest, image lock)
+OpenAPI breaking changes (oasdiff)
+Ops scripts (shellcheck + update test)
+Pinned versions + signing key in lockstep
+Public repo guard (review.sh sec)
+Python (ruff check + format)
+Schema fuzzing (server + monitoring + ca-issuer)
+Server (pytest, image lock)
+Server (pytest, py3.14)
+Server (pytest, py3.15)
+Web-Frontend (Playwright E2E)
+Web-Frontend (check + lint + unit)
+ca-issuer image (build only)
+frps image (build only)
+gateway image (build only)
+monitoring image (build only)
+server image (build only)
