@@ -11,10 +11,12 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   davor.
 - R-1317 faehrt nicht mit (Frage an Kevin, Zug kern-frp-11).
 
-### T1 — Generator: Schluessel des Hosts auf Wurzelebene der frpc.toml  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_config_generator.py
-Änderung: `generate_frpc_toml` schreibt `metadatas.ahProxyKey = "<Schluessel>"` nach dem TLS-Block und vor dem ersten `[[proxies]]`, auch ohne aktive Tunnel. Test: Zeile steht auf Wurzelebene, mit und ohne Tunnel, mit der Generation des Servers.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_proxy_key.py
+### T1 — Generator: Schluessel des Hosts auf Wurzelebene der frpc.toml  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml, apps/server/tests/test_frps_policy_live.py, apps/server/tests/test_frp_provision_sync.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3c9e21757 2026-11-26T12:29:30+01:00
+Review: approve (.ah-out/review/kern-frp-10/T1.verdict.json)
+Änderung: `generate_frpc_toml` schreibt `metadatas.ahProxyKey = "<Schluessel>"` nach dem TLS-Block und vor dem ersten `[[proxies]]`, wie `auth.token` nur mit aktiven Tunneln. Test: Zeile steht auf Wurzelebene mit dem Schluessel der Generation des Servers; ohne aktive Tunnel fehlt sie.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_proxy_key.py tests/test_frp_provision_sync.py
 Doku: → T3
 
 ### T2 — Supervisor: Plugin auch fuer die Op Login  [ ]

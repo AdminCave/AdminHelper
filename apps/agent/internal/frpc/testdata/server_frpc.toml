@@ -4,6 +4,7 @@ user = "0f1e2d3c-4b5a-4968-8776-655443322110"
 
 auth.method = "token"
 auth.token = "frps-token-placeholder"
+metadatas.ahProxyKey = "30f3d257dacd265b868a68e3c508e6a6a7b759f6152d56c09541da0feba5b77a"
 
 [transport.tls]
 enable = true

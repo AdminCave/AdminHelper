@@ -19,6 +19,7 @@ from app.modules.frp.config_generator import (
     without_refused_extra_config,
     without_secretless_stcp,
 )
+from app.modules.frp.proxy_key import PROXY_KEY_META, proxy_key
 
 AGENT_FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -292,6 +293,24 @@ class TestGenerateFrpcToml:
         assert 'keyFile = "/etc/adminhelper/identity/agent.key"' in toml
         assert 'trustedCaFile = "/etc/adminhelper/identity/ca.crt"' in toml
         assert "/etc/frp/pki" not in toml
+
+    def test_the_login_carries_the_host_key_in_the_root(self):
+        # frps' plugin admits a host's login only with its key in the root metadatas; under
+        # [transport.tls] it would be transport.tls.metadatas, which frpc never sends.
+        tunnel = _make_tunnel()
+        parsed = tomllib.loads(
+            generate_frpc_toml(_make_config(), [tunnel], "srv1", key_generation=3)
+        )
+        assert parsed["metadatas"] == {PROXY_KEY_META: proxy_key("srv1", 3)}
+        assert parsed["proxies"][0]["metadatas"] == {PROXY_KEY_META: proxy_key("srv1", 3)}
+        assert "metadatas" not in parsed["transport"]["tls"]
+
+    def test_without_an_active_tunnel_no_login_key(self):
+        toml = generate_frpc_toml(
+            _make_config(), [_make_tunnel(enabled=False)], "srv1", key_generation=0
+        )
+        assert "metadatas" not in tomllib.loads(toml)
+        assert "auth.token" not in toml
 
     def test_multiple_tunnels(self):
         config = _make_config()

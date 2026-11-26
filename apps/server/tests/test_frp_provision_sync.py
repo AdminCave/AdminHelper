@@ -34,7 +34,7 @@ from app.modules.api_keys.models import ApiKey
 from app.modules.connections.models import Connection
 from app.modules.frp.config_generator import active_tunnels, generate_frpc_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.proxy_key import proxy_key
+from app.modules.frp.proxy_key import PROXY_KEY_META, proxy_key
 from app.modules.servers.models import Server
 
 # The keys the generator writes into a proxy table; none of them may stand
@@ -414,6 +414,7 @@ def test_frpc_toml_without_an_active_tunnel_is_the_common_part_without_the_token
     )
     expected = tomllib.loads(one)
     assert expected["auth"].pop("token") == "0123456789abcdef"
+    assert expected.pop("metadatas") == {PROXY_KEY_META: proxy_key("host", 0)}
     del expected["proxies"]
     assert tomllib.loads(text) == expected
 

@@ -277,11 +277,11 @@ DOMAINS = 'customDomains = ["web.example"]\n'
 
 
 def _no_key(toml):
-    return _edit(toml, KEY_LINE.format(proxy_key(SERVER_A, 0)), "", count=2)
+    return _edit(toml, KEY_LINE.format(proxy_key(SERVER_A, 0)), "", count=3)
 
 
 def _wrong_key(toml):
-    return _edit(toml, proxy_key(SERVER_A, 0), proxy_key(str(uuid.uuid4()), 0), count=2)
+    return _edit(toml, proxy_key(SERVER_A, 0), proxy_key(str(uuid.uuid4()), 0), count=3)
 
 
 def _tunnel_of_another_host(toml):
