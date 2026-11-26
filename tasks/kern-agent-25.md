@@ -1,5 +1,5 @@
 # Agent: Seam-Typ fuer die frpc-Dienstaktionen — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-25 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-25 · Review: am Ende
 Spec: docs/features/kern-agent-25.md (Roadmap R-1756)
 Heavy: linux-full — apps/agent; Verhalten unveraendert, Sammellauf genuegt
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
