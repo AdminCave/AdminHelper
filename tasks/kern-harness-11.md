@@ -48,8 +48,10 @@ Beweis: R-0546 verify.sh desktop-rs --strict -- workspace:: → 0 passed, 291 fi
 Verify: bash scripts/dev/verify.sh scripts --strict -- verify_test run_flags_test
 Doku: Kopfkommentare verify.sh und run.sh
 
-### T4 — task-close.sh: mehrere Komponenten, Dateien woertlich (R-1631, R-1654)  [ ]
+### T4 — task-close.sh: mehrere Komponenten, Dateien woertlich (R-1631, R-1654)  [x]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @213e0a50f 2026-11-26T16:27:37+01:00
+Review: approve (.ah-out/review/kern-harness-11/T4.verdict.json)
 Änderung: `Komponente:` mit mehreren Namen wird als Menge mit den Komponenten des `Verify:` verglichen (:103);
 `git add` stagt die `Dateien:` mit `--literal-pathspecs` (:140). Faelle mit Gegenprobe.
 Beweis: R-1631 kern-monitoring-50 T3, task-close.sh:103
