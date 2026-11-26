@@ -158,10 +158,10 @@ def _free_port() -> int:
 
 def _plugin_block(port: int) -> str:
     """The block the supervisor appends to its copy of frps.toml: frps asks the plugin at
-    127.0.0.1:<port> about every new proxy."""
+    127.0.0.1:<port> about every login and every new proxy."""
     return (
         f'\n[[httpPlugins]]\nname = "frps-policy"\naddr = "127.0.0.1:{port}"\n'
-        'path = "/handler"\nops = ["NewProxy"]\n'
+        'path = "/handler"\nops = ["Login", "NewProxy"]\n'
     )
 
 

@@ -259,6 +259,45 @@ def _register(docker, frps, root, pki, toml: str) -> dict[str, str]:
     return decisions
 
 
+# The plugin's decision on a login, as it logs it (frpspolicy/handler.go).
+_LOGIN = re.compile(
+    r'msg="login (?:admitted|refused)" user=(?P<user>\S+)'
+    r'(?: reason=(?:"(?P<quoted>[^"]*)"|(?P<word>\S+)))?'
+)
+# frpc's word on its login (client/service.go); with loginFailExit, as by default, a refused
+# frpc ends.
+_LOGGED_IN = "login to server success"
+_LOGIN_FAILED = "login to the server failed: "
+
+
+def _login(docker, frps, root, pki, toml: str) -> str:
+    """Runs frpc on toml until frps answered its login; returns the plugin's reason, ADMITTED
+    for a login it let through, and checks that frpc got the same answer and that the plugin
+    heard of no proxy of a refused login."""
+    user = re.search(r'^user = "([^"]+)"$', toml, re.M)[1]
+    seen = len(frps.logs())
+    with _frpc(docker, frps, root, pki, toml) as frpc:
+
+        def answer() -> re.Match | None:
+            log = frpc.logs()
+            if _LOGGED_IN not in log and _LOGIN_FAILED not in log:
+                return None
+            return next((m for m in _LOGIN.finditer(frps.logs()[seen:]) if m["user"] == user), None)
+
+        deadline = time.monotonic() + WAIT * 3
+        while (match := answer()) is None:
+            assert time.monotonic() < deadline, (
+                f"no answer to the login of {user}:\n{frps.logs()[seen:]}\n{frpc.logs()}"
+            )
+            time.sleep(0.2)
+        log = frpc.logs()
+    reason = match["quoted"] or match["word"] or ADMITTED
+    assert (_LOGGED_IN in log, _LOGIN_FAILED in log) == (reason == ADMITTED, reason != ADMITTED)
+    if reason != ADMITTED:
+        assert not [m for m in _DECISION.finditer(frps.logs()[seen:]) if m["user"] == user]
+    return reason
+
+
 def _edit(toml: str, old: str, new: str, count: int = 1) -> str:
     assert toml.count(old) == count, old
     return toml.replace(old, new)
@@ -318,14 +357,40 @@ def _other_secret_key(toml):
     return _edit(toml, SECRET, 'secretKey = "another-secret-placeholder"\n')
 
 
+def test_a_host_with_its_key_logs_in(docker, frps, tmp_path, pki, frpc_toml):
+    assert _login(docker, frps, tmp_path, pki, frpc_toml) == ADMITTED
+
+
+def _visitor(toml):
+    # The desktop's STCP visitor logs in as an AdminHelper user, no host of the policy, and
+    # carries no key; here with the host's common part and no proxy.
+    toml = toml[: toml.index("[[proxies]]")]
+    toml = _edit(toml, f'user = "{SERVER_A}"', 'user = "ops-admin"')
+    return _edit(toml, KEY_LINE.format(proxy_key(SERVER_A, 0)), "")
+
+
+def test_a_user_that_is_no_host_logs_in_without_a_key(docker, frps, tmp_path, pki, frpc_toml):
+    assert _login(docker, frps, tmp_path, pki, _visitor(frpc_toml)) == ADMITTED
+
+
+LOGIN_REFUSED = {
+    "no key": (_no_key, "no key"),
+    "wrong key": (_wrong_key, "wrong key"),
+    "user of another host": (_user_of_another_host, "wrong key"),
+}
+
+
+@pytest.mark.parametrize("case", list(LOGIN_REFUSED))
+def test_a_host_login_without_its_key_is_refused(docker, frps, tmp_path, pki, frpc_toml, case):
+    edit, expected = LOGIN_REFUSED[case]
+    assert _login(docker, frps, tmp_path, pki, edit(frpc_toml)) == expected
+
+
 REFUSED = {
-    "no key": (_no_key, {"t-ssh": "no key", "t-web": "no key"}),
-    "wrong key": (_wrong_key, {"t-ssh": "wrong key", "t-web": "wrong key"}),
     "tunnel of another host": (
         _tunnel_of_another_host,
         {"t-db": "no tunnel of this user", "t-web": ADMITTED},
     ),
-    "user of another host": (_user_of_another_host, {"t-db": "wrong key", "t-web": "wrong key"}),
     "domain not assigned": (
         _domain_not_assigned,
         {"t-ssh": ADMITTED, "t-web": "other custom domains"},
@@ -347,10 +412,9 @@ def test_a_proxy_the_policy_does_not_hold_is_refused(docker, frps, tmp_path, pki
     assert _register(docker, frps, tmp_path, pki, edit(frpc_toml)) == expected
 
 
-def test_without_the_policy_file_no_proxy_comes_up(docker, frps, tmp_path, pki, frpc_toml):
+def test_without_the_policy_file_no_host_logs_in(docker, frps, tmp_path, pki, frpc_toml):
     (frps.frp / docker_manager.POLICY_FILE).unlink()
-    decisions = _register(docker, frps, tmp_path, pki, frpc_toml)
-    assert decisions == {"t-ssh": "no policy", "t-web": "no policy"}
+    assert _login(docker, frps, tmp_path, pki, frpc_toml) == "no policy"
 
 
 def test_the_dashboard_shows_an_admitted_proxy_without_the_host_key(

@@ -49,8 +49,9 @@
 # input is then taken over anew as at the start, so frps starts from a fresh copy of a valid
 # input, and an invalid one leaves the state as without a valid copy.
 #
-# frps asks the plugin frps-policy about every proxy a client registers (op NewProxy) and
-# registers none the plugin refuses, nor any while the plugin fails to answer. stage appends a
+# frps asks the plugin frps-policy about every login of a client and every proxy it registers
+# (ops Login and NewProxy) and admits none the plugin refuses, nor any while the plugin fails
+# to answer. stage appends a
 # fixed [[httpPlugins]] block to the copy after check_config, which refuses one in the input,
 # and before frps verify. The plugin serves on 127.0.0.1 at FRPS_POLICY_PORT, or at the next
 # port up that bindPort, vhostHTTPSPort and webServer.port of the copy leave free
@@ -314,9 +315,9 @@ plugin_port() {
 }
 
 # plugin_block <port> — the block stage appends to a checked copy (PLUGIN_LINES lines): frps
-# asks the plugin at 127.0.0.1:<port> about every new proxy.
+# asks the plugin at 127.0.0.1:<port> about every login and every new proxy.
 plugin_block() {
-    printf '\n[[httpPlugins]]\nname = "frps-policy"\naddr = "127.0.0.1:%s"\npath = "%s"\nops = ["NewProxy"]\n' \
+    printf '\n[[httpPlugins]]\nname = "frps-policy"\naddr = "127.0.0.1:%s"\npath = "%s"\nops = ["Login", "NewProxy"]\n' \
         "$1" "$POLICY_PATH"
 }
 

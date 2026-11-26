@@ -19,8 +19,10 @@ Review: approve (.ah-out/review/kern-frp-10/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_proxy_key.py tests/test_frp_provision_sync.py
 Doku: → T3
 
-### T2 — Supervisor: Plugin auch fuer die Op Login  [ ]
-Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor_policy.py, apps/server/tests/test_frps_policy_live.py
+### T2 — Supervisor: Plugin auch fuer die Op Login  [x]
+Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor_policy.py, apps/server/tests/test_frps_policy_live.py, apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d8ecd51f7 2026-11-26T12:49:39+01:00
+Review: approve (.ah-out/review/kern-frp-10/T2.verdict.json)
 Änderung: `plugin_block` registriert `ops = ["Login", "NewProxy"]`, Kopfkommentar nachziehen. Tests: Block mit beiden Ops; echtes frpc: Host mit Schluessel meldet sich an, Host ohne oder mit falschem Schluessel wird abgewiesen, Visitor-User ohne Schluessel meldet sich an. Mitpruefen: Work-Conn-Pool ueber fremde run_id und user+client_id-Registry (Befund privat).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor_policy.py tests/test_frps_policy_live.py
 Doku: → T3
