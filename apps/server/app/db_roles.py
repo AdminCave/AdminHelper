@@ -13,9 +13,9 @@ both databases and every object in it to its service's role (also on an install 
 the superuser created) and limits CONNECT. The databases themselves stay the superuser's: an
 owner could attach settings to its database (`ALTER DATABASE … SET search_path`) that every
 later superuser session, this one included, would run under. `grant-ca` gives the ca-issuer
-exactly what it does on its tables; the server runs it as their owner after its migrations,
-so a migration that recreates one of them does not leave the ca-issuer without rights until
-the next setup.
+exactly what it does on its tables and takes the scheduler's write rights on `alembic_version`;
+the server runs it as their owner after its migrations, so a migration that recreates one of
+them does not leave the ca-issuer without rights until the next setup.
 """
 
 import os
@@ -37,11 +37,13 @@ ROLES = {
 
 # What the ca-issuer does on the tables of the server's database it works on
 # (apps/ca-issuer/app/db.py): it reads revocations and the register's install time, it never
-# changes them; it deletes only its own snapshot of the infrastructure certificates, which it
-# replaces on every start, and changes no schema.
+# changes them; it marks a token used and a line revoked, nothing else of either row (its
+# `FOR UPDATE OF device_lines` needs UPDATE on one column, not on all); it deletes only its own
+# snapshot of the infrastructure certificates, which it replaces on every start, and changes
+# no schema.
 CA_TABLE_PRIVILEGES = {
-    "enrollment_tokens": "SELECT, UPDATE",
-    "device_lines": "SELECT, INSERT, UPDATE",
+    "enrollment_tokens": "SELECT, UPDATE (used_at)",
+    "device_lines": "SELECT, INSERT, UPDATE (revoked_at, revoked_reason)",
     "issued_certificates": "SELECT, INSERT",
     "revoked_identities": "SELECT",
     "certificate_register_state": "SELECT",
@@ -180,6 +182,7 @@ def setup() -> None:
             (SERVER_DB, (role("server"), role("scheduler"), role("ca"))),
             (MONITOR_DB, (role("monitor"),)),
             ("postgres", ()),
+            ("template1", ()),
         ):
             conn.execute(
                 sql.SQL("ALTER DATABASE {} OWNER TO CURRENT_USER").format(sql.Identifier(db))
@@ -232,13 +235,16 @@ def setup() -> None:
 
 def ca_grant_statements(existing: list[str], sequences: list[str]) -> list[sql.Composed]:
     ca = sql.Identifier(role("ca"))
-    stmts = [
-        sql.SQL("GRANT {} ON public.{} TO {}").format(
-            sql.SQL(CA_TABLE_PRIVILEGES[t]), sql.Identifier(t), ca
-        )
-        for t in CA_TABLES
-        if t in existing
-    ]
+    stmts: list[sql.Composed] = []
+    for t in CA_TABLES:
+        if t in existing:
+            # A table-wide grant of an older start would outlive a narrower one.
+            stmts.append(sql.SQL("REVOKE ALL ON public.{} FROM {}").format(sql.Identifier(t), ca))
+            stmts.append(
+                sql.SQL("GRANT {} ON public.{} TO {}").format(
+                    sql.SQL(CA_TABLE_PRIVILEGES[t]), sql.Identifier(t), ca
+                )
+            )
     stmts += [
         sql.SQL("GRANT USAGE, SELECT ON SEQUENCE public.{} TO {}").format(sql.Identifier(s), ca)
         for s in sequences
@@ -270,8 +276,23 @@ def grant_ca(dsn: str) -> None:
                 (list(CA_TABLES),),
             ).fetchall()
         ]
-        for stmt in ca_grant_statements(existing, sequences):
-            conn.execute(stmt)
+        # One transaction: the ca-issuer runs meanwhile and must not meet a table between
+        # REVOKE and GRANT.
+        with conn.transaction():
+            for stmt in ca_grant_statements(existing, sequences):
+                conn.execute(stmt)
+            # The first migration creates alembic_version after setup, so only here, after
+            # the migrations, can its rights be cut back: the scheduler waits for the revision
+            # (scheduler_main) but never moves it.
+            if conn.execute(
+                "SELECT 1 FROM pg_catalog.pg_tables "
+                "WHERE schemaname = 'public' AND tablename = 'alembic_version'"
+            ).fetchone():
+                conn.execute(
+                    sql.SQL(
+                        "REVOKE INSERT, UPDATE, DELETE ON public.alembic_version FROM {}"
+                    ).format(sql.Identifier(role("scheduler")))
+                )
 
 
 def _libpq_dsn(url: str) -> str:

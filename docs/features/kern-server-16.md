@@ -21,8 +21,9 @@ mit: sie aendert sichtbares Verhalten und wartet auf Kevins Antwort (kern-server
 
 Ziel:
 - `template1` in der Liste der Datenbanken, denen `setup` CONNECT und TEMPORARY fuer PUBLIC nimmt.
-- `grant-ca` (laeuft nach jeder Migration als Eigentuemer `ah_server`) nimmt `ah_scheduler` jedes Recht auf
-  `alembic_version`, falls es die Tabelle gibt.
+- `grant-ca` (laeuft nach jeder Migration als Eigentuemer `ah_server`) nimmt `ah_scheduler` INSERT, UPDATE und
+  DELETE auf `alembic_version`, falls es die Tabelle gibt; SELECT bleibt, denn `scheduler_main` wartet auf die
+  Revision.
 - `ah_ca` bekommt UPDATE nur auf die Spalten, die der ca-issuer schreibt; `grant-ca` nimmt vorher die Tabellenrechte
   zurueck, in einer Transaktion, damit der ca-issuer zwischen REVOKE und GRANT nicht ohne Rechte dasteht.
 
