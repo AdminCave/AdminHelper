@@ -20,7 +20,8 @@ Gate von kern-frp-5 (2026-11-12) zwei Releases festgelegt: erst der Agent-Teil, 
 
 Ziel:
 - Der Server schreibt den Schlüssel des Hosts zusätzlich auf Wurzelebene in die `frpc.toml`
-  (`metadatas.ahProxyKey` vor dem ersten `[[proxies]]`), unabhängig davon, ob der Host Tunnel hat.
+  (`metadatas.ahProxyKey` vor dem ersten `[[proxies]]`), wie `auth.token` nur, wenn der Host aktive Tunnel hat
+  (ohne sie meldet sich frpc nicht an).
 - Der frps-Supervisor registriert das Plugin für die Ops `Login` und `NewProxy`.
 - Ein Host meldet sich nur mit seinem Schlüssel an; Anmeldungen anderer Nutzer (STCP-Visitor des Desktops) bleiben
   wie heute zugelassen.
@@ -51,8 +52,8 @@ frp v0.72.0, Server-Plugin-Ops (https://github.com/fatedier/frp/blob/v0.72.0/doc
 
 ## Trade-offs & Alternativen
 
-- Schlüssel nur bei Hosts mit Tunneln schreiben: spart nichts, macht die Datei vom Tunnelbestand abhängig. Empfehlung:
-  immer schreiben.
+- Schlüssel immer schreiben: ohne aktive Tunnel fehlt das Token, frpc meldet sich nicht an; der leere Text bliebe
+  nicht leer. Empfehlung: wie das Token nur mit aktiven Tunneln.
 - Login nur prüfen, wenn alle Agents ≥ v0.47.0 sind: verschiebt die Bindung ohne Ende. Verworfen (Kevin 2026-11-12).
 
 ## Risiken & Rollback
