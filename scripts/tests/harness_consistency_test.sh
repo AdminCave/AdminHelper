@@ -236,5 +236,19 @@ RE_TC="$(grep -m1 "^SUBJECT_RE=" "$ROOT/scripts/dev/task-close.sh")"
 [ -n "$RE_HOOK" ] && [ "$RE_HOOK" = "$RE_TC" ] && ok "commit-msg and task-close.sh share SUBJECT_RE" \
   || bad "SUBJECT_RE differs between commit-msg and task-close.sh"
 
+echo "── run.sh vs ci.yml ──"
+# run.sh shellchecks what the job ops-scripts does (R-0457), and the FreeBSD repo test runs in
+# the integration layer, not only in the job pkg-repo (R-1449).
+RUN_SH="$ROOT/scripts/tests/run.sh"
+norm() { tr -s ' \t' ' ' | sed 's/^ //; s/ $//'; }
+CI_SC="$(sed -n '/^      - name: shellcheck$/,/^      - /p' "$CI_YML" | grep -E '^ +shellcheck ' | norm)"
+RUN_SC="$(grep -E "run_step shellcheck " "$RUN_SH" | grep -oE "shellcheck --severity[^']*" | sed 's/ && /\n/' | norm)"
+[ -n "$CI_SC" ] && [ "$CI_SC" = "$RUN_SC" ] && ok "run.sh shellchecks the same paths as ci.yml ops-scripts" \
+  || bad "shellcheck differs: ci.yml [$CI_SC] run.sh [$RUN_SC]"
+grep -qE '^  run_step pkg-repo-build .* bash scripts/tests/pkg_repo_build_test\.sh$' "$RUN_SH" \
+  && ok "the integration layer runs pkg_repo_build_test" || bad "no pkg-repo-build step in run.sh"
+grep -qE '^AH_HEAVY_INTEGRATION=".*\bpkg-repo-build\b' "$RUN_SH" \
+  && ok "pkg-repo-build is required in the integration layer" || bad "pkg-repo-build missing from AH_HEAVY_INTEGRATION"
+
 echo "harness_consistency_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

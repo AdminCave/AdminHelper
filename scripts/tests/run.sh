@@ -106,7 +106,8 @@ export AH_ONLY AH_STRICT
 #              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
 #              vm-pytest · dev-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build · upgrade-path · stack-pytest · web-live
+#                agent-monitoring · repo-build · pkg-repo-build · upgrade-path · stack-pytest
+#                web-live
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
@@ -124,7 +125,7 @@ AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 # went green with the heavy steps silently SKIPped: the default set above only
 # names lint/unit ids, and iter.sh forwards AH_REQUIRED from the client,
 # where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
-AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path stack-pytest web-live"
+AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build pkg-repo-build upgrade-path stack-pytest web-live"
 # The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
 # hand-kept list would let a ninth suite run without being required, and its
 # self-SKIP would be green again — the very hole this block closes.
@@ -728,7 +729,9 @@ layer_lint() {
 
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
-    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh
+    # The same paths as the CI job ops-scripts; the frps supervisor runs under the busybox sh
+    # of its image, so it is checked as POSIX sh there too.
+    run_step shellcheck "shellcheck (ops scripts)" -- bash -c 'shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh .github/scripts/*.sh apps/*/docker-entrypoint.sh && shellcheck --severity=warning -s sh apps/frps/frps-supervisor.sh'
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
@@ -1005,6 +1008,8 @@ layer_integration() {
   run_step sse-push "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
   run_step agent-monitoring "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
   run_step repo-build "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
+  # Without PKG_TOOL_PREFIX the test builds pkg in a container first (a few minutes).
+  run_step pkg-repo-build "pkg_repo_build (FreeBSD pkg + sign)" -- bash scripts/tests/pkg_repo_build_test.sh
   # The only step that starts from a PUBLISHED release rather than from scratch:
   # both services migrate on startup, so a migration that only works on an empty
   # database is invisible to every other suite here. Needs the network (ghcr +
