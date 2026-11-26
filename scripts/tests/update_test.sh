@@ -1229,6 +1229,20 @@ for how in bom eof eof-space; do
       || bad "$how: --check rc=$ours, docker compose config rc=$theirs $out"
   fi
 done
+# Without a UTF-8 locale env_key_ok lets a character beyond ASCII pass, so a key of
+# such characters alone is no empty key. The probe that finds the locale is turned
+# off in a copy of the function, as glibc keeps C.UTF-8 built in.
+KEY_FN="$WORK/env_key_ok.sh"
+sed -n '/^env_key_ok() {/,/^}/p' "$REAL_UPDATE" | sed "s/probe=\\$'\\\\xc3\\\\x84'/probe=xx/" > "$KEY_FN"
+# shellcheck disable=SC1090
+if grep -q 'probe=xx' "$KEY_FN" && . "$KEY_FN"; then
+  rc=0; env_key_ok $'\xc3\x84\xc3\x96' || rc=$?
+  [ "$rc" -eq 0 ] && ok "without UTF-8 a key beyond ASCII alone passes" || bad "without UTF-8: a key beyond ASCII alone rc=$rc"
+  rc=0; env_key_ok '' || rc=$?
+  [ "$rc" -ne 0 ] && ok "without UTF-8 an empty key is refused" || bad "without UTF-8: an empty key rc=$rc"
+else
+  bad "env_key_ok could not be taken from update.sh with its probe turned off"
+fi
 
 # ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
 # Only the re-pin had a test: an init-secrets.sh that fails, or a key check whose

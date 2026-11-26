@@ -443,7 +443,7 @@ env_key_ok() {
             *)
                 printf -v n '%d' "'$c"
                 [ "$n" -ge 128 ] || return 1
-                [ "$utf8" -eq 1 ] || continue
+                [ "$utf8" -eq 1 ] || { seen=1; continue; }
                 # U+0085 and U+00A0 are blanks to compose.
                 case $n in 133|160) continue ;; esac
                 [[ $c == [[:alpha:][:digit:]] ]] || return 1 ;;
@@ -513,10 +513,8 @@ check_env_templates() {
                 || die ".env: the value starting in line ${start} holds a '\${' that starts no valid placeholder, which makes every compose call fail with 'Invalid template'. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
             ! env_value_quoted_by_compose "$val" \
                 || die ".env: the value starting in line ${start} holds a '\$' that docker compose reads as a variable that is not set (\$NAME, \${NAME} or \${NAME?...}): compose drops that part of the value or stops, and quotes it in its messages. Write '\$' as '\$\$' or put the value in single quotes. Aborting (nothing changed)."
-            # A value in single quotes is literal; one with a template may be empty. An empty
-            # key names nothing a template could use.
-            if [ -z "$key" ]; then :
-            elif [ -n "$val" ]; then
+            # A value in single quotes is literal; one with a template may be empty.
+            if [ -n "$val" ]; then
                 case ${val//\$\$/} in *'$'*) ENV_SEEN[$key]='tpl' ;; *) ENV_SEEN[$key]='set' ;; esac
             elif [ -n "$lit" ]; then ENV_SEEN[$key]='set'
             else ENV_SEEN[$key]='empty'

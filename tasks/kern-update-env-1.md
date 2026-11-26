@@ -1,7 +1,7 @@
 # .env-Prüfung für Compose ab v5.8.0 — Task-Ledger
 Status: bereit · Branch: feature/kern-update-env-1 · Review: am Ende
 Spec: Roadmap R-1804
-Heavy: none — nur die .env-Vorprüfung in update.sh/install.sh (kein Stack-, Gateway-, PKI- oder Datenpfad); der hermetische Differential-Test läuft gegen echtes docker compose, lokal zusätzlich gegen compose v5.8.0, und der nächtliche Sammellauf über main fährt ihn auf der Box mit v5.8.0
+Heavy: none — nur die .env-Vorprüfung in update.sh/install.sh (kein Stack-, Gateway-, PKI- oder Datenpfad); der hermetische Differential-Test läuft gegen echtes docker compose (lokal v5.6.1, Toleranzzweig); gegen v5.8.0 nicht verifiziert (Download lokal abgelehnt), erster Lauf ist der nächtliche Sammellauf über main nach dem Merge auf der Box mit v5.8.0
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
@@ -27,6 +27,17 @@ Dedup-Key: bug:scripts:update.sh:env-empty-key
 HEAD: 673575277
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test install_test
 Doku: docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-update-env-1.md
+
+### T2 — Abschlussprüfung: Schlüssel ohne UTF-8-Locale, toter Zweig  [x]
+Komponente: scripts · Dateien: scripts/update.sh, scripts/install.sh, scripts/tests/update_test.sh, tasks/kern-update-env-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @04e3c9062 2026-11-26T18:19:17+01:00
+Review: am Ende (Branch-Review)
+Änderung: Ohne UTF-8-Locale zählt ein Zeichen jenseits ASCII in `env_key_ok` wieder als Zeichen des Schlüssels
+(T1 lehnte `ÄÖ=1` dort als leer ab, origin/main nahm es an); der seit T1 unerreichbare Zweig `[ -z "$key" ]` in
+`check_env_templates` entfällt (beide Skripte byteweise gleich). Test: `env_key_ok` mit abgeschalteter Locale-Probe.
+Beweis: Abschlussprüfung 2026-11-26 @04e3c9062, `env_key_ok 'ÄÖ'` ohne UTF-8 rc=1 (origin/main rc=0)
+Verify: bash scripts/dev/verify.sh scripts --strict -- update_test install_test
+Doku: keine (Verhalten wie vor T1)
 
 ## Entscheidungen
 - 2026-11-26: Die Testbox-Vorlage pinnt `docker-compose-plugin` nicht: der ungepinnte Stand hat diesen Nutzerfehler
