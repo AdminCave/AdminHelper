@@ -1,5 +1,5 @@
 # Harness: Texte, heavy.sh, clippy, review.sh risk, approve und Test-Loeschung — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-12 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-12 · Review: pro Task
 Spec: docs/features/kern-harness-12.md (Roadmap R-0441, R-0578, R-0579, R-0580, R-0745, R-1096, R-1123, R-1754, R-1755)
 Heavy: none — Harness-Skripte und Texte; heavy.sh wird hermetisch in heavy_test.sh geprueft, clippy laeuft in der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -57,8 +57,10 @@ Beweis: R-0580, R-0579 (Details privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: CLAUDE.md, .claude/skills/ (Ablauf-Regeln)
 
-### T6 — ledger.sh lint: Test-Loeschung unter Risikopfad braucht Kevins Entscheidung  [ ]
+### T6 — ledger.sh lint: Test-Loeschung unter Risikopfad braucht Kevins Entscheidung  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md, .claude/skills/feature-plan/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b48bc6868 2026-11-26T11:54:48+01:00
+Review: approve (.ah-out/review/kern-harness-12/T6.verdict.json)
 Änderung: Nennt eine `Test-Loeschung:` eine Datei, die ein Muster aus `scripts/dev/review-risk.txt` trifft, verlangt `lint` die Task auf `[?]` oder eine Zeile `Kevin JJJJ-MM-TT:` mit dem Dateinamen in `## Entscheidungen`. Tests: Risikopfad ohne Entscheidung rot, mit `[?]` gruen, mit Entscheidung gruen, Nicht-Risikopfad gruen.
 Beweis: R-0578 (Details privat)
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test

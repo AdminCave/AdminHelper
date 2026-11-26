@@ -106,7 +106,9 @@ Abhängt von: T<k>   (nur falls nötig)
 Test-Löschung: <datei>::<test> — <Grund>   (nur falls nötig; ganze Datei: <datei>::*)
 ```
 Löscht eine Task einen Test oder eine Testdatei, kündigt der Plan das an (`tasks/README.md`): die
-Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorthin.
+Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorthin. Trifft die Datei ein Muster
+aus `scripts/dev/review-risk.txt`, steht die Task auf `[?]`, bis Kevin entscheidet; seine Antwort wird ein Punkt
+`Kevin JJJJ-MM-TT: …` unter `## Entscheidungen`, der die Datei nennt (`ledger.sh lint` prüft das).
 
 ## 3a. Die kurzen Wege: `--kurz` und `--zug`
 

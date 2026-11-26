@@ -292,6 +292,52 @@ case "$CMD" in
         | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
         | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
     done
+    # A test deleted under a risk path (scripts/dev/review-risk.txt) is Kevin's
+    # to decide, not a line in the gate report (R-0578): the task waits on [?],
+    # or a `Kevin JJJJ-MM-TT:` item under ## Entscheidungen names the file.
+    # Without the list (a fixture tree) there is nothing to match.
+    # A ledger that is erledigt is history, decided under the rule of its day.
+    # task-close reads a task up to the next ###, so a declaration under a ##
+    # section after the last task would count for it: outside a task it is an error.
+    if [ -f "$ROOT/scripts/dev/review-risk.txt" ] \
+      && [ "$(sed -n '/^Status:/{s/^Status:[ \t]*//;s/[ \t·].*//;p;q}' "$LEDGER")" != erledigt ]; then
+      DECIDED="$(awk '
+        /^## / { on = ($0 ~ /^## Entscheidungen/); if (item != "") print item; item = ""; next }
+        /^###/ { if (item != "") print item; item = ""; on = 0; next }
+        on && /^- / { if (item != "") print item; item = $0; next }
+        on && /^[ \t]+[^ \t]/ && item != "" { item = item " " $0 }
+        END { if (item != "") print item }' "$LEDGER" \
+        | grep -E '^- Kevin [0123456789]{4}-[0123456789]{2}-[0123456789]{2}:' || true)"
+      while IFS=$'\t' read -r id asked file; do
+        if [ "$id" = - ]; then
+          echo "ERROR  Test-Löschung outside a task (under a ## section): $file" >&2
+          RC=1; continue
+        fi
+        [ -n "$file" ] && [ "$asked" = 0 ] || continue
+        while IFS= read -r pat; do
+          case "$pat" in ''|'#'*) continue ;; */) pat="$pat*" ;; esac
+          # shellcheck disable=SC2254  # the list IS patterns
+          case "$file" in
+            $pat)
+              grep -qF -- "$file" <<<"$DECIDED" || {
+                echo "ERROR  $id: Test-Löschung under a risk path ($file): [?] on the task, or a Kevin JJJJ-MM-TT: item under ## Entscheidungen naming it" >&2
+                RC=1
+              }
+              break ;;
+          esac
+        done < "$ROOT/scripts/dev/review-risk.txt"
+      done < <(awk '
+        BEGIN { id = "-" }
+        /^###[ \t]/ { id = $2; asked = ($0 ~ /\[\?\]/) ? 1 : 0; next }
+        /^## / { id = "-"; asked = 0 }
+        sub(/^Test-Löschung:[ \t]*/, "") {
+          n = split($0, part, /;[ \t]*/)
+          for (i = 1; i <= n; i++) if ((j = index(part[i], "::")) > 1) {
+            f = substr(part[i], 1, j - 1); sub(/^[ \t]+/, "", f); print id "\t" asked "\t" f
+          }
+        }' "$LEDGER")
+    fi
+
     # One line of each per task: the gate reads only the first (review.sh
     # task_field), so a second one would announce nothing (R-0297).
     while IFS= read -r msg; do
