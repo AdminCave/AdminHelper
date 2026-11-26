@@ -10,7 +10,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   deckt die Harness-Pfade dieses Zugs und den Merge, auch `.github/workflows/ci.yml` aus R-1096 (die Zeile nennt
   `ci.yml` in ihrer Quelle).
 - R-1753 und R-1189 fahren nicht mit (verschoben 2026-11-26: kern-harness-11 bzw. kern-ruff-1).
-- T3: `cargo clippy --all-targets -- -D warnings` fand im Testcode nichts; keine Rust-Datei aendert sich. cicd.html nennt nur `fmt`/`clippy`/`test`, keinen Aufruf: keine Doku-Aenderung; geaendert sind nur run.sh und ci.yml.
+- T3: `cargo clippy --all-targets -- -D warnings` fand im Testcode nichts; keine Rust-Datei aendert sich. cicd.html nennt nur `fmt`/`clippy`/`test`, keinen Aufruf: keine Doku-Aenderung dort; geaendert sind run.sh, ci.yml und der Befehl in CONTRIBUTING.md und CLAUDE.md §1.
 
 ### T1 — Texte: frps-Image im test-Skill, Pflicht-Checks in feature-build und cicd  [x]
 Komponente: scripts · Dateien: .claude/skills/test/SKILL.md, .claude/skills/feature-build/SKILL.md, docs/developer/cicd.html, docs/en/developer/cicd.html
