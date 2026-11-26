@@ -286,6 +286,10 @@ infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or not
   local base='no warm box|warm pond not ready|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)'
   base="$base"'|^vm\.py: (capacity|privilege)'
   local pat="$base"'|^vm\.py: (no ip|no ssh|timeout|sync failed|clone .*failed)'
+  # A full box (R-1284): docker and runc could not write, and every step after that
+  # failed for it. Anchored on the two writers: the bare words are in test
+  # fixtures (a PVE backup error, nginx's errno 28) that a failing test prints.
+  pat="$pat"'|^[[:space:]]*(OCI runtime [a-z]+ failed|Error response from daemon): .*[Nn]o space left on device'
   [ "${2:-}" = capstone ] && pat="$base"
   grep -aE "$pat" "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
 }

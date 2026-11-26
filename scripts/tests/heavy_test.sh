@@ -1842,6 +1842,33 @@ h="$(report_of | head -1)"
 [ "$rc" = 74 ] && grep -qF -- '-8192 MiB (rest); FAIL in part gui)' <<<"$h" \
   && ok "rest infra, gui red (judged later) -> UNVERIFIED, the reason names the FAIL in gui" || bad "rest infra + gui red -> rc=$rc head '$h'"
 
+# A full box (R-1284): runc could not write, every later step failed for it. The
+# part is infra, not a FAIL of the code.
+mk_case
+artifact "ruff check:pass:3"
+artifact_for gui "desktop_e2e_misc:fail:300"
+export SHIM_ITER_RC_GUI=1
+export SHIM_ITER_OUT_GUI="OCI runtime exec failed: write /tmp/runc-process1: no space left on device
+  FAIL  desktop_e2e_misc
+  run.sh[all]: 0 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+out=$(bash "$HEAVY" all --no-second-vm 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF 'no space left on device (gui))' <<<"$h" \
+  && ok "a full box (runc: no space left on device) -> UNVERIFIED, not FAIL" || bad "full box -> rc=$rc head '$h'"
+# Counter-check: the same words inside a test's own output (a fixture of a backup
+# error) are no full box; the red step stays FAIL.
+mk_case
+artifact "ruff check:pass:3"
+artifact_for gui "desktop_e2e_misc:fail:300"
+export SHIM_ITER_SEQ_GUI="1 1 1 1"
+export SHIM_ITER_OUT_GUI="    expected: ERROR: Backup of VM 102 failed - no space left on device
+  FAIL  desktop_e2e_misc
+  run.sh[all]: 0 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns"
+out=$(bash "$HEAVY" all --no-second-vm 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" != 74 ] && [ "$rc" != 0 ] && grep -q '^FAIL' <<<"$h" \
+  && ok "the words in a test fixture are no full box -> FAIL stays" || bad "fixture enospc -> rc=$rc head '$h'"
+
 # ── 11d: no GUI box -> part gui runs after part rest, on the desktop box ─────
 # Kevin 2026-10-21: when warm.sh gui fails on its retry too, part gui runs after
 # part rest on the desktop box, and the notes say so with the last line of

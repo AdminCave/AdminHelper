@@ -22,8 +22,10 @@ Beweis: R-0737 main@eb976421 scripts/tests/heavy.sh:736 (heute :1093), Abfrage o
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Report-Form unveraendert)
 
-### T2 — volle Platte der Box ist infra (R-1284)  [ ]
+### T2 — volle Platte der Box ist infra (R-1284)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8e2d7f9c4 2026-11-26T14:41:08+01:00
+Review: approve (.ah-out/review/kern-harness-10/T2.verdict.json)
 Änderung: `infra_marker` (heavy.sh:270) nimmt auf dem Ein-Box-Layer `no space left on device` auf; ein Teil, dessen
 Log das traegt, wird `infra`, nicht `fail`. Fall in heavy_test.sh plus Gegenprobe (capstone-Muster unveraendert).
 Beweis: .ah-out/weekly/2026-11-10-1027/gui/last.out.log:392 (`no space left on device`), report: part gui fail
