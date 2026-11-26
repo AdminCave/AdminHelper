@@ -155,10 +155,10 @@ fn open_cmd_console(_line: &str) -> Result<(), AppError> {
 ///
 /// Not through `std::process::Command`: that hands the child the standard handles of this process
 /// (`STARTF_USESTDHANDLES`) whenever it has any, and Windows keeps them even for a new console
-/// (learn.microsoft.com/en-us/windows/console/getstdhandle, Remarks). The desktop is a console
-/// program (no `windows_subsystem`), so cmd and ssh would read and write its console instead of
-/// the new window. Without that flag and without handle inheritance the new console fills the
-/// standard handles itself.
+/// (learn.microsoft.com/en-us/windows/console/getstdhandle, Remarks). A debug build of the desktop
+/// is a console program (`windows_subsystem` only in release), so cmd and ssh would read and write
+/// its console instead of the new window. Without that flag and without handle inheritance the new
+/// console fills the standard handles itself.
 /// cmd comes by its full path from the system directory: with only a command line,
 /// `CreateProcessW` would search the current directory as well.
 #[cfg(windows)]

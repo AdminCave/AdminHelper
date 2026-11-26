@@ -757,7 +757,8 @@ pub fn harden_permissions(path: &Path) {
         // A silent failure here would leave the .p12 with inherited ACLs (broader
         // than the owner) — log it so it does not stay invisible. The blob is also
         // password-encrypted, so this stays best-effort, not fatal.
-        match Command::new("icacls")
+        let mut command = Command::new("icacls");
+        command
             .args([
                 path_str.as_ref(),
                 "/inheritance:r",
@@ -765,9 +766,10 @@ pub fn harden_permissions(path: &Path) {
                 &format!("{user}:F"),
             ])
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-        {
+            .stderr(std::process::Stdio::null());
+        // CREATE_NO_WINDOW: the desktop has no console, so icacls would open one of its own.
+        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+        match command.status() {
             Ok(status) if !status.success() => {
                 log::warn!("icacls konnte {path_str} nicht haerten: Status {status}");
             }
