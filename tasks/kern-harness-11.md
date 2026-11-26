@@ -70,7 +70,7 @@ Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: .claude/skills/roadmap/SKILL.md
 
-### T8 — .github/scripts-Tests lokal (R-1315)  [ ]
+### T8 — .github/scripts-Tests lokal (R-1315)  [~] (bereits behoben: 1c35ba5de)
 Komponente: scripts · Dateien: scripts/tests/run.sh
 Änderung: keine; behoben durch 1c35ba5de (run.sh:724-725).
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
