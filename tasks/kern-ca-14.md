@@ -1,5 +1,5 @@
 # ca-issuer: Client-Identitaet nur vom Gateway — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-14 · Review: pro Task
 Spec: docs/features/kern-ca-14.md (Roadmap R-0840)
 Heavy: linux-full — apps/ca-issuer und integration_stack_test.sh (Erneuerung ueber den echten Gateway); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/kern-ca-14/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-ca-14.md
 
-### T4 — CHANGELOG-Fragment in die Form von changelog.d/README.md  [ ]
+### T4 — CHANGELOG-Fragment in die Form von changelog.d/README.md  [x]
 Komponente: scripts · Dateien: changelog.d/kern-ca-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @58c275525 2026-11-26T14:02:39+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Das Fragment aus T3 deutsch und umlautfrei als `- **Bereich: Titel:** Text` (Befund reviewer kern-desktop-5 T2 an der gleichen Form; `changelog-assemble.py --check` prüft das Titelfeld nicht).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: changelog.d/kern-ca-14.md

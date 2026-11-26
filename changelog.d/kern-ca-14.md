@@ -1,4 +1,5 @@
 ### Changed
 
-- The ca-issuer reads the client certificate headers only from requests that come straight from the gateway,
-  like the server; uvicorn in the ca-issuer no longer evaluates forwarded headers.
+- **ca-issuer: Client-Identitaet nur vom Gateway:** Der ca-issuer wertet die Zertifikats-Header des Gateways wie der
+  Server nur aus, wenn die Anfrage direkt vom Dienst `gateway` kommt; uvicorn im ca-issuer wertet keine
+  Forwarded-Header mehr aus.
