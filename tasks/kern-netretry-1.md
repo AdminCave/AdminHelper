@@ -1,5 +1,5 @@
 # Netz-Aussetzer und Haenger in Bake, Bootstrap und Images — Task-Ledger
-Status: geplant · Branch: feature/kern-netretry-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-netretry-1 · Review: am Ende
 Spec: docs/features/kern-netretry-1.md (Roadmap R-1794, R-1795, R-1797, R-1798)
 Heavy: linux-full — die Dockerfiles bauen den Stack (Sammellauf); dazu vor dem Merge ein `vm.py bake --profile linux-full`, dessen Warm-Schritt mit Exit 0 endet (Beweis fuer R-1794 und den Bootstrap)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
