@@ -1,5 +1,5 @@
 # .env-Prüfung für Compose ab v5.8.0 — Task-Ledger
-Status: geplant · Branch: feature/kern-update-env-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-update-env-1 · Review: am Ende
 Spec: Roadmap R-1804
 Heavy: none — nur die .env-Vorprüfung in update.sh/install.sh (kein Stack-, Gateway-, PKI- oder Datenpfad); der hermetische Differential-Test läuft gegen echtes docker compose, lokal zusätzlich gegen compose v5.8.0, und der nächtliche Sammellauf über main fährt ihn auf der Box mit v5.8.0
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
