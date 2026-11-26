@@ -1,5 +1,5 @@
 # Harness: Gates und Werkzeuge der Sessions — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-11 · Review: pro Task
+Status: aktiv · Branch: feature/kern-harness-11 · Review: pro Task
 Spec: docs/features/kern-harness-11.md (Roadmap R-0375, R-0438, R-0546, R-1314, R-1362, R-1631, R-1647, R-1654, R-1659, R-1745, R-1781, R-1315)
 Heavy: none — nur Harness-Skripte und Skill-Texte; jede Aenderung hermetisch in scripts/tests bzw. scripts/dev/tests geprueft
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -90,3 +90,12 @@ Komponente: scripts · Dateien: scripts/tests/run.sh
 Änderung: keine; behoben durch 1c35ba5de (run.sh:724-725).
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (behoben)
+
+### T9 — Doku: Notiz-Regel von status, verify.sh-Regeln, Sperrliste (R-0438, R-1362, R-0546, R-1659, R-0375)  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, scripts/dev/roadmap.py
+Änderung: Aus der Abschlusspruefung: DEVELOPMENT.md beschreibt `status` mit behaltener Notiz und `--clear-note`
+(statt „anders als `status` ohne `--note`“ bei `approve`); der verify.sh-Abschnitt in DEVELOPMENT.md und cicd.html
+DE+EN nennt die verworfenen `AH_STEP`/`AH_PART`/`AH_EXCLUDE`/`AH_ONLY`, den roten leeren Filter und das Go-Paket;
+die sec-Zeile in cicd.html DE+EN die private Sperrliste; der Usage-Kopf von roadmap.py `--clear-note`.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test harness_consistency_test
+Doku: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
