@@ -24,7 +24,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from app import config, trust
+from app import config, gateway_peer, trust
 from app.issuer import IssuanceError, Issuer, IssuerUnavailable
 from app.storage import Intermediate, ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
@@ -205,8 +205,16 @@ class TrustGeneration(BaseModel):
 def _presented_cert(request: Request) -> bytes:
     """The client cert the gateway verified, as PEM, or a 401."""
     # The gateway terminates mTLS and forwards the verified client cert. We act
-    # only on a SUCCESS verdict + the escaped PEM (ADR 0001 §3.2 / A0 spike).
-    if request.headers.get(config.HEADER_VERIFY, "").upper() != "SUCCESS":
+    # only on a SUCCESS verdict + the escaped PEM (ADR 0001 §3.2 / A0 spike), and
+    # only when the request comes straight from the gateway: from any other peer it
+    # counts as one without a cert.
+    peer = request.client.host if request.client else None
+    from_gateway = gateway_peer.GATEWAY.is_gateway(peer)
+    if not from_gateway and (
+        config.HEADER_VERIFY in request.headers or config.HEADER_CERT in request.headers
+    ):
+        gateway_peer.log_ignored(peer, request.method, request.url.path)
+    if not from_gateway or request.headers.get(config.HEADER_VERIFY, "").upper() != "SUCCESS":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Kein verifiziertes Client-Cert"
         )

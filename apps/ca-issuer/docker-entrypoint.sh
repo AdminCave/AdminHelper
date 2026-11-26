@@ -25,4 +25,4 @@ fi
 
 # The PKI hierarchy (Root + intermediates) is created/loaded by the app's
 # lifespan (ensure_hierarchy), not here — no DB, no Alembic on this service.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8090
+exec uvicorn app.main:app --host 0.0.0.0 --port 8090 --no-proxy-headers

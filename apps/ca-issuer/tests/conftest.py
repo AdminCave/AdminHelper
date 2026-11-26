@@ -115,3 +115,19 @@ def db_engine(_postgres_unit_engine):
         conn.execute(text("SET LOCAL lock_timeout = '30s'"))
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     yield _postgres_unit_engine
+
+
+class _TestClientIsGateway:
+    """The gateway as the suite sees it: Starlette's TestClient sends from the host
+    "testclient", and these tests stand in for the gateway. test_gateway_peer.py
+    checks the real lookup and swaps in its own."""
+
+    def is_gateway(self, host: str | None) -> bool:
+        return host == "testclient"
+
+
+@pytest.fixture(autouse=True)
+def _gateway_is_the_test_client(monkeypatch):
+    from app import gateway_peer
+
+    monkeypatch.setattr(gateway_peer, "GATEWAY", _TestClientIsGateway())

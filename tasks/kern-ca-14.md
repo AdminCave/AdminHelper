@@ -1,0 +1,44 @@
+# ca-issuer: Client-Identitaet nur vom Gateway — Task-Ledger
+Status: erledigt · Branch: feature/kern-ca-14 · Review: pro Task
+Spec: docs/features/kern-ca-14.md (Roadmap R-0840)
+Heavy: linux-full — apps/ca-issuer und integration_stack_test.sh (Erneuerung ueber den echten Gateway); Sammellauf
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+## Entscheidungen
+- Kevin 2026-11-25 (Notiz R-0840): faellig. Die Bedingung aus der Notiz (Netz pki nach db-roles) ist erfuellt; pki
+  traegt weiter postgres.
+
+### T1 — ca-issuer: Header nur vom Gateway-Peer  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/app/gateway_peer.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/docker-entrypoint.sh, apps/ca-issuer/tests/test_gateway_peer.py, apps/ca-issuer/tests/conftest.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @b8cc77723 2026-11-26T13:03:42+01:00
+Review: approve (.ah-out/review/kern-ca-14/T1.verdict.json)
+Änderung: `_presented_cert` wertet die Header nur, wenn der TCP-Peer eine aktuelle Adresse des Namens `gateway` ist (neues Modul mit kurzem Cache, sofortiger Neuauflösung bei unbekanntem Peer, fail-closed, Warnzeile je Peer und Minute); sonst 401. Entrypoint mit `--no-proxy-headers`. Kommentar an `_verify_ca_signed` nachziehen. Tests: Peer Gateway → 200, anderer Peer → 401 auf `/renew` und `/trust`, Auflösungsfehler → 401, neue Gateway-Adresse wird nach Neuauflösung angenommen; bestehende Tests per Fixture mit dem Test-Client als Gateway. SPDX im neuen Modul und Test.
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_peer.py tests/test_enroll_renew.py tests/test_trust_generation.py
+Doku: → T3
+
+### T2 — Stack-Test: Header aus einem anderen pki-Container  [x]
+Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3f8460eb2 2026-11-26T13:37:56+01:00
+Review: approve (.ah-out/review/kern-ca-14/T2.verdict.json)
+Änderung: Nach Schritt 8 schickt der postgres-Container (busybox `wget`) `X-Client-Verify: SUCCESS` und das echte, escapte Leaf des Geraets direkt an `ca-issuer:8090/trust`; erwartet 401. Gegenprobe im selben Schritt: dieselbe Anfrage ueber den Gateway liefert 200.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Testskript)
+Abhängt von: T1
+
+### T3 — Doku: ca-issuer prueft die Gegenstelle, CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-ca-14.md, docker-compose.yml, apps/ca-issuer/app/config.py, scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4b6b60e4e 2026-11-26T13:53:49+01:00
+Review: approve (.ah-out/review/kern-ca-14/T3.verdict.json)
+Änderung: Architektur und Installation DE+EN: der ca-issuer wertet die `X-Client-*`-Header wie der Server nur vom Dienst `gateway` aus, uvicorn ohne Proxy-Header. CHANGELOG-Fragment (umlautfrei).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/index.html, docs/en/developer/index.html, docs/admin/installation.html, docs/en/admin/installation.html, changelog.d/kern-ca-14.md
+
+### T4 — CHANGELOG-Fragment in die Form von changelog.d/README.md  [x]
+Komponente: scripts · Dateien: changelog.d/kern-ca-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @58c275525 2026-11-26T14:02:39+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: Das Fragment aus T3 deutsch und umlautfrei als `- **Bereich: Titel:** Text` (Befund reviewer kern-desktop-5 T2 an der gleichen Form; `changelog-assemble.py --check` prüft das Titelfeld nicht).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: changelog.d/kern-ca-14.md
+Task-Review: am Ende
