@@ -65,8 +65,10 @@ Komponente: scripts · Dateien: scripts/dev/queue-wait.sh, scripts/tests/queue_w
 Verify: bash scripts/dev/verify.sh scripts --strict -- queue_wait_test
 Doku: keine (Kommentare)
 
-### T6 — pipe_guard: docker logs als Schreiber, desktop_e2e-Skripte (R-1647)  [ ]
-Komponente: scripts · Dateien: scripts/tests/pipe_guard_test.sh
+### T6 — pipe_guard: docker logs als Schreiber, desktop_e2e-Skripte (R-1647)  [x]
+Komponente: scripts · Dateien: scripts/tests/pipe_guard_test.sh, scripts/tests/desktop_e2e_monitoring.sh, scripts/tests/desktop_e2e_tunnel.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c330d2110 2026-11-26T16:36:02+01:00
+Review: approve (.ah-out/review/kern-harness-11/T6.verdict.json)
 Änderung: Der Guard zaehlt `docker logs`/`docker compose logs` zu den Schreibern und scannt auch
 `scripts/tests/desktop_e2e_*.sh`; Funde in diesen Skripten werden behoben (Variable vor grep). Selbsttest-Fall plus
 Gegenprobe.

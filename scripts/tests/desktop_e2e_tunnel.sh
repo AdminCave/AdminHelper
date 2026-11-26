@@ -94,7 +94,7 @@ fi
 # ── Independent check: frps logged the desktop's frpc connecting ─────────────
 # (the first run already satisfies it; the second run's proof is its indicator)
 FRPS_LOG=$(e2e_dc logs --no-color frps 2>/dev/null)
-if printf '%s' "$FRPS_LOG" | grep -qiE "new proxy|client login|login to the server|new work connection|start proxy success|get a new work connection"; then
+if grep -qiE "new proxy|client login|login to the server|new work connection|start proxy success|get a new work connection" <<<"$FRPS_LOG"; then
     ok "frps shows the desktop tunnel connected"
 else
     bad "frps shows no successful tunnel connection"
