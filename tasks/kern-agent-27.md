@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-27 — Agent-Test wartet auf den hängenden stat — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-27 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-27 · Review: am Ende
 Spec: Roadmap R-1820
 Heavy: none — nur ein Go-Unit-Test, kein Produktcode
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
