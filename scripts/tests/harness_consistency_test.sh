@@ -241,6 +241,20 @@ RAW_PIP=$(sed '/^pip_install() {/,/^}/d' "$BOOT" | grep -v '^[[:space:]]*#' | gr
 grep -q 'Acquire::Retries' "$BOOT" && ok "bootstrap_linux.sh sets apt Acquire::Retries" \
   || bad "bootstrap_linux.sh sets no apt Acquire::Retries"
 
+echo "── image downloads ──"
+# The same blips in a docker build (R-1797): apt, pip and npm retry there too.
+for f in Dockerfile apps/ca-issuer/Dockerfile apps/monitoring/Dockerfile scripts/tests/xrdp-gfx/Dockerfile; do
+  body="$(grep -v '^[[:space:]]*#' "$ROOT/$f")"
+  n_apt=$(grep -cE 'apt-get (update|upgrade|install)' <<<"$body" || true)
+  n_pip=$(grep -E 'pip install' <<<"$body" | grep -cv -- '--retries' || true)
+  n_npm=$(grep -E 'npm ci' <<<"$body" | grep -cv -- '--fetch-retries' || true)
+  if [ "$n_apt" -eq 0 ] && [ "$n_pip" -eq 0 ] && [ "$n_npm" -eq 0 ]; then
+    ok "$f: apt, pip and npm retry"
+  else
+    bad "$f: $n_apt apt-get without -o Acquire::Retries, $n_pip pip install without --retries, $n_npm npm ci without --fetch-retries"
+  fi
+done
+
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$ROOT/scripts/tests/run.sh")"
 grep -qw 'harness_consistency_test' <<<"$LIST" && ok "registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 # The tests under .github/scripts/ ran only as CI steps, so a task's evidence did not cover them (R-1352).
