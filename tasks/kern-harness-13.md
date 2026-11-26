@@ -19,8 +19,10 @@ Review: approve (.ah-out/review/kern-harness-13/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test ledger_test task_close_test
 Doku: keine (Kommentare und Meldungstexte des Harness)
 
-### T2 — Toolchain-Lockstep: Box-Python folgt dem Dockerfile, Box-Go der go.mod-Toolchain (R-1419, R-1060)  [ ]
+### T2 — Toolchain-Lockstep: Box-Python folgt dem Dockerfile, Box-Go der go.mod-Toolchain (R-1419, R-1060)  [x]
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, scripts/vm/bootstrap_linux.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @95b43ce84 2026-11-26T22:26:23+01:00
+Review: approve (.ah-out/review/kern-harness-13/T2.verdict.json)
 Änderung:
 - Neue Offline-Prüfung 1d: Major.Minor des Defaults von `PY_VERSION` in `bootstrap_linux.sh` gleich dem
   `FROM python:X.Y` jedes `apps/*/Dockerfile`, das eines trägt.
@@ -68,3 +70,7 @@ Task-Review: am Ende
 - R-1364 fährt nicht mit: der sshd-Teil ist nicht verifiziert und braucht eine OPNsense-Box (Klon am 2026-11-26
   an der Kapazität gescheitert), die rc.conf-Bereinigung einen echten Bake; verschoben nach kern-harness-14.
 - Der Teil `.claude/rules/testing.md` von R-0377 ist auf main 826be48 schon behoben (kein „Stufe 12“ mehr).
+- T2: die Pruefungen heissen 2d (Go) und 2e (Python), weil sie hinter 2c stehen, wo `plain_version` schon
+  definiert ist. 2d verlangt Box-Go >= go.mod-`toolchain` (sonst `go`), nicht Gleichheit: nur ein Box-Go
+  darunter laedt per GOTOOLCHAIN=auto nach (R-1060), ein hoeherer Patch schadet nicht. 2e prueft dazu jedes
+  `python3.N` in bootstrap_linux.sh und run.sh, die R-1419 als zweite Fundstelle nennt.

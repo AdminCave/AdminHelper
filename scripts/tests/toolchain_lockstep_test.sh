@@ -64,6 +64,12 @@ fixture() {
     >> "$d/.github/workflows/ci.yml"
   printf '#!/usr/bin/env bash\nGO_VERSION="${AH_GO_VERSION:-%s}"\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.12.4}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\nOASDIFF_VERSION="${AH_OASDIFF_VERSION:-%s}"\nOASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-%s}"\n' \
     "$go_boot" "$ruff_boot" "$OAS_V" "$OAS_SHA" > "$d/scripts/vm/bootstrap_linux.sh"
+  printf '# python3.14 for the venv\nPY_VERSION="${AH_PY_VERSION:-3.14.10}"\n' >> "$d/scripts/vm/bootstrap_linux.sh"
+  mkdir -p "$d/apps/agent" "$d/apps/monitoring" "$d/scripts/tests"
+  printf 'module example.com/agent\n\ngo %s.0\n\ntoolchain go%s\n' "$ci" "$go_boot" > "$d/apps/agent/go.mod"
+  printf 'FROM node:26 AS web\nFROM python:3.14-slim@sha256:%s AS runtime\n' "$OAS_SHA" > "$d/Dockerfile"
+  printf 'FROM python:3.14-slim@sha256:%s\n' "$OAS_SHA" > "$d/apps/monitoring/Dockerfile"
+  printf 'command -v python3.14 >/dev/null 2>&1 && py=python3.14\n' > "$d/scripts/tests/run.sh"
   printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
   printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$rel" > "$d/.github/workflows/release.yml"
@@ -274,6 +280,43 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "another patch of the same minor -> exit 
 GNONE="$WORK/gonone"; fixture "$GNONE" 1.25 1.25 1.25 v1.7.0
 sed -i '/^GO_VERSION=/d' "$GNONE/scripts/vm/bootstrap_linux.sh"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without a GO_VERSION default -> exit 1" 1 "no plain GO_VERSION" -- --root "$GNONE"
+
+# ── 9b: the boxes' Go is at least what the agent's go.mod asks for (R-1060) ──
+GTC="$WORK/gotoolchain"; fixture "$GTC" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25.2
+sed -i 's/^toolchain go.*/toolchain go1.25.4/' "$GTC/apps/agent/go.mod"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go.mod toolchain 1.25.4 above bootstrap 1.25.2 -> exit 1, named" 1 "apps/agent/go.mod asks for Go 1.25.4 (toolchain), scripts/vm/bootstrap_linux.sh installs Go 1.25.2" -- --root "$GTC"
+FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "apps/agent/go.mod asks for Go 1.25.4" -- --root "$GTC"
+GTCL="$WORK/gotoolchainlow"; fixture "$GTCL" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25.10
+sed -i 's/^toolchain go.*/toolchain go1.25.9/' "$GTCL/apps/agent/go.mod"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "toolchain 1.25.9 under bootstrap 1.25.10 (compared as versions) -> exit 0" 0 "agent go.mod: toolchain 1.25.9 <= bootstrap 1.25.10" -- --root "$GTCL"
+GDIR="$WORK/godirective"; fixture "$GDIR" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25.2
+printf 'module example.com/agent\n\ngo 1.25.3\n' > "$GDIR/apps/agent/go.mod"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "no toolchain line, go 1.25.3 above bootstrap 1.25.2 -> exit 1" 1 "apps/agent/go.mod asks for Go 1.25.3 (go)" -- --root "$GDIR"
+GMODNONE="$WORK/gomodnone"; fixture "$GMODNONE" 1.25 1.25 1.25 v1.7.0
+rm "$GMODNONE/apps/agent/go.mod"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "no apps/agent/go.mod -> exit 1" 1 "missing apps/agent/go.mod" -- --root "$GMODNONE"
+
+# ── 9c: the boxes' Python is the images' Python (R-1419) ─────────────────────
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing Python is named in the output" 0 "python: bootstrap=3.14.10 images=3.14 ( Dockerfile apps/monitoring/Dockerfile )" -- --root "$GOOD"
+PIMG="$WORK/pyimage"; fixture "$PIMG" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^FROM python:3.14-slim/FROM python:3.15-slim/' "$PIMG/apps/monitoring/Dockerfile"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "one image on python:3.15, the boxes on 3.14.10 -> exit 1, named" 1 "apps/monitoring/Dockerfile builds on python:3.15, scripts/vm/bootstrap_linux.sh gives the boxes Python 3.14.10" -- --root "$PIMG"
+FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "builds on python:3.15" -- --root "$PIMG"
+PRUN="$WORK/pyrunsh"; fixture "$PRUN" 1.25 1.25 1.25 v1.7.0
+printf 'py=python3.13\n' >> "$PRUN/scripts/tests/run.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "run.sh names python3.13 beside 3.14.10 -> exit 1, named" 1 "scripts/tests/run.sh names python3.13, the boxes' Python is 3.14.10" -- --root "$PRUN"
+PTAG="$WORK/pytagless"; fixture "$PTAG" 1.25 1.25 1.25 v1.7.0
+printf 'FROM python AS base\n' > "$PTAG/apps/monitoring/Dockerfile"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "FROM python without a MAJOR.MINOR tag -> exit 1" 1 "apps/monitoring/Dockerfile builds on a python image without a MAJOR.MINOR tag" -- --root "$PTAG"
+PPATCH="$WORK/pypatch"; fixture "$PPATCH" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^FROM python:3.14-slim/FROM python:3.14.10-slim/' "$PPATCH/apps/monitoring/Dockerfile"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "FROM python:3.14.10-slim reads as 3.14 -> exit 0" 0 "python: bootstrap=3.14.10 images=3.14" -- --root "$PPATCH"
+PNONE="$WORK/pyfromnone"; fixture "$PNONE" 1.25 1.25 1.25 v1.7.0
+sed -i '/^FROM python/d' "$PNONE/Dockerfile" "$PNONE/apps/monitoring/Dockerfile"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "no FROM python:X.Y in any image -> exit 1" 1 "no FROM python:X.Y in Dockerfile or apps/*/Dockerfile" -- --root "$PNONE"
+PVNONE="$WORK/pyversionnone"; fixture "$PVNONE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^PY_VERSION=.*/PY_VERSION="${AH_PY_VERSION:-3.14}"/' "$PVNONE/scripts/vm/bootstrap_linux.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap PY_VERSION 3.14 (no patch) -> exit 1" 1 "no plain PY_VERSION" -- --root "$PVNONE"
 
 # ── 10: every true spelling setup-go takes, and only the go-version's block ──
 # setup-go reads check-latest with core.getBooleanInput: true, True or TRUE, quoted

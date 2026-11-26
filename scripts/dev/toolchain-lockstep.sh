@@ -16,7 +16,7 @@
 # looking like an ordinary red run. The pin's comment says "raise this together
 # with go-version"; this is that sentence as a check.
 #
-# Six assertions:
+# Eight assertions:
 #   1  every `go-version:` in ci.yml, release.yml and audit.yml is the same
 #      (the pin is chosen against one Go version — three different ones make
 #      "the Go version" meaningless before the third assertion can mean
@@ -28,7 +28,7 @@
 #      Offline, like 2.
 #   1c the default of GO_VERSION in scripts/vm/bootstrap_linux.sh, the Go every
 #      heavy-tier box builds the agent with, has that go-version's MAJOR.MINOR.
-#      The patch is free (the tarball's SHA-256 pins it). Offline.
+#      The patch is free (the tarball's SHA-256 pins it) as long as 2d holds. Offline.
 #   2  the ruff that ci.yml installs is the default of RUFF_VERSION in
 #      scripts/vm/bootstrap_linux.sh and the `ruff==` pin in
 #      apps/server/requirements-dev.txt. The first bake of a linux-server
@@ -51,6 +51,17 @@
 #      builds the desktop with the tauri-cli of CI and the release
 #      (.github/scripts/tauri_cli_pins.sh holds ci.yml and release.yml
 #      together). Offline, like 2.
+#   2d that default of GO_VERSION is at least the Go that apps/agent/go.mod
+#      asks for (its `toolchain` line, else its `go` directive). A higher one
+#      makes `go build` on a box fetch the toolchain from proxy.golang.org
+#      (GOTOOLCHAIN=auto) instead of using the SHA-pinned tarball, and a box
+#      that cannot reach the proxy fails the build (R-1060). Offline.
+#   2e the default of PY_VERSION in scripts/vm/bootstrap_linux.sh, the Python of
+#      run.sh's venv on the boxes, has the MAJOR.MINOR of every `FROM python:X.Y`
+#      of the images (Dockerfile, apps/*/Dockerfile), and every python3.N that
+#      bootstrap_linux.sh and scripts/tests/run.sh name is that MAJOR.MINOR: a
+#      Python bump of the images otherwise leaves the boxes testing the old one
+#      (R-1419). Offline.
 #   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
@@ -270,6 +281,58 @@ done < <(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$WF/ci.yml" |
   echo "::error::no pinned 'cargo install tauri-cli --version X.Y.Z' in .github/workflows/ci.yml — the boxes' tauri-cli cannot be held to CI's"
   exit 1; }
 echo "tauri-cli: ci.yml=$tauri_ci bootstrap=$TAURI_BOOT"
+
+# ── 2d: the boxes' Go is at least what the agent's go.mod asks for ───────────
+GOMOD="$ROOT/apps/agent/go.mod"
+[ -f "$GOMOD" ] || { echo "::error::missing apps/agent/go.mod — the Go the agent asks for cannot be checked"; exit 1; }
+GO_WANT="$(sed -n 's/^toolchain go\([0-9][0-9.]*\)[[:space:]]*$/\1/p' "$GOMOD" | head -1)"
+go_want_from=toolchain
+[ -n "$GO_WANT" ] || { GO_WANT="$(sed -n 's/^go \([0-9][0-9.]*\)[[:space:]]*$/\1/p' "$GOMOD" | head -1)"; go_want_from=go; }
+plain_version "$GO_WANT" || {
+  echo "::error::no plain toolchain or go directive in apps/agent/go.mod (found '$GO_WANT')"
+  exit 1; }
+[ "$(printf '%s\n%s\n' "$GO_WANT" "$GO_BOOT" | sort -V | head -1)" = "$GO_WANT" ] || {
+  echo "::error::apps/agent/go.mod asks for Go $GO_WANT ($go_want_from), scripts/vm/bootstrap_linux.sh installs Go $GO_BOOT — a box would fetch the toolchain from the proxy; raise GO_VERSION and its SHA-256"
+  exit 1; }
+echo "agent go.mod: $go_want_from $GO_WANT <= bootstrap $GO_BOOT"
+
+# ── 2e: the boxes' Python is the images' Python ──────────────────────────────
+PY_BOOT="$(sed -n 's/^PY_VERSION="\${AH_PY_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
+case "$PY_BOOT" in
+  *.*.*) plain_version "$PY_BOOT" || PY_BOOT="" ;;
+  *) PY_BOOT="" ;;
+esac
+[ -n "$PY_BOOT" ] || {
+  echo "::error::no plain PY_VERSION=\"\${AH_PY_VERSION:-X.Y.Z}\" default in scripts/vm/bootstrap_linux.sh"
+  exit 1; }
+PY_MINOR="${PY_BOOT%.*}"
+py_images=""
+for f in "$ROOT/Dockerfile" "$ROOT"/apps/*/Dockerfile; do
+  [ -f "$f" ] || continue
+  while IFS= read -r line; do
+    v="$(printf '%s\n' "$line" | sed -n 's/^FROM[[:space:]]\{1,\}python:\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
+    [ -n "$v" ] || {
+      echo "::error::${f#"$ROOT"/} builds on a python image without a MAJOR.MINOR tag ('$line') — the boxes' Python cannot be held to it"
+      exit 1; }
+    [ "$v" = "$PY_MINOR" ] || {
+      echo "::error::${f#"$ROOT"/} builds on python:$v, scripts/vm/bootstrap_linux.sh gives the boxes Python $PY_BOOT — raise PY_VERSION, its release and SHA-256 with the images"
+      exit 1; }
+    py_images="$py_images ${f#"$ROOT"/}"
+  done < <(grep -E '^FROM[[:space:]]+python([:@[:space:]]|$)' "$f")
+done
+[ -n "$py_images" ] || {
+  echo "::error::no FROM python:X.Y in Dockerfile or apps/*/Dockerfile — the boxes' Python cannot be held to the images'"
+  exit 1; }
+RUN_SH="$ROOT/scripts/tests/run.sh"
+[ -f "$RUN_SH" ] || { echo "::error::missing scripts/tests/run.sh — its python3.N cannot be checked"; exit 1; }
+for f in "$BOOT" "$RUN_SH"; do
+  while IFS= read -r n; do
+    [ "$n" = "python$PY_MINOR" ] || {
+      echo "::error::${f#"$ROOT"/} names $n, the boxes' Python is $PY_BOOT — every python3.N there moves with PY_VERSION"
+      exit 1; }
+  done < <(grep -oE 'python3\.[0-9]+' "$f" | sort -u)
+done
+echo "python: bootstrap=$PY_BOOT images=$PY_MINOR ($py_images )"
 
 # ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"
