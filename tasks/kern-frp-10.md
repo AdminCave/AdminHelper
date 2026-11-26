@@ -1,5 +1,5 @@
 # FRP: Anmeldung eines Hosts an seinen Schluessel binden — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-10 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-10 · Review: pro Task
 Spec: docs/features/kern-frp-10.md (Roadmap R-1363)
 Heavy: scenario --tunnel — FRP-Tunnel-Datenpfad ueber Hosts (frpc-Anmeldung an frps); ask-first
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku: Anmeldung des Hosts, Update-Reihenfolge, CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-frp-10.md
+### T3 — Doku: Anmeldung des Hosts, Update-Reihenfolge, CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-frp-10.md, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d57c10295 2026-11-26T12:54:20+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt „Pruefung der Proxy-Anmeldungen“ DE+EN: frps prueft auch die Anmeldung eines Hosts, Logzeilen `login admitted`/`login refused`, Agents vor dem Server-Update auf mindestens v0.47.0, handverteilte frpc.toml neu verteilen. CHANGELOG-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-frp-10.md
