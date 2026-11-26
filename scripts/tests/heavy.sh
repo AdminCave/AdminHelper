@@ -710,8 +710,9 @@ RETRIES=3
 # time is not a stable candidate for a regression claim.
 first_marker() {  # first_marker <logfile>
   # A random port (`tcp-NNNNN`) differs on every retry of the same fault (R-1421).
+  # Plain sed: session_status_test reads the one `sed -E` program here as the log mask.
   grep -aE '^[[:space:]]*(FAIL|strict-failed:|FEHLER|Error:)' "$1" 2>/dev/null \
-    | head -1 | sed -E 's/^[[:space:]]*//; s/tcp-[0-9]+/tcp-<port>/g'
+    | head -1 | sed 's/^[[:space:]]*//; s/tcp-[0-9][0-9]*/tcp-<port>/g'
 }
 
 # A rerun by name that run.sh rejected in its dry pass (R-1206): the step never

@@ -1,5 +1,5 @@
 # Harness: heavy.sh-Klassifizierer und Audit-Abfrage — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-10 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-10 · Review: pro Task
 Spec: docs/features/kern-harness-10.md (Roadmap R-0737, R-1126, R-1127, R-1284, R-1369, R-1421, R-1672, R-0121, R-1128, R-1133)
 Heavy: none — nur heavy.sh und Doku; heavy.sh wird hermetisch in heavy_test.sh geprueft (Shims statt Boxen)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -99,8 +99,10 @@ Komponente: scripts · Dateien: scripts/tests/run.sh
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (behoben)
 
-### T10 — first_marker ohne zweites sed -E (R-1421)  [ ]
+### T10 — first_marker ohne zweites sed -E (R-1421)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e449b09c8 2026-11-26T17:03:29+01:00
+Review: approve (.ah-out/review/kern-harness-10/T10.verdict.json)
 Änderung: Die Port-Ersetzung aus T3 (`first_marker`, heavy.sh:714) laeuft als einfaches `sed` ohne `-E`:
 session_status_test vergleicht das einzige `sed -E '…'` in heavy.sh mit dem Maskenprogramm des Hooks (PR #683,
 Ops scripts rot: „mask programs differ“).
