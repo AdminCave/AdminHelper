@@ -938,6 +938,11 @@ report_of | grep -q 'success (Lauf 2026-09-09)' \
   && ok "the report carries the audit.yml verdict" \
   || bad "audit line: $(report_of | grep -A2 'audit.yml')"
 [ "$(roadmap_of | grep -c '^| R-')" = 1 ] && ok "a green audit adds no row" || bad "green audit added a row"
+# The newest run of ANY branch would decide the line: a green feature branch hid a
+# red main (R-0737). The query names the branch.
+grep -F 'actions/workflows/audit.yml/runs?' "$SHIM_STATE/curl.args" 2>/dev/null | grep -qF 'branch=main' \
+  && ok "the audit query asks for main only" \
+  || bad "audit query: $(grep -F 'audit.yml' "$SHIM_STATE/curl.args" 2>/dev/null)"
 
 mk_case
 artifact "ruff check:pass:3"

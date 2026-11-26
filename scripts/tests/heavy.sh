@@ -11,7 +11,7 @@
 #     all       scripts/vm/warm.sh desktop, then two parts at once on two boxes:
 #                 rest  scripts/vm/iter.sh all --strict --part rest --exclude server-pytest
 #                       (the CI runs the server suite on every main commit)
-#                 gui  scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
+#                 gui   scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
 #               no GUI box after a retry: part gui after part rest, on the desktop box
 #               PASS only with both parts green
 #     capstone  scripts/tests/multibox.sh --capstone --strict
@@ -1090,7 +1090,7 @@ AUDIT_LINE=""
 check_audit() {
   local json concl when
   json="$(curl -fsSL --max-time 10 \
-    'https://api.github.com/repos/AdminCave/AdminHelper/actions/workflows/audit.yml/runs?per_page=1' 2>/dev/null)" \
+    'https://api.github.com/repos/AdminCave/AdminHelper/actions/workflows/audit.yml/runs?branch=main&per_page=1' 2>/dev/null)" \
     || { AUDIT_LINE="nicht abfragbar (Netz/Rate-Limit)"; return 0; }
   concl="$(printf '%s' "$json" | sed -n 's/.*"conclusion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
   when="$(printf '%s' "$json" | sed -n 's/.*"created_at"[[:space:]]*:[[:space:]]*"\([^"T]*\)T.*/\1/p' | head -1)"

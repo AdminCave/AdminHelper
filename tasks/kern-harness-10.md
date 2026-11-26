@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   `geplant -> abgeschlossen` nicht, sie schliessen mit diesem Zug.
 - Nach `overlap.sh` verschoben in kern-harness-13 (2026-11-26): R-0843, R-0377, R-1364, R-1419, R-1060.
 
-### T1 — check_audit liest nur main; Kopfkommentar buendig (R-0737, R-1369)  [ ]
+### T1 — check_audit liest nur main; Kopfkommentar buendig (R-0737, R-1369)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d691c3bc9 2026-11-26T14:25:33+01:00
+Review: approve (.ah-out/review/kern-harness-10/T1.verdict.json)
 Änderung: `check_audit` (heavy.sh:1093) fragt `runs?branch=main&per_page=1`; heavy_test.sh prueft die Abfrage am
 curl-Shim (`curl.args`). Die Zeile `gui` im Kopfkommentar (heavy.sh:14) buendig unter `rest`.
 Beweis: R-0737 main@eb976421 scripts/tests/heavy.sh:736 (heute :1093), Abfrage ohne `branch=`
