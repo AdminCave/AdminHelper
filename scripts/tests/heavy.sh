@@ -885,12 +885,35 @@ settle_gui_box() {
 # <marker>". They go to the second VM only once both parts have had all their
 # retries (classify_red_step); each check rewrites its step's row.
 CANDIDATES=()
+# The first Node or errno code in a log: the signature R-1127 compares. Not the
+# marker: ten GUI specs broken by one dependency report ten different markers.
+# Only Node's own codes: an errno (ECONNREFUSED …) has too many unrelated causes
+# to stand for another step, and ERR_ASSERTION/ERR_TEST_FAILURE name any failed
+# test. A green `ok` line may quote a code it expected (ERR_CERT_REVOKED).
+error_code() {  # error_code <logfile>
+  grep -av '^[[:space:]]*ok[[:space:]]' "$1" 2>/dev/null \
+    | grep -oE '\b(UND_ERR_[A-Z_]+|ERR_[A-Z][A-Z0-9_]+)\b' \
+    | grep -vxE 'ERR_(ASSERTION|TEST_FAILURE)' | head -1
+}
+
 judge_candidates() {
-  local c idx step spec marker ebene schritt secs vm
+  local c idx step spec marker ebene schritt secs vm safe code
+  local -A extern_of=()
   for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
     IFS='|' read -r idx step spec marker <<<"$c"
-    note "second VM for '$step'"
-    second_vm_check "$step" "$spec" "$marker"
+    safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
+    code="$(error_code "$OUT/retry-$safe-1.log")"
+    if [ -n "$code" ] && [ -n "${extern_of[$code]-}" ]; then
+      # A counter-check costs a fresh box and two runs; one that already found
+      # this code extern stands for every later step with it (R-1127).
+      CLASS_VERDICT="extern"
+      STEP_DETAIL="3x red ($code), the same code as '${extern_of[$code]}', whose counter-check was extern; no second VM"
+      note "second VM for '$step' skipped: $code as '${extern_of[$code]}' -> extern"
+    else
+      note "second VM for '$step'"
+      second_vm_check "$step" "$spec" "$marker"
+      if [ -n "$code" ] && [ "$CLASS_VERDICT" = extern ]; then extern_of[$code]="$step"; fi
+    fi
     IFS='|' read -r ebene schritt _ secs vm _ <<<"${FINDINGS[$idx]}"
     FINDINGS[$idx]="$ebene|$schritt|$CLASS_VERDICT|$secs|$vm|$STEP_DETAIL"
   done

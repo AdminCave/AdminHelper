@@ -16,6 +16,9 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   roter Test, der sie druckt, waere sonst `infra`. Beleg: .ah-out/weekly/2026-11-10-1027/gui/last.out.log:392.
 - T3: `build_failed` greift an `HookError [SevereServiceError]: tauri build failed`, nicht an `Error in hook: …`:
   so pinnt es apps/desktop/e2e/test/unit/launcher.test.js:61, und so steht es in den w2-Logs der Sammellaeufe.
+- T5: Signatur enger als die Spec: nur Node-Codes `UND_ERR_*`/`ERR_*`, ohne errno (ECONNREFUSED u. a. haben zu viele
+  Ursachen) und ohne `ERR_ASSERTION`/`ERR_TEST_FAILURE`; `ok`-Zeilen zaehlen nicht (ERR_CERT_REVOKED in einer
+  gruenen Zeile des Stack-Logs 2026-11-10-1603). Kleineres Restrisiko als in der Spec benannt (Review T5).
 
 ### T1 — check_audit liest nur main; Kopfkommentar buendig (R-0737, R-1369)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
@@ -58,8 +61,10 @@ und Gegenprobe in heavy_test.sh.
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: → T6
 
-### T5 — gleiche Fehlersignatur nach extern: keine zweite VM (R-1127)  [ ]
+### T5 — gleiche Fehlersignatur nach extern: keine zweite VM (R-1127)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2b9dc3aa2 2026-11-26T16:04:30+01:00
+Review: approve (.ah-out/review/kern-harness-10/T5.verdict.json)
 Änderung: `judge_candidates` (heavy.sh:881) merkt sich je `extern` den ersten Node-/errno-Fehlercode des ersten
 Retry-Logs; ein weiterer Kandidat mit demselben Code wird ohne Box `extern`, Detail nennt den Bezugsschritt. Ohne
 Code die volle Gegenprobe. Fall (zwei Kandidaten, eine w2-Runde) und Gegenprobe (verschiedene Codes) in heavy_test.sh.

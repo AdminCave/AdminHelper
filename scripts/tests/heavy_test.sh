@@ -682,6 +682,60 @@ history_of | grep -q ',all,web vitest,extern,' \
   && ok "base red as well -> extern, never reg" \
   || bad "rows: $(history_of)"
 
+# Two candidates with the same error code: the first one's extern counter-check
+# stands for the second, which needs no box of its own (R-1127). Calls 2-4 are
+# the first step's retries, 5-7 the second's.
+two_candidates_case() {
+  mk_case
+  seed_pass_history
+  unset SHIM_ITER_OUT5  # a case below gives the second step a code of its own
+  export SHIM_ITER_SEQ="1 1"
+  export SHIM_ITER_OUT1="  FAIL  web vitest
+  FAIL  scripts (hermetic)
+  run.sh[all]: 39 passed, 2 failed, 3 skipped, 0 test-skips, 0 reruns"
+  export SHIM_ITER_OUT="  FAIL  spec
+TypeError: fetch failed [cause: UND_ERR_INVALID_ARG]"
+  artifact "web vitest:fail:19" "scripts (hermetic):fail:30"
+  export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+}
+two_candidates_case
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+{ history_of | grep -q ',all,web vitest,extern,' \
+    && history_of | grep -q ',all,scripts (hermetic),extern,'; } \
+  && ok "the same error code after an extern -> extern too" || bad "rows: $(history_of)"
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 1 ] \
+  && ok "only the first candidate took the second box" \
+  || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+report_of | grep -qF "the same code as 'web vitest'" \
+  && ok "the report names the step whose counter-check it took" \
+  || bad "table: $(report_of | grep '^| all')"
+# Counter-check: another code, so the second step gets its own box.
+two_candidates_case
+export SHIM_ITER_OUT5="  FAIL  spec
+TypeError: fetch failed [cause: UND_ERR_SOCKET]"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "another error code -> its own second box" \
+  || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+history_of | grep -q ',all,scripts (hermetic),extern,' \
+  && ok "its own counter-check still decides" || bad "rows: $(history_of)"
+# An errno has too many causes to stand for another step: both get a box.
+two_candidates_case
+export SHIM_ITER_OUT="  FAIL  spec
+Error: connect ECONNREFUSED 192.0.2.1:5432"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "the same errno (ECONNREFUSED) -> still a second box each" \
+  || bad "errno: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+# A code quoted by a green line is no signature.
+two_candidates_case
+export SHIM_ITER_OUT="  ok   the replaced cert is refused (403 ERR_CERT_REVOKED)
+  FAIL  spec"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "a code only in an ok line -> still a second box each" \
+  || bad "ok line: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+
 # The second box is warmed from HEAD's bootstrap: a base whose
 # bootstrap_linux.sh differs ran on a box it was never built for (R-1126).
 BOOT_SHA=$(
