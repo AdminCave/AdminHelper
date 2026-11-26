@@ -5,7 +5,7 @@ FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6
 WORKDIR /build
 
 COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --fetch-retries 5
 
 COPY apps/web/ ./
 RUN npm run build
@@ -21,16 +21,16 @@ ENV APP_VERSION=$VERSION \
 
 WORKDIR /app
 
-RUN apt-get update \
- && apt-get upgrade -y \
- && apt-get install -y --no-install-recommends tzdata postgresql-client \
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 upgrade -y \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends tzdata postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Hashed lockfile: apps/server/requirements.in (intent) -> requirements.txt
 # (pinned + hashed via pip-compile --generate-hashes). --require-hashes fails the
 # build if any downloaded artifact's hash doesn't match — supply-chain integrity.
 COPY apps/server/requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+RUN pip install --retries 10 --timeout 60 --no-cache-dir --require-hashes -r requirements.txt \
  && pip uninstall -y pip
 
 COPY apps/server/app/ ./app/

@@ -73,6 +73,7 @@ WAIT_TIMEOUT = 900  # agent ping -> IP -> ssh
 AGENT_POLL = 5
 SSH_CONNECT_TIMEOUT = 5
 UPLOAD_TIMEOUT = 300  # per socket operation; pveproxy answers only once the whole body is in
+RSYNC_IO_TIMEOUT = 300  # seconds without any data moving before rsync gives up
 UPLOAD_CHUNK = 1024 * 1024
 
 # A locked config is not an error worth failing on: PVE holds the lock for a few
@@ -1352,7 +1353,9 @@ def remote_dir(cfg: Config) -> str:
 
 def rsync(cfg: Config, args: list, what: str) -> None:
     ssh_cmd = " ".join(shlex.quote(part) for part in ["ssh", *ssh_options(cfg)])
-    argv = ["rsync", "-az", "-e", ssh_cmd, *args]
+    # --timeout: a transfer that stalls ends as a failed sync instead of holding
+    # the nightly run until its outer limit (rsync's default is no limit).
+    argv = ["rsync", "-az", "--timeout=%d" % RSYNC_IO_TIMEOUT, "-e", ssh_cmd, *args]
     try:
         code = subprocess.call(argv)
     except OSError as exc:
@@ -1889,6 +1892,16 @@ BAKE_TTL = 4 * 3600  # generous: a full bake measured ~45 min, and a reaped bake
 CLOUD_INIT_LIMIT = 1800  # the first-boot upgrade of a base image months behind takes minutes
 BOOTSTRAP_LIMIT = 2700
 WARMUP_LIMIT = 1800
+# run.sh step ids of the unit layer that only test: the warm-up leaves them out.
+WARMUP_EXCLUDE = (
+    "monitoring-pytest",
+    "ca-issuer-pytest",
+    "server-pytest",
+    "schemathesis",
+    "scripts",
+    "vm-pytest",
+    "dev-pytest",
+)
 CLEAN_LIMIT = 600
 SHUTDOWN_LIMIT = 300
 TEMPLATE_VISIBLE_LIMIT = 60  # how long to wait for the resource cache to show our own template
@@ -1979,9 +1992,13 @@ def bake_linux(cfg: Config, api: Api, newid: int, meta: dict) -> None:
         # the old bake was — one flaky unit test must not throw away the
         # half hour of bootstrap above it — and its exit code is printed, so
         # a warm-up that warmed nothing is visible rather than silent.
+        # The pure test steps run first in the layer and carry no cache the
+        # template keeps; with them the warm-up outgrew WARMUP_LIMIT and never
+        # reached cargo and npm (R-1794).
         (
             "warm the caches",
-            "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit",
+            "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit --exclude %s"
+            % " ".join(WARMUP_EXCLUDE),
             WARMUP_LIMIT,
             False,
         ),

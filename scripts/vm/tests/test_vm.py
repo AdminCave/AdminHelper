@@ -1734,8 +1734,9 @@ def test_ssh_with_a_command_hands_back_the_remote_exit_code(cfg, api, reachable,
 def test_sync_pushes_the_checkout_with_the_exclude_list(cfg, api, reachable, shell):
     assert verb("sync", cfg, api, "3000") == 0
     argv = shell.of("rsync")[0]["argv"]
-    assert argv[:3] == ["rsync", "-az", "-e"]
-    assert argv[3].startswith("ssh ")  # the same key and host-key policy as ssh itself
+    # --timeout: a stalled transfer fails the sync instead of hanging the run.
+    assert argv[:4] == ["rsync", "-az", "--timeout=300", "-e"]
+    assert argv[4].startswith("ssh ")  # the same key and host-key policy as ssh itself
     assert "--delete" in argv
     assert argv[argv.index("--exclude-from") + 1].endswith("scripts/vm/rsync-exclude.txt")
     # The checkout, not the current directory: a sync from a subdirectory would
@@ -2804,7 +2805,7 @@ def test_bake_runs_bootstrap_then_the_warmup_then_the_clean(keyed, api, http, cl
     runs = shell.of("ssh")[2:]  # [0] is wait_for's reachability probe, [1] the cloud-init wait
     commands = [r["argv"][-1] for r in runs]
     assert "AH_BOOTSTRAP_PROFILE=server bash scripts/vm/bootstrap_linux.sh" in commands[0]
-    assert "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit" in commands[1]
+    assert "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit --exclude " in commands[1]
     assert "truncate -s0 /etc/machine-id" in commands[2]
     assert "cloud-init clean" in commands[2]
     # A login shell, or run.sh dep-gates itself into `go=no cargo=no` and warms
@@ -2812,6 +2813,26 @@ def test_bake_runs_bootstrap_then_the_warmup_then_the_clean(keyed, api, http, cl
     assert all(c.startswith("bash -lc ") and "cd ~/adminhelper && " in c for c in commands)
     assert [r["timeout"] for r in runs] == [2700, 1800, 600]
     assert shell.of("rsync")  # the checkout is on the box before any of it runs
+
+
+def test_the_warmup_leaves_out_exactly_the_pure_test_steps_of_run_sh():
+    # The warm-up builds the caches a template keeps (cargo, go, npm); the
+    # python suites only test and ran it into WARMUP_LIMIT (R-1794). Every
+    # excluded id must be a real step of run.sh, and no build step may be in
+    # the list, or the template would come out cold again.
+    with open(os.path.join(vm.ROOT, "scripts/tests/run.sh")) as fh:
+        steps = set(re.findall(r"run_(?:py_)?step ([a-z-]+) ", fh.read()))
+    assert set(vm.WARMUP_EXCLUDE) <= steps
+    assert set(vm.WARMUP_EXCLUDE) == {
+        "monitoring-pytest",
+        "ca-issuer-pytest",
+        "server-pytest",
+        "schemathesis",
+        "scripts",
+        "vm-pytest",
+        "dev-pytest",
+    }
+    assert {"go-agent", "desktop-cargo", "desktop-ui-vitest", "web-vitest"} <= steps
 
 
 def test_the_bootstrap_installs_the_guest_agent():

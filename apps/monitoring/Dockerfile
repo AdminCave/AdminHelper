@@ -5,15 +5,15 @@ ENV APP_VERSION=$VERSION
 
 WORKDIR /app
 
-RUN apt-get update \
- && apt-get upgrade -y \
- && apt-get install -y --no-install-recommends iputils-ping tzdata postgresql-client \
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 upgrade -y \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends iputils-ping tzdata postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Hashed lockfile: requirements.in (intent) -> requirements.txt (pinned + hashed
 # via pip-compile --generate-hashes). --require-hashes enforces artifact integrity.
 COPY apps/monitoring/requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+RUN pip install --retries 10 --timeout 60 --no-cache-dir --require-hashes -r requirements.txt \
  && pip uninstall -y pip
 
 COPY apps/monitoring/app/ ./app/

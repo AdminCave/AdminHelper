@@ -56,6 +56,28 @@ PROFILE="${AH_BOOTSTRAP_PROFILE:-full}"
 
 SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
 log() { printf '\n\033[1m[bootstrap] %s\033[0m\n' "$*"; }
+# Every download goes through here. The boxes' network is sound (net probe
+# 2026-11-26); what broke bakes were single upstream blips, so a failed or
+# stalled transfer is retried instead of failing the bootstrap (R-1795, R-1797),
+# and a transfer that stops moving ends after a minute instead of hanging the
+# run (R-1798). A speed floor, not --max-time: a slow but moving download stays.
+# Always to a file (-o): a retry after a partial body would append the whole
+# body again behind it on a pipe, and `| bash` would run that.
+dl() {
+  curl -fsSL --retry 5 --retry-connrefused --retry-all-errors \
+    --connect-timeout 30 --speed-limit 1024 --speed-time 60 "$@"
+}
+# pip's --retries covers opening a connection, not a read that times out in the
+# middle of a wheel (the 2026-11-25 bake) — hence the outer loop.
+pip_install() {
+  local i
+  for i in 1 2 3; do
+    $SUDO pip3 install --break-system-packages -q --retries 10 --timeout 60 "$@" && return 0
+    log "pip3 install $* failed (attempt $i/3)"
+    sleep $((i * 10))
+  done
+  return 1
+}
 
 # A freshly booted VM still runs cloud-init/unattended-upgrades, which hold the
 # dpkg lock for the first minute or two. Without waiting, bootstrap dies with
@@ -102,6 +124,9 @@ disable_apt_timers() {
 write_apt_lock_dropin() {
     printf 'DPkg::Lock::Timeout "300";\n' \
         | $SUDO tee /etc/apt/apt.conf.d/99lock-timeout >/dev/null 2>&1 || true
+    # Same reason for the network: one mirror blip must not fail a lease.
+    printf 'Acquire::Retries "5";\nAcquire::http::Timeout "60";\nAcquire::https::Timeout "60";\n' \
+        | $SUDO tee /etc/apt/apt.conf.d/99net-retries >/dev/null 2>&1 || true
 }
 
 log "apt base + tauri libs + display + repo-build + keyring tooling"
@@ -159,7 +184,7 @@ $SUDO update-locale LANG=en_US.UTF-8 >/dev/null
 log "python ${PY_VERSION} from python-build-standalone ${PY_PBS_RELEASE} (the Dockerfiles' Python, for run.sh's venv)"
 if [ "$(python3.14 -c 'import ensurepip, platform; print(platform.python_version())' 2>/dev/null || true)" != "$PY_VERSION" ]; then
   py_dir="/opt/ah-python/${PY_VERSION}"
-  curl -fsSL --retry 5 --retry-connrefused --retry-all-errors -o /tmp/ah-python.tgz \
+  dl -o /tmp/ah-python.tgz \
     "https://github.com/astral-sh/python-build-standalone/releases/download/${PY_PBS_RELEASE}/cpython-${PY_VERSION}%2B${PY_PBS_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz"
   echo "${PY_SHA256_LINUX_AMD64}  /tmp/ah-python.tgz" | sha256sum -c --quiet -
   $SUDO rm -rf "$py_dir"
@@ -176,17 +201,17 @@ fi
 # --strict the box is then reported as unverified for a reason that has nothing
 # to do with the tree. A bootstrap that could not install them must say so here.
 log "ruff $RUFF_VERSION (Python lint, used by run.sh lint)"
-$SUDO pip3 install --break-system-packages -q "ruff==$RUFF_VERSION" \
+pip_install "ruff==$RUFF_VERSION" \
   || pipx install "ruff==$RUFF_VERSION"
 log "pytest $PYTEST_VERSION (used by run.sh unit's vm-pytest step)"
-$SUDO pip3 install --break-system-packages -q "pytest==$PYTEST_VERSION" \
+pip_install "pytest==$PYTEST_VERSION" \
   || pipx install "pytest==$PYTEST_VERSION"
 # Every profile, like pytest: the bake warms each template with `run.sh unit`,
 # and that runs the scripts block. The version is read into a variable, not piped
 # into grep -q: under pipefail an early grep exit can fail the pipe.
 log "oasdiff ${OASDIFF_VERSION} (used by run.sh's scripts block)"
 if [ "$(oasdiff --version 2>/dev/null || true)" != "oasdiff version ${OASDIFF_VERSION}" ]; then
-  curl -fsSL --retry 3 --retry-connrefused -o /tmp/oasdiff.tgz \
+  dl -o /tmp/oasdiff.tgz \
     "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
   echo "${OASDIFF_SHA256_LINUX_AMD64}  /tmp/oasdiff.tgz" | sha256sum -c -
   tar -C /tmp -xzf /tmp/oasdiff.tgz oasdiff
@@ -196,7 +221,10 @@ fi
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then
   $SUDO install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  key="$(mktemp)"
+  dl -o "$key" https://download.docker.com/linux/ubuntu/gpg
+  $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg "$key"
+  rm -f "$key"
   $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
   . /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
@@ -213,7 +241,7 @@ $SUDO usermod -aG docker "${SUDO_USER:-$USER}"   # effective on next login/sessi
 
 log "Go ${GO_VERSION}"
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -q "$GO_VERSION"; then
-  curl -fsSL --retry 3 --retry-connrefused -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  dl -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
   echo "${GO_SHA256_LINUX_AMD64}  /tmp/go.tgz" | sha256sum -c -
   $SUDO rm -rf /usr/local/go && $SUDO tar -C /usr/local -xzf /tmp/go.tgz
   echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | $SUDO tee /etc/profile.d/go.sh >/dev/null
@@ -222,7 +250,10 @@ export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
 
 log "Node ${NODE_MAJOR}.x"
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | grep -oE '[0-9]+' | head -1)" != "$NODE_MAJOR" ]; then
-  curl -fsSL --retry 3 --retry-connrefused "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | $SUDO -E bash -
+  setup="$(mktemp)"
+  dl -o "$setup" "https://deb.nodesource.com/setup_${NODE_MAJOR}.x"
+  $SUDO -E bash "$setup"
+  rm -f "$setup"
   wait_apt_lock
   $SUDO apt-get install -y nodejs
 fi
@@ -230,7 +261,10 @@ fi
 if [ "$PROFILE" = full ]; then
   log "Rust (rustup stable) + rustfmt + clippy  [full profile only]"
   if ! command -v cargo >/dev/null 2>&1; then
-    curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
+    rustup_init="$(mktemp)"
+    dl -o "$rustup_init" https://sh.rustup.rs
+    sh "$rustup_init" -y --profile minimal
+    rm -f "$rustup_init"
   fi
   # shellcheck disable=SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
@@ -242,6 +276,7 @@ if [ "$PROFILE" = full ]; then
   # while all seven desktop_e2e_*.sh suites then skipped on the missing tauri-cli.
   # Failing the bootstrap is loud and fixable; a half-hydrated box is neither.
   log "tauri-driver + tauri-cli ${TAURI_CLI_VERSION} (for desktop build + GUI E2E)  [full profile only]"
+  export CARGO_NET_RETRY=10   # cargo's default is 3 (crates.io blips, R-1797)
   command -v tauri-driver >/dev/null 2>&1 || cargo install tauri-driver --locked \
     || { log "FATAL: tauri-driver install failed — the GUI E2E suites cannot run on this box"; exit 1; }
   # The pinned one, not any: a box that kept an older tauri-cli built the desktop with another
@@ -255,7 +290,7 @@ else
 fi
 
 log "frpc sidecar v${FRP_VERSION} (externalBin must resolve for the Tauri build)"
-curl -fsSL --retry 3 --retry-connrefused -o /tmp/frpc.tgz \
+dl -o /tmp/frpc.tgz \
   "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
 echo "${FRP_SHA256_LINUX_AMD64}  /tmp/frpc.tgz" | sha256sum -c -
 tar -C /tmp -xzf /tmp/frpc.tgz
