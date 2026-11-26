@@ -12,6 +12,9 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - R-1315 auf main behoben durch 1c35ba5de (T8 `[~]`).
 - R-0375 als private Sperrliste (Spec, Trade-off a): die Liste liegt nur in `tasks/private/`, nie im Repo.
 
+- T2: Ein Wechsel aus `zurückgestellt`/`abgelehnt` ohne `--note` leert die Notiz (Review: deren Kevin-Marke ist keine
+  Annahme und passierte sonst `approve`). `KEVIN_MARK` bleibt, die Annahmeformen variieren: Frage an Kevin; `blockiert`
+  und `status … freigegeben` in R-1814 (zurückgestellt).
 ### T1 — sec sperrt Namen und Netze des Labs aus einer privaten Liste (R-0375)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c777bd0b8 2026-11-26T14:47:39+01:00
@@ -22,8 +25,10 @@ ohne Gross/Klein), wenn es sie gibt, und meldet jede hinzugefuegte Zeile mit ein
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: Kopfkommentar review.sh
 
-### T2 — roadmap.py: Notiz bleibt, --ledger normalisiert (R-0438, R-1314)  [ ]
+### T2 — roadmap.py: Notiz bleibt, --ledger normalisiert (R-0438, R-1314)  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/skills/roadmap/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7b2393340 2026-11-26T15:19:21+01:00
+Review: approve (.ah-out/review/kern-harness-11/T2.verdict.json)
 Änderung: `status` ohne `--note` behaelt die Notiz (`set_status`, roadmap.py:419-423), `--clear-note` leert sie;
 `--ledger` wird vor `refuse_merged_ledger` (:979) normalisiert (Leerraum, `normpath`); die aelteren `--ledger`-Tests
 laufen auf `branch_repo`. Skill-Saetze „status ohne --note löscht sie“ angepasst, `/feature-plan` §3a nennt

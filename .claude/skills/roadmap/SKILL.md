@@ -75,7 +75,8 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
    Zeile. Header `R-nnnn`, Frage: Klasse, Titel, Quelle in einem Satz. Die **Empfehlung
    zuerst**, mit „(Empfohlen)" und einem Halbsatz Begründung in der Beschreibung:
    - **Annehmen in <zug>** → `roadmap.py status R-nnnn geplant --ledger tasks/<zug>.md --note
-     "Kevin <JJJJ-MM-TT>: angenommen"`; die Option nennt den Zug. Ohne diese Marke verweigert
+     "Kevin <JJJJ-MM-TT>: angenommen"`; die Option nennt den Zug. `--note` ersetzt die Notiz (ohne `--note` bleibt
+     sie, `--clear-note` leert sie): eine bisherige Notiz dahinter mitgeben. Ohne diese Marke verweigert
      `approve` die Freigabe (R-0580). Einzeln: `--ledger tasks/<slug>.md` und `/feature-plan --kurz R-nnnn`
      *vorschlagen*, nicht starten — bei SEC nicht: SEC kommt in einen neutral benannten Kern-Zug
      (feature-plan 3a).
