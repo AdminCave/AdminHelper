@@ -12,9 +12,12 @@ system server, audio provider, hotel module, AI bridge, gateway, event notificat
 its own, so the alert names the failed service; a unit that is installed but inactive
 makes no instance, a failed one stays watched.
 
-Not covered: the certificate of the web interface, which 3CX serves through the system's
-nginx on 443 or 5001 (or another port chosen at setup), and the age of the backups, which
-land in a folder chosen in the management console or on remote storage.
+The certificate of the web interface, which 3CX serves through the system's nginx on 443
+(a new install) or 5001 (after an upgrade), is checked once per host: at the instance of
+the management console only (R-1443), on the first of the two ports the last scan saw
+listening outside a container. A port chosen freely at setup leaves the check unbound.
+
+Not covered: the age of the backups (module 3cx_backup).
 """
 
 _UNITS = [
@@ -37,10 +40,10 @@ _UNITS = [
 MODULE = {
     "id": "3cx",
     "name": "3CX",
-    "version": 1,
+    "version": 2,
     "description": (
         "3CX Phone System on Debian: each service of the package, from the SIP server "
-        "to the media server, as a unit of its own."
+        "to the media server, as a unit of its own, and the certificate of its web interface."
     ),
     "detect": {"units": _UNITS},
     "instance": "unit",
@@ -56,9 +59,33 @@ MODULE = {
                 {"field": "active_state", "op": "ne", "value": "active", "level": "critical"}
             ],
         },
+        {
+            "key": "web_certificate",
+            "name": "Web interface certificate",
+            "sensor": "tls",
+            "instance": "3CXPhoneSystemMC01.service",
+            "target": {
+                "kind": "loopback",
+                "alternatives": [
+                    {"port_hint": 443, "scheme": "https"},
+                    {"port_hint": 5001, "scheme": "https"},
+                ],
+            },
+            "interval": 3600,
+            "fields": ["days_left", "not_after", "issuer", "chain_ok"],
+            "rules": [
+                {"field": "days_left", "op": "lt", "value": 22, "level": "warning"},
+                {"field": "days_left", "op": "lt", "value": 9, "level": "critical"},
+            ],
+        },
     ],
     "card": [
         {"check_key": "service", "field": "active_state", "label": "Service"},
         {"check_key": "service", "field": "sub_state", "label": "State"},
+        {
+            "check_key": "web_certificate",
+            "field": "days_left",
+            "label": "Web certificate days left",
+        },
     ],
 }
