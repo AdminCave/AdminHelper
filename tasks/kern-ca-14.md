@@ -9,8 +9,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-25 (Notiz R-0840): faellig. Die Bedingung aus der Notiz (Netz pki nach db-roles) ist erfuellt; pki
   traegt weiter postgres.
 
-### T1 — ca-issuer: Header nur vom Gateway-Peer  [ ]
+### T1 — ca-issuer: Header nur vom Gateway-Peer  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/app/gateway_peer.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/docker-entrypoint.sh, apps/ca-issuer/tests/test_gateway_peer.py, apps/ca-issuer/tests/conftest.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @b8cc77723 2026-11-26T13:03:42+01:00
+Review: approve (.ah-out/review/kern-ca-14/T1.verdict.json)
 Änderung: `_presented_cert` wertet die Header nur, wenn der TCP-Peer eine aktuelle Adresse des Namens `gateway` ist (neues Modul mit kurzem Cache, sofortiger Neuauflösung bei unbekanntem Peer, fail-closed, Warnzeile je Peer und Minute); sonst 401. Entrypoint mit `--no-proxy-headers`. Kommentar an `_verify_ca_signed` nachziehen. Tests: Peer Gateway → 200, anderer Peer → 401 auf `/renew` und `/trust`, Auflösungsfehler → 401, neue Gateway-Adresse wird nach Neuauflösung angenommen; bestehende Tests per Fixture mit dem Test-Client als Gateway. SPDX im neuen Modul und Test.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_gateway_peer.py tests/test_enroll_renew.py tests/test_trust_generation.py
 Doku: → T3
