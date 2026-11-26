@@ -37,8 +37,10 @@ Beweis: R-0438 tasks/private 58dbf91; R-1314 PR #466 Nits
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: die drei SKILL.md
 
-### T3 — verify.sh: geerbte Filter weg, leerer Filter rot, Agent-Paket eingegrenzt (R-1362, R-0546, R-1659)  [ ]
+### T3 — verify.sh: geerbte Filter weg, leerer Filter rot, Agent-Paket eingegrenzt (R-1362, R-0546, R-1659)  [x]
 Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/run.sh, scripts/tests/verify_test.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3c972e596 2026-11-26T16:04:08+01:00
+Review: approve (.ah-out/review/kern-harness-11/T3.verdict.json)
 Änderung: `verify.sh` setzt `AH_STEP`, `AH_PART`, `AH_EXCLUDE`, `AH_ONLY` vor dem Lauf zurueck; mit gesetztem
 `AH_ARGS` wird ein cargo-, go- oder vitest-Schritt rot, wenn sein Log keinen ausgefuehrten Test zeigt; nennt
 `AH_ARGS` ein Go-Paket (`./…`), ersetzt es `./...` im `go test` (run.sh:882). Faelle mit Gegenprobe.

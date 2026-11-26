@@ -50,6 +50,7 @@ mk_tree() {
   echo "required=\${AH_REQUIRED-<unset>}"
   echo "cwd=\$PWD"
   echo "tmpdir=\${TMPDIR-<unset>}"
+  echo "inherited=\${AH_STEP-}|\${AH_PART-}|\${AH_EXCLUDE-}|\${AH_ONLY-}"
   echo "tmpdir_existed=\$([ -d "\${TMPDIR-}" ] && echo yes || echo no)"
 } > "$dir/called.txt"
 # A leftover the way pytest leaves one: nested, so only removing the whole tree
@@ -134,6 +135,15 @@ run_v scripts --tree "$A"
   && ok "component -> quick --only <component> (lint AND unit, not unit alone)" || bad "args=$(called args)"
 [ "$(called cwd)" = "$A" ] && ok "the suite runs with the tree as cwd" || bad "cwd=$(called cwd)"
 [ "$(called devenv_marker)" = "sourced" ] && ok "the tree's .devenv.sh is sourced" || bad "devenv: $(called devenv_marker)"
+
+# A filter left in the session shell narrowed the run unseen (R-1362): the
+# Verify: line has to say everything the run does.
+OUT=$(AH_STEP="go agent" AH_PART=gui AH_EXCLUDE=go-agent AH_ONLY=web bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(called inherited)" = "|||" ] \
+  && ok "AH_STEP/AH_PART/AH_EXCLUDE/AH_ONLY from the caller do not reach run.sh" \
+  || bad "inherited filters: rc=$rc $(called inherited)"
+[ "$(called args)" = "quick --only scripts" ] \
+  && ok "... and the component still arrives as --only" || bad "args=$(called args)"
 
 # A checkout without a .devenv.sh is normal (a VM box has none) and must not
 # be an error — treeB deliberately has no devenv file.

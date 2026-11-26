@@ -1368,6 +1368,58 @@ if [ "$(id -u)" != 0 ]; then
     && ok "a shared directory this user cannot search is a SKIP, not the per-user lock" || bad "closed dir: $(tail -8 "$WORK/run-closed.log"); per-user: $(cat "$LOCKF")"
 fi
 
+# ══ a filter that runs no test is red (R-0546, R-1659) ════════════════════════
+echo "── run.sh: AH_ARGS that match no test ──"
+# The patterns on real output: cargo prints one result per test binary, vitest
+# colours its summary, go marks a package whose -run matched nothing.
+eval "$(sed -n '/^filtered() {/,/^export -f filtered tests_ran/p' "$RUN")"
+sample() { printf '%b\n' "$2" > "$WORK/sample.log"; tests_ran "$1" "$WORK/sample.log"; }
+sample cargo 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 291 filtered out; finished in 0.00s' \
+  && bad "cargo: 0 passed counted as a test run" || ok "cargo: 0 passed, 291 filtered out -> no test ran"
+sample cargo 'test result: ok. 0 passed; 0 failed; 0 ignored\ntest result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 279 filtered out' \
+  && ok "cargo: one binary with 12 passed -> tests ran" || bad "cargo: 12 passed not seen"
+sample vitest '\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m3 passed\x1b[39m\x1b[22m\x1b[90m (3)\x1b[39m' \
+  && ok "vitest: a coloured 'Tests 3 passed' -> tests ran" || bad "vitest: coloured summary not seen"
+sample vitest '      Tests  40 skipped (40)' \
+  && bad "vitest: all skipped counted as a test run" || ok "vitest: all skipped by -t -> no test ran"
+sample go 'ok  \tadminhelper-agent/internal/config\t0.01s\tcoverage: 0.0% of statements [no tests to run]' \
+  && bad "go: [no tests to run] counted" || ok "go: [no tests to run] -> no test ran"
+sample go '?   \tadminhelper-agent/cmd/x\t[no test files]\nok  \tadminhelper-agent/internal/config\t(cached)\tcoverage: 67.0% of statements' \
+  && ok "go: one package ran (cached) -> tests ran" || bad "go: ok line not seen"
+
+# The go agent step end to end, against a go that logs its calls.
+GOBIN="$WORK/bin-go"; mkdir -p "$GOBIN"; cp -a "$BARE/." "$GOBIN/"
+GO_LOG="$WORK/go.log"
+cat > "$GOBIN/go" <<EOF
+#!/bin/sh
+echo "go \$*" >> "$GO_LOG"
+[ "\$1" = test ] && printf '%b\n' "\${SHIM_GO_TEST_OUT:-}"
+exit 0
+EOF
+chmod +x "$GOBIN/go"
+NORUN='ok  \tadminhelper-agent/internal/config\t0.01s\tcoverage: 0.0% of statements [no tests to run]'
+RAN='ok  \tadminhelper-agent/internal/config\t0.01s\tcoverage: 67.0% of statements'
+go_step() {  # go_step <AH_ARGS> <go test output>
+  : > "$GO_LOG"
+  OUT=$(PATH="$GOBIN" AH_OUT_DIR="$WORK/out" AH_ARGS="$1" SHIM_GO_TEST_OUT="$2" \
+    "$BARE/bash" "$RUN" unit --step "go agent" 2>&1); rc=$?
+}
+go_test_call() { grep -m1 '^go test' "$GO_LOG"; }
+go_step "-run NoSuchTest" "$NORUN"
+[ $rc -ne 0 ] && grep -q "FAIL  go agent" <<<"$OUT" \
+  && ok "go agent: a -run that matches nothing is red" || bad "go no-run: rc=$rc $(grep -m1 -E 'go agent' <<<"$OUT")"
+go_step "-run TestLoad" "$RAN"
+[ $rc -eq 0 ] && grep -q "PASS  go agent" <<<"$OUT" \
+  && ok "go agent: a -run that ran a test stays green" || bad "go ran: rc=$rc $(grep -m1 -E 'go agent' <<<"$OUT")"
+[ "$(go_test_call)" = "go test -cover ./... -run TestLoad" ] \
+  && ok "go agent: without a package the filter runs over ./..." || bad "go call: $(go_test_call)"
+go_step "-run TestLoad ./internal/config/..." "$RAN"
+[ "$(go_test_call)" = "go test -cover -run TestLoad ./internal/config/..." ] \
+  && ok "go agent: a package in AH_ARGS replaces ./..." || bad "go call with package: $(go_test_call)"
+go_step "" "$NORUN"
+[ $rc -eq 0 ] && [ "$(go_test_call)" = "go test -cover ./..." ] \
+  && ok "go agent: without AH_ARGS nothing is checked (a full run)" || bad "go unfiltered: rc=$rc $(go_test_call)"
+
 echo ""
 echo "run_flags_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
