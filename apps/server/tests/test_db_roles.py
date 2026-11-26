@@ -69,9 +69,14 @@ def test_ca_grants_follow_what_the_ca_issuer_does_per_table():
             ["device_lines", "revoked_identities", "infra_certificates", "users"], ["s1"]
         )
     ]
+    # Each table loses what it had first: a table-wide UPDATE of an older start would
+    # otherwise outlive the column grant.
     assert stmts == [
-        'GRANT SELECT, INSERT, UPDATE ON public."device_lines" TO "ah_ca"',
+        'REVOKE ALL ON public."device_lines" FROM "ah_ca"',
+        'GRANT SELECT, INSERT, UPDATE (revoked_at, revoked_reason) ON public."device_lines" TO "ah_ca"',
+        'REVOKE ALL ON public."revoked_identities" FROM "ah_ca"',
         'GRANT SELECT ON public."revoked_identities" TO "ah_ca"',
+        'REVOKE ALL ON public."infra_certificates" FROM "ah_ca"',
         'GRANT SELECT, INSERT, DELETE ON public."infra_certificates" TO "ah_ca"',
         'GRANT USAGE, SELECT ON SEQUENCE public."s1" TO "ah_ca"',
     ]
@@ -135,15 +140,21 @@ def _seed_an_existing_install(port: str) -> None:
     # What a release before this one left: every object created by the superuser.
     with psycopg.connect(_dsn(port, SUPERUSER, SUPERPASS), autocommit=True) as conn:
         conn.execute(
-            "DROP TABLE IF EXISTS users, enrollment_tokens, revoked_identities, infra_certificates, "
-            "counters, later "
+            "DROP TABLE IF EXISTS users, enrollment_tokens, device_lines, revoked_identities, "
+            "infra_certificates, counters, later, alembic_version "
             "CASCADE"
         )
         conn.execute("DROP TYPE IF EXISTS hook_kind")
         conn.execute("CREATE TYPE hook_kind AS ENUM ('webhook', 'event')")
         conn.execute("CREATE TABLE users (id serial PRIMARY KEY, username text, kind hook_kind)")
         conn.execute("INSERT INTO users (username) VALUES ('admin')")
-        conn.execute("CREATE TABLE enrollment_tokens (id text PRIMARY KEY, used_at timestamp)")
+        conn.execute(
+            "CREATE TABLE enrollment_tokens (id text PRIMARY KEY, used_at timestamp, scope text)"
+        )
+        conn.execute(
+            "CREATE TABLE device_lines (id text PRIMARY KEY, revoked_at timestamp, "
+            "revoked_reason text, fingerprint text)"
+        )
         conn.execute("CREATE TABLE revoked_identities (id text PRIMARY KEY, scope text)")
         conn.execute("INSERT INTO revoked_identities VALUES ('r1', 'agent')")
         conn.execute("CREATE TABLE infra_certificates (name text PRIMARY KEY, subject text)")
@@ -199,8 +210,22 @@ def test_the_ca_issuer_reaches_only_its_tables(as_superuser):
 
     with psycopg.connect(_dsn(port, SUPERUSER, SUPERPASS), autocommit=True) as conn:
         conn.execute("INSERT INTO enrollment_tokens (id) VALUES ('t1')")
+        # A table-wide UPDATE as an older start gave it: the next start narrows it.
+        conn.execute("GRANT UPDATE ON enrollment_tokens, device_lines TO ah_ca")
+    db_roles.grant_ca(dsn)
     with _connect_as(port, "ca") as conn:
         conn.execute("UPDATE enrollment_tokens SET used_at = now() WHERE id = 't1'")
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("UPDATE enrollment_tokens SET scope = 'x' WHERE id = 't1'")
+        # What apps/ca-issuer/app/db.py does on device_lines: insert, lock, revoke.
+        conn.execute("INSERT INTO device_lines (id, fingerprint) VALUES ('d1', 'f')")
+        with conn.transaction():
+            conn.execute("SELECT id FROM device_lines WHERE id = 'd1' FOR UPDATE OF device_lines")
+            conn.execute(
+                "UPDATE device_lines SET revoked_at = now(), revoked_reason = 'r' WHERE id = 'd1'"
+            )
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("UPDATE device_lines SET fingerprint = 'g' WHERE id = 'd1'")
         assert conn.execute("SELECT scope FROM revoked_identities").fetchone() == ("agent",)
         with pytest.raises(errors.InsufficientPrivilege):
             conn.execute("UPDATE revoked_identities SET scope = 'none'")
@@ -215,7 +240,7 @@ def test_the_ca_issuer_reaches_only_its_tables(as_superuser):
         conn.execute("DELETE FROM infra_certificates")
         with pytest.raises(errors.InsufficientPrivilege):
             conn.execute("UPDATE infra_certificates SET subject = 'b'")
-    for db in (db_roles.MONITOR_DB, "postgres"):
+    for db in (db_roles.MONITOR_DB, "postgres", "template1"):
         with pytest.raises(psycopg.OperationalError):
             _connect_as(port, "ca", db)
 
@@ -248,6 +273,37 @@ def test_the_scheduler_writes_but_does_not_change_the_schema(as_superuser):
             conn.execute("DROP TABLE later")
     with _connect_as(port, "server") as conn:
         conn.execute(sql.SQL("DROP TABLE later"))
+
+
+def test_the_scheduler_reads_but_does_not_move_the_schema_revision(as_superuser):
+    port = as_superuser
+    _seed_an_existing_install(port)
+    db_roles.setup()
+    with _connect_as(port, "server") as conn:
+        # The first migration creates it as the server; the default privileges reach it.
+        conn.execute("CREATE TABLE alembic_version (version_num varchar(32) PRIMARY KEY)")
+        conn.execute("INSERT INTO alembic_version VALUES ('head')")
+    db_roles.grant_ca(_dsn(port, "ah_server", PASSWORDS["SERVER_DB_PASSWORD"]))
+
+    with _connect_as(port, "scheduler") as conn:
+        # scheduler_main waits for the revision before it schedules anything.
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("head",)
+        for stmt in (
+            "UPDATE alembic_version SET version_num = 'old'",
+            "INSERT INTO alembic_version VALUES ('x')",
+            "DELETE FROM alembic_version",
+        ):
+            with pytest.raises(errors.InsufficientPrivilege):
+                conn.execute(stmt)
+        conn.execute("UPDATE users SET username = username")
+
+
+def test_no_service_role_reaches_template1(as_superuser):
+    port = as_superuser
+    db_roles.setup()
+    for name in db_roles.ROLES:
+        with pytest.raises(psycopg.OperationalError):
+            _connect_as(port, name, "template1")
 
 
 def test_a_service_role_cannot_turn_the_next_setup_into_its_own(as_superuser):
