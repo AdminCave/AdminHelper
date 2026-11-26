@@ -27,6 +27,11 @@
 #              the message of the commit being made (the commit-msg hook), all of
 #              it; with --editor too (git brought up an editor), the diff that
 #              commit -v puts below the scissors line does not count.
+#              Also a path, line or message holding an entry of the private deny
+#              list tasks/private/public-deny.txt (names and networks of the lab;
+#              fixed strings, case ignored, `#` comments). A worktree reads the
+#              main checkout's list; without a list (CI) this check is off, a list
+#              that cannot be read exits 2. A hit never shows the entry.
 #   risk       does the diff touch a risk path (scripts/dev/review-risk.txt)?
 #              Prints `xhigh` and the paths it hit, or `standard`; both exit 0.
 #              A risk path adds the `security` sub-agent (CLAUDE.md §6).
@@ -129,6 +134,11 @@ case "$VERB" in
     BLOCKED=()
     # sec_path <path> <tag> — the files that must never leave.
     sec_path() {
+      local lp="${1,,}" e
+      # The path itself, never printed: it holds the entry.
+      while IFS= read -r e; do
+        [ -n "$e" ] && [[ "$lp" == *"$e"* ]] && { BLOCKED+=("a path$2 (an entry of the private deny list)"); break; }
+      done <<< "$AH_SEC_DENY"
       case "$1" in
         # The private roadmap and the security ledgers — and the two files that
         # actually carry credentials on this box: the Proxmox token lives in
@@ -190,10 +200,37 @@ case "$VERB" in
                longrun(s, "github_pat_[A-Za-z0-9_]+", 41, "^github_pat_") ||
                longrun(s, "sk-ant-[A-Za-z0-9_-]+", 27, "^sk-ant-([a-z]+[0-9]+-)?") || pvetoken(s)
       }
+      # private(s): a line holding an entry of the private deny list (R-0375), the
+      # names and networks of the lab that no public file may carry. The list is read
+      # once, from the environment, not from the program text: the text would show it.
+      function private(s,   l, i) {
+        if (!denyread) { denyread = 1; denyn = split(ENVIRON["AH_SEC_DENY"], deny, "\n") }
+        l = tolower(s)
+        for (i = 1; i <= denyn; i++) if (deny[i] != "" && index(l, tolower(deny[i]))) return 1
+        return 0
+      }
       function finding(a, file, n) {
         if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, n
         else if (token(a)) printf "%s:%d\ttoken\n", file, n
+        else if (private(a)) printf "%s:%d\tprivate\n", file, n
       }'
+    # The deny list: tasks/private/public-deny.txt, one fixed string per line, case
+    # ignored, `#` starts a comment. A worktree has no tasks/private of its own, so
+    # the main checkout's list counts there. Without the file (CI) the check is off;
+    # a file that is there but cannot be read fails closed.
+    DENY_FILE="$ROOT/tasks/private/public-deny.txt"
+    if [ ! -e "$DENY_FILE" ] && [ ! -L "$DENY_FILE" ]; then
+      COMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+        && DENY_FILE="$(dirname "$COMMON")/tasks/private/public-deny.txt"
+    fi
+    AH_SEC_DENY=""
+    # A dangling link is a list that cannot be read, not a missing one.
+    if [ -e "$DENY_FILE" ] || [ -L "$DENY_FILE" ]; then
+      AH_SEC_DENY="$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$DENY_FILE")" \
+        || die "sec: could not read the deny list"
+      AH_SEC_DENY="${AH_SEC_DENY,,}"
+    fi
+    export AH_SEC_DENY
     # sec_hits <tag> — the lines the awk below printed, as findings: file:line and
     # what it is, never the line itself.
     sec_hits() {
@@ -201,7 +238,8 @@ case "$VERB" in
       while IFS=$'\t' read -r hit kind; do
         [ -n "$hit" ] || continue
         case "$kind" in
-          token) BLOCKED+=("$hit$1 (a token pattern)") ;;
+          token)   BLOCKED+=("$hit$1 (a token pattern)") ;;
+          private) BLOCKED+=("$hit$1 (an entry of the private deny list)") ;;
           *)     BLOCKED+=("$hit$1 (a security finding's Dedup-Key)") ;;
         esac
       done
@@ -262,7 +300,8 @@ case "$VERB" in
     sec_scan_message() {
       local out
       out="$(git log -1 --format=%B "$1" | awk "$SEC_TOKEN_AWK"'
-        { if (token($0)) printf "the commit message:%d\ttoken\n", NR }')" || die "sec: git could not read the message of $1"
+        { if (token($0)) printf "the commit message:%d\ttoken\n", NR
+          else if (private($0)) printf "the commit message:%d\tprivate\n", NR }')" || die "sec: git could not read the message of $1"
       sec_hits " (commit ${1:0:12})" <<< "$out"
     }
     if [ -n "$MESSAGE" ]; then
@@ -277,7 +316,8 @@ case "$VERB" in
       out="$(awk -v ED="$FROM_EDITOR" "$SEC_TOKEN_AWK"'
         ED && $0 == "# ------------------------ >8 ------------------------" { cut = 1 }
         cut && /^diff --git / { exit }
-        { if (token($0)) printf "the commit message:%d\ttoken\n", NR }' "$MESSAGE")" \
+        { if (token($0)) printf "the commit message:%d\ttoken\n", NR
+          else if (private($0)) printf "the commit message:%d\tprivate\n", NR }' "$MESSAGE")" \
         || die "sec: could not read the message $MESSAGE"
       sec_hits "" <<< "$out"
     elif [ -n "$RANGE" ]; then

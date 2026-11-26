@@ -116,6 +116,75 @@ r sec --staged
   && ok "a security finding's Dedup-Key in the diff -> exit 4, naming the line" || bad "dedup key: rc=$rc out=$OUT"
 reset_index
 
+# The private deny list (R-0375): names and networks of the lab, kept in
+# tasks/private/public-deny.txt. A hit names file:line, never the entry or the line.
+printf '# lab\n\n  Fixture-Lab-Host  \n' > "$FIX/tasks/private/public-deny.txt"
+printf 'see fixture-lab-host.example for details\n' >> "$FIX/docs/thing.md"
+stage docs/thing.md
+r sec --staged
+[ $rc -eq 4 ] && grep -q "docs/thing.md:[0-9]* (an entry of the private deny list)" <<<"$OUT" \
+  && ! grep -qi "fixture-lab-host" <<<"$OUT" \
+  && ok "an entry of the deny list in the diff -> exit 4, case ignored, entry not shown" || bad "deny list: rc=$rc out=$OUT"
+reset_index
+# Counter-check: without the list the same line is clean, as in CI.
+rm -f "$FIX/tasks/private/public-deny.txt"
+printf 'see fixture-lab-host.example for details\n' >> "$FIX/docs/thing.md"
+stage docs/thing.md
+r sec --staged
+[ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" \
+  && ok "without the deny list the same line is clean" || bad "no deny list: rc=$rc out=$OUT"
+reset_index
+# A comment line of the list is no entry: "lab" alone would hit nearly everything.
+printf '# lab\nfixture-lab-host\n' > "$FIX/tasks/private/public-deny.txt"
+printf 'a lab line\n' >> "$FIX/docs/thing.md"
+stage docs/thing.md
+r sec --staged
+[ $rc -eq 0 ] && ok "a comment of the deny list is no entry" || bad "deny comment: rc=$rc out=$OUT"
+reset_index
+# The message of the commit being made is read against the list as well.
+printf 'fix: reach FIXTURE-LAB-HOST\n' > "$WORK/deny.msg"
+r sec --message "$WORK/deny.msg"
+[ $rc -eq 4 ] && grep -q "the commit message:1 (an entry of the private deny list)" <<<"$OUT" \
+  && ok "an entry of the deny list in the commit message -> exit 4" || bad "deny message: rc=$rc out=$OUT"
+# A list that is there but cannot be read fails closed (not as root: root reads it).
+if [ "$(id -u)" != 0 ]; then
+  printf 'one more line\n' >> "$FIX/docs/thing.md"
+  chmod 000 "$FIX/tasks/private/public-deny.txt"
+  stage docs/thing.md
+  r sec --staged
+  [ $rc -eq 2 ] && ! grep -q "sec: clean" <<<"$OUT" \
+    && ok "an unreadable deny list -> exit 2, not clean" || bad "unreadable deny: rc=$rc out=$OUT"
+  chmod 600 "$FIX/tasks/private/public-deny.txt"
+  reset_index
+fi
+# A new file whose path holds an entry: the path is not shown either.
+printf 'x\n' > "$FIX/docs/Fixture-Lab-Host.png"
+stage docs/Fixture-Lab-Host.png
+r sec --staged
+[ $rc -eq 4 ] && grep -q "a path (an entry of the private deny list)" <<<"$OUT" && ! grep -qi "fixture-lab-host" <<<"$OUT" \
+  && ok "a path holding an entry of the deny list -> exit 4, path not shown" || bad "deny path: rc=$rc out=$OUT"
+reset_index
+# A worktree has no tasks/private of its own: the main checkout's list counts.
+git -C "$FIX" worktree add -q -b deny-wt "$WORK/wt" HEAD
+printf 'reach fixture-lab-host\n' > "$WORK/wt/thing.md"
+git -C "$WORK/wt" add -- thing.md
+OUT=$(bash "$WORK/wt/scripts/dev/review.sh" sec --staged 2>&1); rc=$?
+[ $rc -eq 4 ] && grep -q "^  thing.md:[0-9]* (an entry of the private deny list)" <<<"$OUT" \
+  && ok "in a worktree the main checkout's deny list counts" || bad "deny worktree: rc=$rc out=$OUT"
+rm -f "$FIX/tasks/private/public-deny.txt"
+OUT=$(bash "$WORK/wt/scripts/dev/review.sh" sec --staged 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "in a worktree without any deny list the same line is clean" || bad "worktree no deny: rc=$rc out=$OUT"
+git -C "$FIX" worktree remove --force "$WORK/wt"; git -C "$FIX" branch -qD deny-wt
+# A dangling link is a list that cannot be read: exit 2, not "check off".
+ln -s "$WORK/no-such-list" "$FIX/tasks/private/public-deny.txt"
+printf 'one more line\n' >> "$FIX/docs/thing.md"
+stage docs/thing.md
+r sec --staged
+[ $rc -eq 2 ] && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "a dangling deny list link -> exit 2, not clean" || bad "dangling deny: rc=$rc out=$OUT"
+reset_index
+rm -f "$FIX/tasks/private/public-deny.txt"
+
 # The regression that made this verb lie: `grep -q` left the pipeline at the
 # first hit, git diff died of SIGPIPE, and pipefail turned the hit into "clean"
 # for every diff bigger than the 64 KiB pipe buffer.

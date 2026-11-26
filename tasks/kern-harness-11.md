@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - R-1315 auf main behoben durch 1c35ba5de (T8 `[~]`).
 - R-0375 als private Sperrliste (Spec, Trade-off a): die Liste liegt nur in `tasks/private/`, nie im Repo.
 
-### T1 — sec sperrt Namen und Netze des Labs aus einer privaten Liste (R-0375)  [ ]
+### T1 — sec sperrt Namen und Netze des Labs aus einer privaten Liste (R-0375)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c777bd0b8 2026-11-26T14:47:39+01:00
+Review: approve (.ah-out/review/kern-harness-11/T1.verdict.json)
 Änderung: `review.sh sec` liest `tasks/private/public-deny.txt` (eine feste Zeichenkette je Zeile, `#` Kommentar,
 ohne Gross/Klein), wenn es sie gibt, und meldet jede hinzugefuegte Zeile mit einem Eintrag als `datei:zeile private`
 (Exit 4), nie ihren Text; ohne Datei wie bisher. Test mit eigener Liste im Fixture-Repo plus Gegenprobe.
