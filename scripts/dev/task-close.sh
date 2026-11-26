@@ -13,9 +13,12 @@
 #    1. input             a ledger under tasks/*.md (not the README or the
 #                         template, no symlink), the task exists, not on main,
 #                         a Conventional-Commit subject (as the commit-msg hook)
-#    2. manual task       `Komponente: —` is closed by hand (exit 74)
-#    3. staging           --stage stages exactly the task's `Dateien:`; no file
-#                         half staged; the index is held by git write-tree
+#    2. manual task       `Komponente: —` is closed by hand (exit 74); several
+#                         components (`desktop-rs desktop-ui`) must each be in
+#                         the Verify: line
+#    3. staging           --stage stages exactly the task's `Dateien:`, each as a
+#                         literal path (no glob, no :-magic); no file half
+#                         staged; the index is held by git write-tree
 #    4. test files        a deleted (or renamed) file under tests/ or test/, or
 #                         named *_test.*, test_*, *.test.*, *.spec.*, *.e2e.*,
 #                         *.live.*, needs a committed `Test-Löschung:` line of
@@ -100,7 +103,16 @@ TASK="$(awk -v id="$ID" '
   insec && NR > 1 && $0 ~ /^###[ \t]/ && $0 !~ "^###[ \t]+" id "([ \t]|$)" { exit }
   insec { print }' "$LEDGER")"
 [ -n "$TASK" ] || die "no task $ID in $LEDGER"
-COMPONENT="$(sed -n 's/^Komponente:[[:space:]]*\([^·]*\).*/\1/p' <<<"$TASK" | head -n1 | tr -d ' ')"
+# A word list: `desktop-rs desktop-ui` was squeezed into one name no Verify: matched (R-1631).
+COMPONENT_RAW="$(sed -n 's/^Komponente:[[:space:]]*\([^·]*\).*/\1/p' <<<"$TASK" | head -n1)"
+read -ra COMPONENTS <<<"${COMPONENT_RAW//,/ }"
+COMPONENT="${COMPONENTS[*]}"
+# Each word may reach verify.sh unquoted (the fallback below): a `--tree <dir>`
+# there would run the suite on another checkout.
+for c in ${COMPONENTS[@]+"${COMPONENTS[@]}"}; do
+  [ "$c" = "—" ] || [[ $c =~ ^[abcdefghijklmnopqrstuvwxyz][abcdefghijklmnopqrstuvwxyz0123456789-]*$ ]] \
+    || die "the Komponente: line of $ID has '$c' — component names only (verify.sh's, e.g. desktop-ui)"
+done
 VERIFY_LINE="$(sed -n 's/^Verify:[[:space:]]*//p' <<<"$TASK" | head -n1)"
 # A declaration counts only once it is committed, and this script must not be the
 # way it gets committed: it stages the whole ledger. Byte-exact (LC_ALL=C, -a): a
@@ -136,8 +148,9 @@ if [ "$STAGE" = 1 ]; then
     # A directory would sweep in whatever else lies under it. The task names files.
     [ -d "$f" ] && die "$f is a directory; --stage takes files ($HINT)"
     # Gone and unknown to git: nothing to do. Gone but tracked is a deletion.
-    if [ ! -e "$f" ] && ! git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then continue; fi
-    git add -A -- "$f" || die "could not stage $f"
+    # Literal: a `*` or `:(glob)` in the ledger would stage what the task never named (R-1654).
+    if [ ! -e "$f" ] && ! git --literal-pathspecs ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then continue; fi
+    git --literal-pathspecs add -A -- "$f" || die "could not stage $f"
   done <<< "$TASK_FILES"
 fi
 mapfile -d '' -t STAGED < <(git diff --staged --name-only -z)
@@ -151,8 +164,8 @@ for f in "${STAGED[@]}"; do
   done
 done
 if [ -n "$TASK_FILES" ]; then
-  # shellcheck disable=SC2086  # the ledger's file list is a word list on purpose
-  LEFT="$(git status --porcelain=v1 -uall -- $TASK_FILES 2>/dev/null \
+  mapfile -t TASK_PATHS <<<"$TASK_FILES"
+  LEFT="$(git --literal-pathspecs status --porcelain=v1 -uall -- "${TASK_PATHS[@]}" 2>/dev/null \
     | awk '/^\?\?/ || substr($0, 2, 1) != " " { print substr($0, 4) }')"
   [ -z "$LEFT" ] || die "files of the task not (fully) staged: ${LEFT//$'\n'/ } (git add -- <paths>, or $HINT)"
 fi
@@ -227,8 +240,13 @@ if [ -n "$VERIFY_COMPONENTS" ]; then
   case " $VERIFY_COMPONENTS " in
     *" all "*) [ "$VERIFY_COMPONENTS" = all ] \
       || die "the Verify: line names '$VERIFY_COMPONENTS' — 'all' stands alone" ;;
-    *" $COMPONENT "*) ;;
-    *) die "the Verify: line runs '$VERIFY_COMPONENTS' — it does not name the task's component '$COMPONENT'" ;;
+    *)
+      for c in "${COMPONENTS[@]}"; do
+        case " $VERIFY_COMPONENTS " in
+          *" $c "*) ;;
+          *) die "the Verify: line runs '$VERIFY_COMPONENTS' — it does not name the task's component '$c'" ;;
+        esac
+      done ;;
   esac
   [ -z "$VERIFY_ARGS" ] || [ "${VERIFY_COMPONENTS// /}" = "$VERIFY_COMPONENTS" ] \
     || die "the Verify: line gives '$VERIFY_ARGS' to '$VERIFY_COMPONENTS' — extra arguments need a single component"

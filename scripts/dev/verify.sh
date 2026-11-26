@@ -130,6 +130,10 @@ fi
 
 cd "$TREE" || exit 2
 export AH_ARGS="${ARGS[*]:-}"
+# run.sh also reads these from the environment: one left in the session shell
+# would narrow the run unseen, and the summary line would not say so (R-1362).
+# A Verify: line says everything the run does in its flags.
+unset AH_STEP AH_PART AH_EXCLUDE AH_ONLY
 
 LOG_DIR="$OUT_DIR/logs"
 mkdir -p "$LOG_DIR" || { echo "verify.sh: cannot create $LOG_DIR" >&2; exit 2; }

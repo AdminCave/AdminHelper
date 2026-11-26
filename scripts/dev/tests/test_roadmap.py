@@ -429,8 +429,9 @@ OLD_HEADER = "Stand: 2026-09-20 · WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu
 
 
 def test_add_appends_a_neu_row_and_touches_nothing_else(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    branch_repo(tmp_path, monkeypatch)
     p = aged(write(tmp_path, CLEAN))
     rc = add(p, "--class", "REF", "--title", "Toter Helfer", "--source", "find:dead 2026-09-25",
              "--proof", "find/2026-09-25@1a2b3c4", "--dedup-key", "ref:web:src/b.ts:old",
@@ -827,6 +828,34 @@ def test_the_same_status_again_keeps_its_note(tmp_path: pathlib.Path) -> None:
     assert placed(p, "R-0004")[1].cells[roadmap.STATUS] == "aktiv (T2/5)"
 
 
+def test_a_new_status_without_note_keeps_the_note(tmp_path: pathlib.Path) -> None:
+    """The note carries Kevin's word: `status` without --note dropped it, and
+    approve refused the row afterwards (R-0438)."""
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0004", "bereit") == 0
+    assert placed(p, "R-0004")[1].cells[roadmap.STATUS] == "bereit (T2/5)"
+    assert status(p, "R-0004", "pr", "--pr", "#7") == 0
+    assert placed(p, "R-0004")[1].cells[roadmap.STATUS].endswith("(T2/5)")
+
+
+def test_clear_note_empties_the_note(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0004", "bereit", "--clear-note") == 0
+    assert placed(p, "R-0004")[1].cells[roadmap.STATUS] == "bereit"
+    assert status(p, "R-0004", "bereit", "--note", "x") == 0
+    assert status(p, "R-0004", "bereit", "--clear-note") == 0
+    assert placed(p, "R-0004")[1].cells[roadmap.STATUS] == "bereit"
+
+
+def test_note_and_clear_note_exclude_each_other(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    before = p.read_text(encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        status(p, "R-0004", "bereit", "--note", "x", "--clear-note")
+    assert e.value.code == 2
+    assert p.read_text(encoding="utf-8") == before
+
+
 def test_an_alias_becomes_the_word(tmp_path: pathlib.Path) -> None:
     s = clean_sections()
     s["Archiv"].append(row("R-0010", "geparkt", "IDEE", "Geparkt im Archiv"))
@@ -857,10 +886,13 @@ def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> Non
     )
 
 
-def test_status_ledger_fills_the_ledger_column_not_the_status(tmp_path: pathlib.Path) -> None:
+def test_status_ledger_fills_the_ledger_column_not_the_status(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The gate names the ledger of an existing row in its own column, where
     `next` and the parallel check read it — a path in the status note is lost to
     them (the 5b close probe on R-0095)."""
+    branch_repo(tmp_path, monkeypatch)
     p = aged(write(tmp_path, CLEAN))
     rows = len(roadmap.Roadmap(p.read_text(encoding="utf-8")).rows())
     assert status(p, "R-0005", "geplant", "--ledger", "tasks/fix.md") == 0
@@ -875,8 +907,11 @@ def test_status_ledger_fills_the_ledger_column_not_the_status(tmp_path: pathlib.
     assert findings(text) == []
 
 
-def test_status_ledger_without_a_status_change(tmp_path: pathlib.Path) -> None:
+def test_status_ledger_without_a_status_change(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """An older row gets its ledger afterwards; its status, note and place stay."""
+    branch_repo(tmp_path, monkeypatch)
     p = aged(write(tmp_path, CLEAN))
     assert status(p, "R-0004", "aktiv", "--ledger", "tasks/gross.md") == 0
     section, r = placed(p, "R-0004")
@@ -887,7 +922,10 @@ def test_status_ledger_without_a_status_change(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_status_ledger_and_note_stay_apart(tmp_path: pathlib.Path) -> None:
+def test_status_ledger_and_note_stay_apart(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    branch_repo(tmp_path, monkeypatch)
     p = aged(write(tmp_path, CLEAN))
     assert status(p, "R-0005", "geplant", "--note", "bestätigt", "--ledger", "tasks/fix.md") == 0
     r = placed(p, "R-0005")[1]
@@ -897,7 +935,10 @@ def test_status_ledger_and_note_stay_apart(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_status_ledger_names_itself_in_the_commit(tmp_path: pathlib.Path) -> None:
+def test_status_ledger_names_itself_in_the_commit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    branch_repo(tmp_path, monkeypatch)
     repo = fixture_repo(tmp_path)
     p = aged(repo / "ROADMAP.md")
     assert status(p, "R-0007", "freigegeben", "--ledger", "tasks/x.md") == 0
@@ -1048,6 +1089,21 @@ def test_approve_and_revoke_keep_the_note(
     section, r = placed(p, "R-0003")
     assert (section, r.cells[roadmap.STATUS]) == ("Geplant", f"geplant {note}")
     assert findings(p.read_text(encoding="utf-8")) == []
+
+
+def test_a_woken_row_drops_its_deferral_note(
+    tmp_path: pathlib.Path, plan_branch: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kevin's "zurückstellen" is no acceptance: kept across the wake, its mark
+    would let approve free a row he never took (R-0438 review)."""
+    text = READY.replace(
+        "geplant (Kevin 2026-09-24: angenommen)", "zurückgestellt (Kevin 2026-09-24: zurückstellen)"
+    )
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0003", "geplant") == 0
+    assert placed(p, "R-0003")[1].cells[roadmap.STATUS] == "geplant"
+    assert approve(p, "R-0003") == 2
+    assert "no 'Kevin JJJJ-MM-TT'" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1978,6 +2034,21 @@ def test_status_refuses_a_ledger_that_is_on_origin_main(
     assert status(p, "R-0005", "geplant", "--ledger", "tasks/alt.md") == 2
     assert "tasks/alt.md" in capsys.readouterr().err
     assert placed(p, "R-0005")[1].cells[roadmap.LEDGER] == "—"
+
+
+def test_status_refuses_a_merged_ledger_written_another_way(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """` ./tasks//alt.md` names tasks/alt.md: it passed the check before (R-1314)."""
+    merged_ledger(branch_repo(tmp_path, monkeypatch))
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0005", "geplant", "--ledger", " ./tasks//alt.md ") == 2
+    assert (
+        add(p, "--class", "BUG", "--title", "x", "--source", "s", "--ledger", "./tasks/alt.md") == 2
+    )
+    assert placed(p, "R-0005")[1].cells[roadmap.LEDGER] == "—"
+    assert status(p, "R-0005", "geplant", "--ledger", " ./tasks//neu.md ") == 0
+    assert placed(p, "R-0005")[1].cells[roadmap.LEDGER] == "tasks/neu.md"
 
 
 def test_add_refuses_a_ledger_that_is_on_origin_main(

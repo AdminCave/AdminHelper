@@ -135,7 +135,9 @@ docker run -d --name "$SSH_CTR" -p 127.0.0.1::2222 \
 SSH_PORT=$(docker port "$SSH_CTR" 2222/tcp | sed -n 's/^127\.0\.0\.1://p' | head -1)
 ssh_up=0
 for _ in $(seq 1 40); do
-    docker logs "$SSH_CTR" 2>&1 | grep -q "listening on port 2222" && { ssh_up=1; break; }
+    # In a variable first: under pipefail "grep -q" stopping at its match would SIGPIPE docker logs.
+    ssh_log=$(docker logs "$SSH_CTR" 2>&1)
+    grep -q "listening on port 2222" <<<"$ssh_log" && { ssh_up=1; break; }
     sleep 1
 done
 [ "$ssh_up" = 1 ] && [ -n "$SSH_PORT" ] && ok "SSH target listening on 127.0.0.1:$SSH_PORT" \

@@ -10,8 +10,9 @@
     lint                        what does not fit the format
     add --class K --title T --source S [--proof P] [--dedup-key K] [--ledger L]
                                 a `neu` row at the end of "Neu"; prints its ID
-    status <id> <status> [--note N] [--ledger L] [--pr P]
+    status <id> <status> [--note N | --clear-note] [--ledger L] [--pr P]
                                 set the status; the row moves to its section;
+                                --note replaces the note, without it the note stays;
                                 --ledger and --pr fill their columns, also on the same status
     approve <id> [--revoke]     geplant -> freigegeben, or back; the note stays
     show [<id>] [--wip]         one row, the WIP counters, or the overview
@@ -270,6 +271,23 @@ def split_cells(line: str) -> list[str]:
     return [p.strip() for p in parts]
 
 
+def note_of(row: Row) -> str | None:
+    """The note of the status column without its parentheses; None without one."""
+    rest = row.cells[STATUS][len(row.status) :].strip()
+    if DATE.match(rest):
+        rest = rest[10:].strip()
+    if rest.startswith("(") and rest.endswith(")"):
+        rest = rest[1:-1].strip()
+    return rest or None
+
+
+def norm_ledger(value: str) -> str:
+    """A --ledger value as the column and origin/main name it: ` ./tasks//x.md`
+    would pass the merged-ledger check and land beside `tasks/x.md` (R-1314)."""
+    value = value.strip()
+    return os.path.normpath(value) if value else value
+
+
 def parse_day(cell: str) -> dt.date | None:
     """The first YYYY-MM-DD in a cell; None when there is none or it is no date."""
     m = DATE.search(cell)
@@ -416,6 +434,11 @@ class Roadmap:
                 f"{rid}: zurückgestellt needs a wake condition that can be checked — "
                 "--until R-nnnn (the row it waits for) or --until JJJJ-MM-TT"
             )
+        if note is None and new != old:
+            # The note often carries Kevin's word: a new status keeps it (R-0438).
+            # Not out of zurückgestellt or abgelehnt: that note is the reason it
+            # was put aside, and a "Kevin JJJJ-MM-TT" in it would pass approve.
+            note = "" if old in (DEFERRED, "abgelehnt") else note_of(row)
         if new != old or note is not None:
             # A closed row keeps the day it closed when only its note changes.
             kept = parse_day(row.cells[STATUS]) if new == old else None
@@ -826,13 +849,14 @@ def cmd_status(args: argparse.Namespace) -> int:
     # `pr` for good, without a word. An empty value clears the column.
     if args.pr and not re.search(r"#\d+", args.pr):
         raise UsageError(f"--pr names PRs as '#42' — sync reads nothing else: {args.pr!r}")
+    if args.ledger is not None:
+        args.ledger = norm_ledger(args.ledger)
+    note = "" if args.clear_note else args.note
 
     def change(roadmap: Roadmap) -> str:
         if args.ledger and args.ledger != roadmap.find(args.id)[1].cells[LEDGER]:
             refuse_merged_ledger(args.ledger)
-        roadmap.set_status(
-            args.id, args.value, args.note, args.today, args.ledger, args.pr, args.until
-        )
+        roadmap.set_status(args.id, args.value, note, args.today, args.ledger, args.pr, args.until)
         return args.id
 
     detail = f" {args.value}" + (f" --ledger {args.ledger}" if args.ledger is not None else "")
@@ -875,8 +899,8 @@ def cmd_approve(args: argparse.Namespace) -> int:
             raise UsageError(f"{args.id} is {row.status or 'without status'}, not {was}")
         if not args.revoke:
             refuse_unready(row)
-        # Only the word changes, unlike `status` without --note: the note of a
-        # geplant row often carries Kevin's word for the plan.
+        # Only the word changes: the note of a geplant row often carries
+        # Kevin's word for the plan.
         note = row.cells[STATUS][len(row.status) :]
         roadmap.set_status(args.id, new, None, args.today)
         row.cells[STATUS] = new + note
@@ -892,6 +916,8 @@ def cmd_add(args: argparse.Namespace) -> int:
         raise UsageError("a row needs a --title and a --source")
     if args.dedup_key is not None and (not args.dedup_key or len(args.dedup_key.split()) != 1):
         raise UsageError(f"a Dedup-Key is one token: {args.dedup_key!r}")
+    if args.ledger is not None:
+        args.ledger = norm_ledger(args.ledger)
     if args.ledger:
         refuse_merged_ledger(args.ledger)
 
@@ -1388,7 +1414,13 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("status", help="set a row's status; the row moves to its section")
     st.add_argument("id")
     st.add_argument("value", choices=sorted(SECTION_OF), metavar="status")
-    st.add_argument("--note", help="appended in parentheses, e.g. 'regression confirmed'")
+    nt = st.add_mutually_exclusive_group()
+    nt.add_argument(
+        "--note",
+        help="replaces the note, in parentheses, e.g. 'regression confirmed'; "
+        "without it the note stays",
+    )
+    nt.add_argument("--clear-note", action="store_true", help="empties the note")
     st.add_argument(
         "--ledger", help="the Ledger column, e.g. tasks/<slug>.md; also on the same status"
     )

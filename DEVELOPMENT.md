@@ -319,7 +319,11 @@ Exit 2. Bei `scripts` sind es Namen von Script-Tests, etwa
 `verify.sh scripts --strict -- ledger_test`: nur diese laufen, ein Name, der nicht in
 der Liste steht, ist Exit 2. Ein gezielter Lauf (`-- <args>`) laesst den Schritt
 `schemathesis` aus (`SKIP … (AH_ARGS)`, auch unter `--strict` kein Fehler): er kostete jede
-Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI. Ein Lauf, der die Suite erreicht, hinterlaesst
+Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI. Ein cargo-, go- oder vitest-Schritt, den
+`-- <args>` auf keinen einzigen Test eingrenzt (ein Tippfehler im Filter: `0 passed; 291 filtered out`), ist
+rot statt gruen (R-0546); nennt `-- <args>` ein Go-Paket (`./internal/x/...`), ersetzt es das `./...` des
+Agents (R-1659). `AH_STEP`, `AH_PART`, `AH_EXCLUDE` und `AH_ONLY` aus der Umgebung verwirft `verify.sh`: was
+der Lauf tut, steht in seinen Flags (R-1362). Ein Lauf, der die Suite erreicht, hinterlaesst
 `.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component` — bei mehreren die
 Liste —, `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
@@ -674,7 +678,7 @@ python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components
 python3 scripts/dev/roadmap.py zuege [--stufe klein|kern]
 python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
     [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
-python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md] [--pr "#<n>"]
+python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…" | --clear-note] [--ledger tasks/<slug>.md] [--pr "#<n>"]
 python3 scripts/dev/roadmap.py status R-nnnn zurückgestellt --until R-mmmm|JJJJ-MM-TT [--note "…"]
 python3 scripts/dev/roadmap.py approve R-nnnn [--revoke]
 python3 scripts/dev/roadmap.py sync
@@ -722,7 +726,10 @@ python3 scripts/dev/roadmap.py stats [--days 30]
 - `status` setzt den Status und verschiebt die Zeile in den Abschnitt, der zu ihm gehoert.
   Erlaubt sind nur die Uebergaenge der Tabelle `TRANSITIONS` im Skript (sonst Exit 2);
   derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
-  das Wort. Ein geschlossener Status (`abgeschlossen`, `abgelehnt`) traegt den Tag; mehr
+  das Wort. `--note` ersetzt die Notiz in Klammern, `--clear-note` leert sie; ohne beide bleibt sie
+  stehen, denn sie traegt oft Kevins Wort, das `approve` sucht (R-0438). Nur wer eine Zeile aus
+  `zurückgestellt` oder `abgelehnt` holt, verliert die alte Notiz. Ein geschlossener Status (`abgeschlossen`,
+  `abgelehnt`) traegt den Tag; mehr
   als 7 Tage danach faellt die Zeile beim naechsten Schreiben aus der Datei (die Historie
   haelt das private git, `git log -S R-nnnn`). Nennt eine offene Zeile sie unter „Haengt ab
   von", bleibt sie und wandert oben ins „Archiv": `next` zaehlt eine Abhaengigkeit nur, solange
@@ -732,7 +739,8 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   Gate lesen es dort, nicht aus der Notiz. Einen Pfad, der auf `origin/main` liegt (das Ledger
   eines gemergten Zugs) und nicht schon in der Spalte der Zeile steht, lehnen `status` und `add`
   mit Exit 2 ab: der Plan eines neuen Zugs ueberschriebe dessen Spec, Ledger und
-  `changelog.d`-Fragment (R-1291); ohne `origin/main` prueft das Skript nichts. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
+  `changelog.d`-Fragment (R-1291); ohne `origin/main` prueft das Skript nichts. Der Pfad wird vorher
+  normalisiert (` ./tasks//x.md` ist `tasks/x.md`, R-1314). Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
   die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
   ist Exit 2.
   Wer nach `zurückgestellt` wechselt, nennt eine Weckbedingung: `--until R-mmmm` (die Zeile, auf
@@ -746,8 +754,7 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   selbst, die Entscheidung bleibt Kevins. Ein Datum sieht „Als Naechstes" erst beim naechsten
   Schreiben der Datei.
 - `approve` ist `geplant` -> `freigegeben`, die Freigabe, die die Session nach dem Plan-Commit von `/feature-plan`
-  setzt (CLAUDE.md §4); `--revoke` nimmt sie zurueck. Beide lassen die Notiz der Zeile stehen, anders als `status`
-  ohne `--note`.
+  setzt (CLAUDE.md §4); `--revoke` nimmt sie zurueck. Beide lassen die Notiz der Zeile stehen.
 - `sync` fragt `gh pr list --state merged`: eine Zeile im Status `pr`, deren PR-Spalte nur
   gemergte PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Eine Zeile in einem anderen
   Status (etwa eine Stufe mit mehreren PRs, noch `aktiv`) meldet es nur; `sync` ueberspringt

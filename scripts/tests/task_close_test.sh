@@ -111,6 +111,22 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 ### T16 — Dateien: eine Notiz in Klammern  [ ]
 Komponente: scripts · Dateien: scripts/dev/tool.sh (neu, mit Notiz), scripts/dev/other.sh
 Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T17 — zwei Komponenten  [ ]
+Komponente: desktop-rs desktop-ui · Dateien: scripts/dev/tool.sh
+Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
+
+### T18 — zwei Komponenten, das Verify nur fuer eine  [ ]
+Komponente: desktop-rs desktop-ui · Dateien: scripts/dev/tool.sh
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+
+### T20 — Komponente: mit einer Option  [ ]
+Komponente: scripts --tree ../other · Dateien: scripts/dev/tool.sh
+Verify: keines
+
+### T19 — Dateien: mit Glob  [ ]
+Komponente: scripts · Dateien: scripts/dev/*.sh
+Verify: bash scripts/dev/verify.sh scripts --strict
 MD
 sed 's/^Status: aktiv · Branch: feature\/fixture · Review: pro Task$/Status: aktiv · Review: am Ende/' "$FIX/tasks/fix.md" \
   | sed -n '1,7p' > "$FIX/tasks/late.md"
@@ -191,6 +207,17 @@ reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T15
 reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T16 approve; c fix T16 --stage -m "test: x"
 [ $rc -eq 0 ] && [ "$(git -C "$FIX" diff --name-only HEAD~1 HEAD -- scripts/dev | wc -l)" = 2 ] \
   && ok "a note in parentheses and Dateien: in the title stay allowed, both paths commit" || bad "T16: rc=$rc $OUT"
+# R-1654: an element is a path, not a pathspec — a glob staged every file it matched.
+reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T19 approve; c fix T19 --stage -m "test: x"
+staged="$(git -C "$FIX" diff --staged --name-only)"
+[ $rc -eq 2 ] && grep -q 'nothing staged' <<<"$OUT" && [ -z "$staged" ] && [ "$(heads)" = 1 ] \
+  && ok "a glob in Dateien: stages nothing -> 2" || bad "T19: rc=$rc staged=[$staged] $OUT"
+# Counter-check: a file that is named like the glob is staged, and only it.
+reset_repo; printf 'echo star\n' > "$FIX/scripts/dev/*.sh"; edit scripts/dev/tool.sh; verdict fix T19 approve
+c fix T19 --stage -m "test: x"
+files="$(git -C "$FIX" show --name-only --format= HEAD | sort | tr '\n' ' ')"
+[ $rc -eq 0 ] && [ "$files" = "scripts/dev/*.sh tasks/fix.md " ] \
+  && ok "the file literally named '*.sh' commits alone" || bad "T19 literal: rc=$rc files=[$files] $OUT"
 
 echo "── test files ──"
 reset_repo; rm "$FIX/scripts/tests/keep_test.sh"; verdict fix T5 approve; c fix T5 --stage -m "test: x"
@@ -227,6 +254,18 @@ AH_TREE_HASH="$before" AH_HEAD=1111111111111111111111111111111111111111 FIXTURE_
   || bad "client values from the environment: rc=$rc heads=$(heads) $OUT"
 reset_repo; edit scripts/dev/tool.sh; c fix T6 --stage -m "test: x"
 [ $rc -eq 2 ] && grep -q "does not name the task's component 'web'" <<<"$OUT" && ok "a Verify: line for another component -> 2" || bad "T6: rc=$rc $OUT"
+# R-1631: several components are a set, each one in the Verify: line.
+reset_repo; edit scripts/dev/tool.sh; verdict fix T17 approve; c fix T17 --stage -m "test: two"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "desktop-rs desktop-ui --strict" ] \
+  && ok "two components in Komponente: and Verify: -> committed" || bad "T17: rc=$rc $OUT"
+reset_repo; edit scripts/dev/tool.sh; verdict fix T18 approve; c fix T18 --stage -m "test: x"
+[ $rc -eq 2 ] && grep -q "does not name the task's component 'desktop-rs'" <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "a Verify: line without one of the components -> 2" || bad "T18: rc=$rc $OUT"
+# The words reach verify.sh unquoted when the Verify: line is prose: no options.
+reset_repo; edit scripts/dev/tool.sh; verdict fix T20 approve; c fix T20 --stage -m "test: x"
+[ $rc -eq 2 ] && grep -q "has '--tree' — component names only" <<<"$OUT" && [ ! -e "$FIX/.ah-out/verify-called.txt" ] \
+  && ok "an option in Komponente: -> 2 before any suite" || bad "T20: rc=$rc $OUT"
+reset_repo; edit scripts/dev/tool.sh
 verdict fix T2 approve; c fix T2 --stage -m "fix: narrow"
 [ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "server --strict -- tests/test_thing.py" ] \
   && ok "the Verify: line runs as it stands, with its test" || bad "T2: rc=$rc $(cat "$FIX/.ah-out/verify-called.txt") $OUT"

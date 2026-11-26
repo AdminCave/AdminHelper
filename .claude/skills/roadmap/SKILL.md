@@ -75,7 +75,8 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
    Zeile. Header `R-nnnn`, Frage: Klasse, Titel, Quelle in einem Satz. Die **Empfehlung
    zuerst**, mit „(Empfohlen)" und einem Halbsatz Begründung in der Beschreibung:
    - **Annehmen in <zug>** → `roadmap.py status R-nnnn geplant --ledger tasks/<zug>.md --note
-     "Kevin <JJJJ-MM-TT>: angenommen"`; die Option nennt den Zug. Ohne diese Marke verweigert
+     "Kevin <JJJJ-MM-TT>: angenommen"`; die Option nennt den Zug. `--note` ersetzt die Notiz (ohne `--note` bleibt
+     sie, `--clear-note` leert sie): eine bisherige Notiz dahinter mitgeben. Ohne diese Marke verweigert
      `approve` die Freigabe (R-0580). Einzeln: `--ledger tasks/<slug>.md` und `/feature-plan --kurz R-nnnn`
      *vorschlagen*, nicht starten — bei SEC nicht: SEC kommt in einen neutral benannten Kern-Zug
      (feature-plan 3a).
@@ -124,7 +125,9 @@ Prüfrunde auslöst. Die übrigen Nits eines Zugs ordnet sie vor dem PR so:
 - Nits, die die Bedingungen oben erfüllen, in **eine** Zeile: Klasse REF, Titel „Nachlese <zug>: <n> Nits“, Beweis
   die Task-IDs mit `datei:zeile`; der Dauerauftrag legt sie in einen `klein-nachlese-<n>`-Zug (bis CLAUDE.md §4 ihn
   nennt: `neu`).
-- Nits auf Harness-Pfaden in eine Zeile, die gleich `zurückgestellt` wird (CLAUDE.md §4).
+- Nits auf Harness-Pfaden in eine Zeile, die gleich `zurückgestellt` wird (CLAUDE.md §4): `roadmap.py status R-nnnn
+  zurückgestellt --until <heute+28> --note "Harness-Nit …"` (Kevin 2026-11-25: Datum in vier Wochen; danach
+  steht sie unter „Wieder fällig“).
 - Nits des `security`-Agenten und Nits zu Risikopfaden in eine `neu`-Zeile mit neutralem Titel für Kevins Triage;
   Einzelheiten nur unter `tasks/private/`.
 

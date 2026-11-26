@@ -12,10 +12,13 @@
 # buffer they write in parts, and `printf '%s' "$out" | grep -q x` ends with 141
 # every time at 300 kB; a short one flaked once in diagnostics_test (R-0264, the
 # cause there not verified). Their text reaches grep by a here-string instead.
-# The rule for scripts/tests/*_test.sh: the output of git log, rev-list, reflog,
-# shortlog, check-attr or check-ignore goes into a variable first, or is cut to
-# one record (-1, -n 1, --max-count=1), before grep -q/-m/-l, head or sed …q
-# reads it; printf and echo never feed one of these readers.
+# `docker logs` and `docker compose logs` stream a container's log the same way
+# (R-1647: desktop_e2e_monitoring waited on `docker logs | grep -q`).
+# The rule for scripts/tests/*_test.sh and desktop_e2e_*.sh: the output of git
+# log, rev-list, reflog, shortlog, check-attr or check-ignore goes into a variable
+# first, or is cut to one record (-1, -n 1, --max-count=1), before grep -q/-m/-l,
+# head or sed …q reads it; printf, echo and docker logs never feed one of these
+# readers.
 #
 # A line scan, not a parser: continuation lines are joined, comments dropped, and
 # a pipe inside quotes is no pipe — which also hides one inside a quoted "$(…)",
@@ -62,6 +65,15 @@ scan() {
     n = split(s, t, /[ \t]+/)
     for (i = 1; i <= n; i++) {
       if (t[i] ~ /(^|[(`])(printf|echo)$/) return 1
+      if (t[i] ~ /(^|[(`])docker$/) {
+        k = i + 1
+        if (t[k] == "compose") k++
+        # Options before the verb; the ones with a value take the next word too.
+        for (; k <= n && t[k] ~ /^-/; k++)
+          if (t[k] ~ /^(-f|-p|-H|-c|--file|--project-name|--project-directory|--env-file|--profile|--context|--host)$/) k++
+        if (t[k] == "logs") return 1
+        continue
+      }
       if (t[i] !~ /(^|[(`])git$/) continue
       for (k = i + 1; k <= n; k++) {
         if (t[k] == "-C" || t[k] == "-c") { k++; continue }
@@ -117,7 +129,7 @@ scan() {
     if (buf == "") start = FNR
     if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next }
     line = buf $0; buf = ""
-    if (line ~ /git|printf|echo/) check(line, start)
+    if (line ~ /git|printf|echo|docker/) check(line, start)
   }' "$@"
 }
 
@@ -169,12 +181,19 @@ else
   expect clean "a here-string instead" 'grep -q x <<<"$out"' "! grep -qF -- \"\$want\" <<<\"\$out\""
   expect clean "printf and echo into readers that read everything" "printf '%s' \"\$out\" | grep -c x" 'echo "$out" | wc -l'
   expect clean "printf | grep -q inside quotes" "echo 'see printf x | grep -q y'"
+  expect hit "docker logs into grep -q (R-1647)" 'docker logs "$c" 2>&1 | grep -q "listening"'
+  expect hit "docker compose logs into head" 'docker compose -f "$f" logs --no-color api | head -5'
+  expect hit "sudo docker logs into grep -m" 'sudo docker logs --tail 50 x | grep -m1 y'
+  expect clean "docker logs into readers that read everything" 'docker logs --tail 15 "$c" 2>&1 | sed "s/^/    /"' 'docker logs x | grep -c y'
+  expect clean "another docker verb" 'docker ps --format "{{.Names}}" | grep -q x'
+  expect clean "docker logs in a variable first" 'out=$(docker logs x 2>&1)' 'grep -q y <<<"$out"'
   # Registered, or the scripts block never runs it.
   grep -qw pipe_guard_test <<<"$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$HERE/run.sh")" \
     && ok "pipe_guard_test is registered in AH_SCRIPT_TESTS_DEFAULT" \
     || bad "pipe_guard_test missing from AH_SCRIPT_TESTS_DEFAULT"
   echo "── scan"
-  files=("$HERE"/*_test.sh)
+  # The desktop e2e scripts run under pipefail too, and are no *_test.sh (R-1647).
+  files=("$HERE"/*_test.sh "$HERE"/desktop_e2e_*.sh)
 fi
 
 n=0
@@ -186,7 +205,7 @@ found=$(scan "${files[@]}"); rc=$?
 if [ "$rc" != 0 ]; then
   bad "the scan itself failed (awk exit $rc)"
 elif [ -z "$found" ]; then
-  ok "no git producer of many records and no printf or echo feeds an early reader"
+  ok "no git producer of many records and no printf, echo or docker logs feeds an early reader"
 else
   while IFS= read -r line; do bad "SIGPIPE under pipefail (R-0103, R-0286): $line"; done <<<"$found"
 fi

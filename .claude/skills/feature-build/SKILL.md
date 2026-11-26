@@ -36,8 +36,9 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Sonst nicht `freigegeben` → melden, nicht bauen.
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
 
-Jeder `roadmap.py status`-Aufruf dieses Skills gibt eine Notiz der Zeile wörtlich mit `--note` wieder mit (`status`
-ohne `--note` löscht sie).
+`roadmap.py status` ohne `--note` behält die Notiz der Zeile (außer beim Wechsel aus `zurückgestellt` oder
+`abgelehnt`: dort verfällt sie); `--note` ersetzt sie (die alte also mitgeben, wenn
+sie bleiben soll), `--clear-note` leert sie.
 
 Weitere freigegebene Zeilen, die beim Start die Kriterien aus `/feature-plan` §4 erfüllen (neu geprüft, auch
 `df -h /`), bekommen ihren eigenen Worktree; die Session baut sie im Wechsel, wenn das laufende Vorhaben auf Prüfer,

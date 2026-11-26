@@ -131,8 +131,8 @@ aus `scripts/dev/review-risk.txt`, steht die Task auf `[?]`, bis Kevin entscheid
 **`--zug tasks/<zug>.md`** — ein Zug (CLAUDE.md §2): die wartenden Zeilen, deren Spalte `Ledger` diesen Pfad nennt
 (`roadmap.py zuege`), jede Klasse:
 - Der Slug ist der des Zugs (`klein-doku-3` → `feature/klein-doku-3`); `klein-` plant nur die Klein-Session, alle
-  anderen die Kern-Session (`--stufe`). Einen neuen Zug-Slug vorher gegen `origin/main:tasks/` und die
-  Remote-Branches prüfen: ein gemergter Slug überschriebe Spec, Ledger und `changelog.d`-Fragment des alten Zugs
+  anderen die Kern-Session (`--stufe`). Einen neuen Zug-Slug nach `git fetch origin` gegen `origin/main:tasks/`
+  und die Remote-Branches prüfen: ein gemergter Slug überschriebe Spec, Ledger und `changelog.d`-Fragment des alten Zugs
   (`roadmap.py status`/`add --ledger` lehnen einen Pfad auf `origin/main` ab, R-1291).
 - **Überlappung zuerst:** `bash scripts/dev/overlap.sh --except feature/<slug> <Dateien der Zeilen>`. Ändert ein
   offener Branch dieselben Dateien, fährt die Zeile nicht mit: `roadmap.py status R-nnnn geplant --ledger
@@ -163,7 +163,7 @@ Bei Zug und Mitnehmen gilt jeder Roadmap-Schritt des Gates für jede enthaltene 
   (`python3 scripts/dev/roadmap.py add --class <K> --title "…" --source "kevin <datum>" --ledger
   tasks/<slug>.md`) und setzt sie auf `geplant`; eine bestehende `neu`- oder `geplant`-Zeile wird
   `roadmap.py status R-nnnn geplant --ledger tasks/<slug>.md`; trägt die Zeile eine Notiz, gibt das Gate sie
-  wörtlich mit `--note` wieder mit (`status` ohne `--note` löscht sie). Beides nur für ein Vorhaben, das Kevin
+  wörtlich hinter der neuen mit (`--note` ersetzt sie, ohne `--note` bleibt sie). Beides nur für ein Vorhaben, das Kevin
   diktiert oder angenommen hat; ein eigener Fund bleibt `neu` bis zu Kevins Bestätigung. Nie ein Edit
   an der Datei.
 - **Plan auf den Branch, im Worktree (2):** Spec und Ledger stagen (`git -C WT add …`), `bash

@@ -151,8 +151,10 @@ export AH_PYTEST_RS
 
 # AH_ARGS — extra arguments for the suite runner itself, how verify.sh forwards
 # `verify.sh server -- tests/test_x.py`. The suites get them word-split by their shell,
-# so a single argument cannot contain spaces; run.sh itself reads them twice: the
-# scripts step takes them as test names, and a targeted run skips schemathesis.
+# so a single argument cannot contain spaces; run.sh itself reads them: the
+# scripts step takes them as test names, a targeted run skips schemathesis, a
+# go/cargo/vitest step that ran no test with them is red (filtered), and a Go
+# package (`./internal/x/...`) replaces the agent's `./...` in go test (R-1659).
 AH_ARGS="${AH_ARGS:-}"
 export AH_ARGS
 
@@ -639,6 +641,32 @@ npm_ci_if_stale() {
 }
 export -f npm_ci_if_stale  # the run_step `bash -c` subshells need it in their env
 
+# filtered <cargo|go|vitest> <cmd…> — a suite narrowed by AH_ARGS. A filter that
+# matches nothing runs no test and still exits 0 (cargo: "0 passed; 291 filtered
+# out", R-0546), so a typo in a Verify: line proved nothing. With AH_ARGS the
+# step is red unless its output shows a test that ran; without, it runs as is.
+filtered() {
+  local kind="$1" out rc=0; shift
+  [ -n "${AH_ARGS:-}" ] || { "$@"; return; }
+  out="$(mktemp)" || return 1
+  "$@" 2>&1 | tee "$out"; rc=${PIPESTATUS[0]}
+  if [ "$rc" = 0 ] && ! tests_ran "$kind" "$out"; then
+    echo "  the filter '$AH_ARGS' ran no test — a typo, or a test that does not exist"
+    rc=1
+  fi
+  rm -f "$out"; return "$rc"
+}
+tests_ran() {  # tests_ran <kind> <log>: did the log see one test run?
+  local clean; clean="$(sed 's/\x1b\[[0-9;]*m//g' "$2")"
+  case "$1" in
+    cargo)  grep -qE '^test result: .* [1-9][0-9]* (passed|failed)' <<<"$clean" ;;
+    go)     grep -E '^ok[[:space:]]' <<<"$clean" | grep -qvF '[no tests to run]' ;;
+    vitest) grep -qE '^[[:space:]]*Tests[[:space:]].*[1-9][0-9]* (passed|failed)' <<<"$clean" ;;
+    *) return 1 ;;
+  esac
+}
+export -f filtered tests_ran
+
 require_real() {
   if [ "${AH_ALLOW_REAL:-0}" != "1" ]; then
     echo "REFUSED: layer '$LAYER' runs real docker/GUI suites. Set AH_ALLOW_REAL=1 to proceed"
@@ -879,7 +907,9 @@ layer_unit() {
       cd apps/agent &&
       go vet ./... &&
       { [ -n "$AH_RACE" ] && echo "race: on (-race)" || echo "race: off (no gcc or CGO_ENABLED=0)"; } &&
-      go test $AH_RACE -cover ./... $AH_ARGS &&
+      pkgs=./... &&
+      case " $AH_ARGS " in *" ./"*) pkgs="" ;; esac &&
+      filtered go go test $AH_RACE -cover $pkgs $AH_ARGS &&
       GOOS=linux   GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent &&
       GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent'
   else skip go-agent "go agent (vet+test+cross)" "go not installed"; fi
@@ -887,13 +917,13 @@ layer_unit() {
   # Rust/Tauri backend — needs tauri system libs + the frpc sidecar (externalBin).
   if ! only desktop desktop-rs; then skip desktop-cargo "cargo test (desktop)" "AH_ONLY"
   elif have cargo && [ -f "$FRPC_SIDECAR" ]; then
-    run_step desktop-cargo "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test $AH_ARGS'
+    run_step desktop-cargo "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && filtered cargo cargo test $AH_ARGS'
   else skip desktop-cargo "cargo test (desktop)" "cargo or frpc sidecar ($FRPC_SIDECAR) missing"; fi
 
   # Desktop UI (Svelte) — check + lint + vitest.
   if ! only desktop desktop-ui; then skip desktop-ui-vitest "desktop-ui vitest" "AH_ONLY"
   elif have_node; then
-    run_step desktop-ui-vitest "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm_ci_if_stale && npm run check && npm run lint && npm run test ${AH_ARGS:+-- $AH_ARGS}'
+    run_step desktop-ui-vitest "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm_ci_if_stale && npm run check && npm run lint && filtered vitest npm run test ${AH_ARGS:+-- $AH_ARGS}'
   else skip desktop-ui-vitest "desktop-ui vitest" "node/npm not installed"; fi
 
   # Desktop E2E specs — lint only. The suite itself needs a display + Docker (heavy
@@ -959,7 +989,7 @@ layer_unit() {
   # Web frontend — check + lint + vitest unit.
   if ! only web; then skip web-vitest "web vitest" "AH_ONLY"
   elif have_node; then
-    run_step web-vitest "web vitest" -- bash -c 'cd apps/web && npm_ci_if_stale && npm run check && npm run lint && npm run test:unit ${AH_ARGS:+-- $AH_ARGS}'
+    run_step web-vitest "web vitest" -- bash -c 'cd apps/web && npm_ci_if_stale && npm run check && npm run lint && filtered vitest npm run test:unit ${AH_ARGS:+-- $AH_ARGS}'
   else skip web-vitest "web vitest" "node/npm not installed"; fi
 }
 
