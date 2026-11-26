@@ -161,7 +161,7 @@ def test_each_image_ends_its_last_stage_with_the_same_step_that_leaves_its_progr
         runs = [i for i, instruction in enumerate(stage) if _keyword(instruction) == "RUN"]
         # The step comes after every RUN that installs programs, and nothing comes into the
         # image after it.
-        install = re.compile(r"\b(apt-get|pip) (?:install|upgrade)\b")
+        install = re.compile(r"\b(apt-get|pip)(?: -o \S+)* (?:install|upgrade)\b")
         installs = [(i, found[1]) for i in runs if (found := install.search(stage[i]))]
         assert {kind for _, kind in installs} == {"apt-get", "pip"}, (path, stage)
         assert installs[-1][0] < runs[-1], (path, stage)
@@ -338,7 +338,10 @@ def test_each_image_removes_pip_in_the_run_that_installs_with_it():
         runs = _pip_runs(path)
         assert len(runs) == 1, (path, runs)
         command = _command(runs[0])
-        assert re.match(r"pip install --no-cache-dir --require-hashes -r \S+ ", command), command
+        assert re.match(
+            r"pip install --retries \d+ --timeout \d+ --no-cache-dir --require-hashes -r \S+ ",
+            command,
+        ), command
         assert command.endswith(" && pip uninstall -y pip"), (path, command)
 
 
