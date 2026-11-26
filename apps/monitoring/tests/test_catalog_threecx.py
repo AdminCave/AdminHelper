@@ -4,7 +4,8 @@
 
 """The catalog module 3cx (R-1241): each running or failed unit of the package 3cxpbx is
 an instance of its own with the unit check, an inactive one is none; a stopped service
-is critical."""
+is critical. The certificate of the web interface is checked at the console's instance
+only, on 443 or 5001 (R-1443)."""
 
 from datetime import UTC, datetime
 
@@ -73,7 +74,7 @@ def _status(values):
 def test_the_module_loads_with_the_units_of_the_package():
     assert CATALOG.errors == ()
     assert sorted(MODULE.detect.units) == sorted(UNITS)
-    assert list(CHECKS) == ["service"]
+    assert list(CHECKS) == ["service", "web_certificate"]
     assert CHECKS["service"].sensor == "unit"
     assert CHECKS["service"].fields == ["active_state", "sub_state"]
 
@@ -126,4 +127,82 @@ def test_the_card_shows_the_units_state():
     assert [(i.check_key, i.field) for i in MODULE.card] == [
         ("service", "active_state"),
         ("service", "sub_state"),
+        ("web_certificate", "days_left"),
     ]
+
+
+CONSOLE = "3CXPhoneSystemMC01.service"
+
+
+def _socket(port, *, container="", unit="", proto="tcp"):
+    return {
+        "proto": proto,
+        "addr": "0.0.0.0",
+        "port": port,
+        "process": "nginx",
+        "container": container,
+        "unit": unit,
+    }
+
+
+def _web(sockets):
+    return probe_config(MODULE, CHECKS["web_certificate"], CONSOLE, {"unit": CONSOLE}, [], sockets)
+
+
+def test_the_web_certificate_belongs_to_the_console_instance_only():
+    check = CHECKS["web_certificate"]
+    assert check.instance == CONSOLE
+    assert CONSOLE in MODULE.detect.units
+    # The unit check stays at every instance.
+    assert CHECKS["service"].instance is None
+
+
+@pytest.mark.parametrize(
+    ("ports", "want"),
+    [
+        ([443], 443),
+        ([5001], 5001),
+        # Both: the port of a new install first.
+        ([5001, 443], 443),
+    ],
+)
+def test_the_web_certificate_asks_the_port_nginx_listens_on(ports, want):
+    config, why = _web([_socket(p, unit="nginx.service") for p in ports])
+    assert why is None, why
+    assert config["sensor"] == "tls"
+    assert config["target"] == {
+        "kind": "loopback",
+        "name": "",
+        "port_hint": want,
+        "scheme": "https",
+    }
+
+
+def test_a_port_inside_a_container_does_not_count():
+    config, why = _web([_socket(443, container="web")])
+    assert config is None
+    assert why == "the host listens on none of the ports 443, 5001"
+
+
+def test_without_the_sockets_the_agent_asks_443():
+    config, why = _web(None)
+    assert why is None, why
+    assert config["target"]["port_hint"] == 443
+
+
+@pytest.mark.parametrize(
+    ("days", "want"),
+    [(60, "ok"), (21, "warning"), (8, "critical")],
+)
+def test_a_web_certificate_near_its_end_alerts(days, want):
+    config, why = _web([_socket(443)])
+    assert why is None, why
+    values = {
+        "days_left": days,
+        "not_after": "2020-03-01T00:00:00Z",
+        "issuer": "R3",
+        "chain_ok": True,
+    }
+    result = {"ts": T0, "duration_ms": 40, "status": "ok", "values": values, "error": ""}
+    report = {"timestamp": STAMP, "probes": {"chk": result}}
+    assert ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0] == want
