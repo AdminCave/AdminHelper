@@ -1,5 +1,5 @@
 # Harness: Gates und Werkzeuge der Sessions — Task-Ledger
-Status: geplant · Branch: feature/kern-harness-11 · Review: pro Task
+Status: aktiv · Branch: feature/kern-harness-11 · Review: pro Task
 Spec: docs/features/kern-harness-11.md (Roadmap R-0375, R-0438, R-0546, R-1314, R-1362, R-1631, R-1647, R-1654, R-1659, R-1745, R-1781, R-1315)
 Heavy: none — nur Harness-Skripte und Skill-Texte; jede Aenderung hermetisch in scripts/tests bzw. scripts/dev/tests geprueft
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
