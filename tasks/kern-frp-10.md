@@ -1,5 +1,5 @@
 # FRP: Anmeldung eines Hosts an seinen Schluessel binden — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-10 · Review: pro Task
+Status: erledigt · Branch: feature/kern-frp-10 · Review: pro Task
 Spec: docs/features/kern-frp-10.md (Roadmap R-1363)
 Heavy: scenario --tunnel — FRP-Tunnel-Datenpfad ueber Hosts (frpc-Anmeldung an frps); ask-first
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
