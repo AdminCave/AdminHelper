@@ -1,5 +1,5 @@
 # Netz-Aussetzer und Haenger in Bake, Bootstrap und Images — Task-Ledger
-Status: erledigt · Branch: feature/kern-netretry-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-netretry-1 · Review: am Ende
 Spec: docs/features/kern-netretry-1.md (Roadmap R-1794, R-1795, R-1797, R-1798)
 Heavy: linux-full — die Dockerfiles bauen den Stack (Sammellauf); dazu vor dem Merge ein `vm.py bake --profile linux-full`, dessen Warm-Schritt mit Exit 0 endet (Beweis fuer R-1794 und den Bootstrap)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -33,6 +33,13 @@ Review: am Ende (Branch-Review)
 Beweis: Box-Beweis kern-pybox-1 2026-11-25, Docker-Build „alembic==1.20.1 from versions: none“ · Dedup-Key: R-1797
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: changelog.d/kern-netretry-1.md
+
+### T4 — test_images_exec_only.py: Muster kennen die Wiederholungs-Optionen  [ ]
+Komponente: server · Dateien: apps/server/tests/test_images_exec_only.py
+Änderung: Aus der PR-CI (#678): zwei Tests lesen die Dockerfiles mit festen Mustern und kennen `apt-get -o …` und `pip install --retries … --timeout …` nicht. Das Install-Muster laesst `-o <opt>` zwischen `apt-get` und `install` zu; das pip-Muster verlangt jetzt `--retries` und `--timeout` vor `--no-cache-dir --require-hashes` (strenger, nicht schwaecher).
+Beweis: PR #678 Server (pytest, image lock, shard 2/4): test_each_image_ends_its_last_stage_… `{'pip'} == {'apt-get','pip'}`, test_each_image_removes_pip_… `assert None` · Dedup-Key: R-1797
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py
+Doku: keine (Test)
 
 ## Entscheidungen
 - R-1796 (security-Nit zu `/tmp/ah-python.tgz`) faehrt nicht mit: Zeile `neu`, Kevins Triage; T2 aendert an der curl nur die Optionen.
