@@ -10,8 +10,9 @@
     lint                        what does not fit the format
     add --class K --title T --source S [--proof P] [--dedup-key K] [--ledger L]
                                 a `neu` row at the end of "Neu"; prints its ID
-    status <id> <status> [--note N] [--ledger L] [--pr P]
+    status <id> <status> [--note N | --clear-note] [--ledger L] [--pr P]
                                 set the status; the row moves to its section;
+                                --note replaces the note, without it the note stays;
                                 --ledger and --pr fill their columns, also on the same status
     approve <id> [--revoke]     geplant -> freigegeben, or back; the note stays
     show [<id>] [--wip]         one row, the WIP counters, or the overview

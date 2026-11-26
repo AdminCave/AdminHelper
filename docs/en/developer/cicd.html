@@ -296,7 +296,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           (the lint <em>and</em> unit steps of those components, several in one run; <code>-- &lt;args&gt;</code>
           only for a single component, <code>all</code> only on its own), runs against another checkout with
           <code>--tree</code> and writes <code>last-verify.json</code> &ndash; the run artifact plus
-          <code>component</code>, <code>args</code>, <code>tree</code>. The form
+          <code>component</code>, <code>args</code>, <code>tree</code>. It drops <code>AH_STEP</code>,
+          <code>AH_PART</code>, <code>AH_EXCLUDE</code> and <code>AH_ONLY</code> from the environment: what the run
+          does is in its flags. When <code>-- &lt;args&gt;</code> narrows a cargo, go or vitest step to no test at
+          all (a typo in the filter), the step is red; a Go package among the arguments
+          (<code>./internal/x/...</code>) replaces the agent&rsquo;s <code>./...</code>. The form
           <code>bash scripts/tests/run.sh &lt;layer&gt; --strict --only &lt;a&gt; &lt;b&gt;</code> is allowed as well;
           <code>task-close.sh</code> runs both as <code>verify.sh &lt;a&gt; &lt;b&gt; --strict</code>, and the list
           must contain the task&rsquo;s <code>Komponente:</code>. The wrapper exists because of the allowlist: a Bash allow
@@ -355,7 +359,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <tbody>
               <tr><td><code>review.sh sec</code></td><td>Does the diff hold anything this public repo must never hold
               (the private roadmap, a security ledger, a <code>sec:</code> key, files that carry credentials, a token
-              pattern)?</td><td>exit&nbsp;4 with a path or file:line, never the content; the git hooks,
+              pattern; locally also an entry of the private deny list <code>tasks/private/public-deny.txt</code>, names
+              and networks of the lab; without that file, as in CI, this part is off)?</td><td>exit&nbsp;4 with a path or file:line, never the content; the git hooks,
               <code>task-close.sh</code> and the CI job &ldquo;Public repo guard&rdquo; run it</td></tr>
               <tr><td><code>review.sh risk</code></td><td>Does the diff touch a risk path
               (<code>scripts/dev/review-risk.txt</code>, the harness paths included)?</td><td><code>xhigh</code> with

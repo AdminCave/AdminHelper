@@ -300,7 +300,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           (also Lint <em>und</em> Unit dieser Komponenten, mehrere in einem Lauf; <code>-- &lt;args&gt;</code> nur
           f&uuml;r eine Komponente, <code>all</code> nur allein), l&auml;uft mit <code>--tree</code> gegen einen
           anderen Checkout und schreibt <code>last-verify.json</code> &ndash; das Lauf-Artefakt plus
-          <code>component</code>, <code>args</code>, <code>tree</code>. Die Form
+          <code>component</code>, <code>args</code>, <code>tree</code>. <code>AH_STEP</code>, <code>AH_PART</code>,
+          <code>AH_EXCLUDE</code> und <code>AH_ONLY</code> aus der Umgebung verwirft es: was der Lauf tut, steht in
+          seinen Flags. Grenzt <code>-- &lt;args&gt;</code> einen cargo-, go- oder vitest-Schritt auf keinen
+          einzigen Test ein (ein Tippfehler im Filter), ist der Schritt rot; ein Go-Paket in den Argumenten
+          (<code>./internal/x/...</code>) ersetzt das <code>./...</code> des Agents. Die Form
           <code>bash scripts/tests/run.sh &lt;layer&gt; --strict --only &lt;a&gt; &lt;b&gt;</code> ist ebenfalls
           erlaubt; <code>task-close.sh</code> f&auml;hrt beide als <code>verify.sh &lt;a&gt; &lt;b&gt; --strict</code>,
           und die Liste muss die <code>Komponente:</code> der Task enthalten. Der Grund f&uuml;r den Wrapper ist die
@@ -361,7 +365,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <tbody>
               <tr><td><code>review.sh sec</code></td><td>Steht etwas im Diff, das dieses &ouml;ffentliche Repo nie
               halten darf (private Roadmap, Sicherheits-Ledger, <code>sec:</code>-Schl&uuml;ssel, Dateien mit
-              Zugangsdaten, Token-Muster)?</td><td>Exit&nbsp;4 mit Pfad oder Datei:Zeile, nie dem Inhalt; die Git-Hooks,
+              Zugangsdaten, Token-Muster; lokal dazu ein Eintrag der privaten Sperrliste
+              <code>tasks/private/public-deny.txt</code>, Namen und Netze des Labs; ohne die Datei, etwa in der CI,
+              ist dieser Teil aus)?</td><td>Exit&nbsp;4 mit Pfad oder Datei:Zeile, nie dem Inhalt; die Git-Hooks,
               <code>task-close.sh</code> und der CI-Job &bdquo;Public repo guard&ldquo; fahren ihn</td></tr>
               <tr><td><code>review.sh risk</code></td><td>Ber&uuml;hrt der Diff einen Risikopfad
               (<code>scripts/dev/review-risk.txt</code>, die Harness-Pfade eingeschlossen)?</td><td><code>xhigh</code>
