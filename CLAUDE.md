@@ -11,7 +11,7 @@ Ansible-Playbooks zentral. Lauffähiges liegt unter `apps/`, Doku unter `docs/` 
 | Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest -q` · ruff wie oben |
 | CA-Issuer (PKI fürs mTLS-Enrollment) | `apps/ca-issuer/` | Python · FastAPI · cryptography | `pytest -q` · ruff wie oben |
 | Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `gofmt -l .` · `go vet ./...` · `go test ./...` |
-| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo fmt` · `cargo clippy -- -D warnings` · `cargo test` |
+| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo fmt` · `cargo clippy --all-targets -- -D warnings` · `cargo test` |
 | Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript strict · Vite | `npm run check` · `npm run lint` · `npm run test` |
 | Web-Frontend | `apps/web/` | Svelte · TypeScript strict · Vite | `npm run check` · `npm run lint` · `npm run test:unit` · E2E `npm run test:e2e` |
 | Gateway (Reverse-Proxy, mTLS, Ratelimit) | `apps/gateway/` | nginx | `nginx -t`; real nur in `scripts/tests/integration_stack_test.sh` |

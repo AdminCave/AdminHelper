@@ -19,7 +19,7 @@ Thanks for your interest in AdminHelper!
   - Web frontend (`apps/web/`): `npm run check`, `npm run lint`,
     `npm run test:unit`, `npm run test:e2e`
   - Desktop backend (`apps/desktop/src-tauri/`): `cargo fmt --check`,
-    `cargo clippy -- -D warnings`, `cargo test`
+    `cargo clippy --all-targets -- -D warnings`, `cargo test`
 - **Docs:** user-facing changes must update `docs/` in **both** languages
   (DE + EN) and the relevant `README.md` / `DEVELOPMENT.md` sections, in the
   same commit as the code change.

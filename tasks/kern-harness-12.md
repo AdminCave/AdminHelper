@@ -10,6 +10,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   deckt die Harness-Pfade dieses Zugs und den Merge, auch `.github/workflows/ci.yml` aus R-1096 (die Zeile nennt
   `ci.yml` in ihrer Quelle).
 - R-1753 und R-1189 fahren nicht mit (verschoben 2026-11-26: kern-harness-11 bzw. kern-ruff-1).
+- T3: `cargo clippy --all-targets -- -D warnings` fand im Testcode nichts; keine Rust-Datei aendert sich. cicd.html nennt nur `fmt`/`clippy`/`test`, keinen Aufruf: keine Doku-Aenderung; geaendert sind nur run.sh und ci.yml.
 
 ### T1 — Texte: frps-Image im test-Skill, Pflicht-Checks in feature-build und cicd  [x]
 Komponente: scripts · Dateien: .claude/skills/test/SKILL.md, .claude/skills/feature-build/SKILL.md, docs/developer/cicd.html, docs/en/developer/cicd.html
@@ -29,8 +30,10 @@ Beweis: R-0745, R-1123 (reg-2026-11-03-backup-restore-crown-jewel-DR, 42 Zeichen
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (interne Harness-Logik, kein dokumentiertes Verhalten)
 
-### T3 — clippy mit --all-targets in run.sh und CI  [ ]
-Komponente: desktop-rs · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html (dazu die Rust-Dateien unter apps/desktop/src-tauri/, die clippy im Testcode beanstandet; per set-files nachgetragen)
+### T3 — clippy mit --all-targets in run.sh und CI  [x]
+Komponente: desktop-rs · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html (dazu die Rust-Dateien unter apps/desktop/src-tauri/, die clippy im Testcode beanstandet; per set-files nachgetragen), CONTRIBUTING.md, CLAUDE.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @57a62e02c 2026-11-26T11:23:41+01:00
+Review: approve (.ah-out/review/kern-harness-12/T3.verdict.json)
 Änderung: `cargo clippy --all-targets -- -D warnings` in `run.sh` (desktop-cargo) und im CI-Job Desktop-Backend; die Funde im Testcode beheben, ohne einen Test abzuschwaechen.
 Beweis: Dedup-Key ref:harness:scripts/tests/run.sh:desktop-cargo (R-1096)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
