@@ -106,7 +106,8 @@ export AH_ONLY AH_STRICT
 #              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
 #              vm-pytest · dev-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build · upgrade-path · stack-pytest · web-live
+#                agent-monitoring · repo-build · pkg-repo-build · upgrade-path · stack-pytest
+#                web-live
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
@@ -124,7 +125,7 @@ AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 # went green with the heavy steps silently SKIPped: the default set above only
 # names lint/unit ids, and iter.sh forwards AH_REQUIRED from the client,
 # where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
-AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path stack-pytest web-live"
+AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build pkg-repo-build upgrade-path stack-pytest web-live"
 # The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
 # hand-kept list would let a ninth suite run without being required, and its
 # self-SKIP would be green again — the very hole this block closes.
@@ -426,8 +427,9 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     DATABASE_URL or AH_TEST_DB, and which can also fall back to testcontainers.
 #   test_stream_redis         needs a reachable Redis at the URL it reads
 #     (AH_TEST_REDIS_URL, else the PR CI's localhost:6380).
-#   test_db_token_store       needs AH_TEST_DB to point at a real Postgres; the
-#     TOCTOU test needs true concurrency, so SQLite is not a substitute.
+#   test_db_token_store       needs a real Postgres in DATABASE_URL or AH_TEST_DB
+#     (the suite's _postgres_url); the TOCTOU test needs true concurrency, so its
+#     SQLite fallback is not a substitute.
 #   test_alembic_builtin      pytest-alembic builds the chain in a throwaway database
 #     of its own; without a Postgres in DATABASE_URL there is no server to create
 #     it on.
@@ -452,8 +454,8 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # (a SQLite URL makes FOR UPDATE a no-op), so a run with such a URL skips honestly
 # — and calling that strict-failed would be a red with nothing behind it. A
 # postgres elsewhere in the URL (sqlite:///…/postgres/x.db) is no Postgres.
-# test_db_token_store keeps *postgres*: its fixture skips unless "postgres" is
-# anywhere in AH_TEST_DB, and the rule mirrors the test.
+# test_db_token_store mirrors _postgres_url of the ca-issuer conftest: the first of
+# DATABASE_URL and AH_TEST_DB that starts with postgres; the step passes both on.
 # The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
 # redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
 redis_reachable() {
@@ -472,7 +474,8 @@ test_skip_is_required() {  # test_skip_is_required <step id> <skip line> -> 0 if
     *test_migrations_smoke*)     [ -n "$db" ] ;;
     *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
     *test_stream_redis*)         redis_reachable ;;
-    *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_db_token_store*)       case "${DATABASE_URL:-}" in postgres*) return 0 ;; esac
+                                 case "${AH_TEST_DB:-}" in postgres*) return 0 ;; *) return 1 ;; esac ;;
     *test_check_engine_concurrency*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
     *test_alembic_builtin*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
     *test_db_session_utc*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
@@ -728,7 +731,9 @@ layer_lint() {
 
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
-    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh
+    # The same paths as the CI job ops-scripts; the frps supervisor runs under the busybox sh
+    # of its image, so it is checked as POSIX sh there too.
+    run_step shellcheck "shellcheck (ops scripts)" -- bash -c 'shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh .github/scripts/*.sh apps/*/docker-entrypoint.sh && shellcheck --severity=warning -s sh apps/frps/frps-supervisor.sh'
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
@@ -749,7 +754,7 @@ session_status_test run_flags_test verify_test log_digest_test harness_consisten
 desktop_e2e_skip_test check_versions_test image_pins_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
 multibox_test worktree_setup_test pg_url_test schemathesis_determinism_test nightly_test
-.github/scripts/retry_test .github/scripts/apt_archives_verify_test .github/scripts/tauri_cli_pins_test
+build_pkg_tool_test .github/scripts/retry_test .github/scripts/apt_archives_verify_test .github/scripts/tauri_cli_pins_test
 .github/scripts/cache_settings_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
@@ -863,8 +868,8 @@ layer_unit() {
           # Only the server suite gets a Postgres. For the others DATABASE_URL is
           # actively REMOVED, not merely left unset: a caller that exports it — the
           # CI job does, because the server needs it — would otherwise point
-          # monitoring at a Postgres it is not written for. Its suite is SQLite by
-          # design, and the value silently changes what its app connects to.
+          # the monitoring app at that Postgres. Its fuzz suite brings its own SQLite
+          # engine, and the value would silently change what the app connects to.
           if [ "$d" = apps/server ]; then
             export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"
           else
@@ -1005,6 +1010,8 @@ layer_integration() {
   run_step sse-push "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
   run_step agent-monitoring "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
   run_step repo-build "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
+  # Without PKG_TOOL_PREFIX the test builds pkg in a container first (a few minutes).
+  run_step pkg-repo-build "pkg_repo_build (FreeBSD pkg + sign)" -- bash scripts/tests/pkg_repo_build_test.sh
   # The only step that starts from a PUBLISHED release rather than from scratch:
   # both services migrate on startup, so a migration that only works on an empty
   # database is invisible to every other suite here. Needs the network (ghcr +

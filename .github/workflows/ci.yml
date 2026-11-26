@@ -154,7 +154,7 @@ jobs:
         # run.sh step; collected here it would run a second time inside this job.
         # -rs names each skip in the log; the next step reads the skips from the JUnit XML.
         # Each shard reports the coverage of its part only. --durations names the slowest tests.
-        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json" --cov=app --cov-report=term --durations=25 --junitxml="$RUNNER_TEMP/pytest-server.xml"
+        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json" --cov=app --cov=ah_common --cov-report=term --durations=25 --junitxml="$RUNNER_TEMP/pytest-server.xml"
       # A test whose precondition is missing skips, and pytest stays green. This leg has them
       # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
       # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
@@ -289,7 +289,8 @@ jobs:
       # For the tests that need a real Postgres: test_migrations_smoke and
       # test_alembic_builtin (the migration chain), test_check_engine_concurrency
       # (the FOR UPDATE row lock) and test_db_session_utc (the session time zone).
-      # The rest of the monitoring suite runs on SQLite.
+      # Through the DATABASE_URL of the job, the database tests run on it in a database of
+      # their own (_postgres_url in tests/conftest.py); the tests without one need none.
       postgres:
         image: postgres:18-alpine
         env:
@@ -322,7 +323,7 @@ jobs:
       - name: Run pytest
         working-directory: apps/monitoring
         # Coverage is report-only (no threshold) — visibility, not a gate.
-        run: python -m pytest -q -m "not schemathesis" --cov=app --cov-report=term
+        run: python -m pytest -q -m "not schemathesis" --cov=app --cov=ah_common --cov-report=term
 
   ca-issuer:
     name: CA-Issuer (pytest)
@@ -363,9 +364,9 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run pytest
         working-directory: apps/ca-issuer
-        # The suite runs on the in-memory token store (no DATABASE_URL, 6.3/6.4). The pg_engine
-        # tests of test_db_token_store.py (TOCTOU, concurrency) need the Postgres service
-        # through AH_TEST_DB and skip without it.
+        # The database tests, those of test_db_token_store.py (TOCTOU, concurrency) included,
+        # run on the Postgres service through AH_TEST_DB in a database of their own
+        # (_postgres_url in tests/conftest.py); the tests without one use the in-memory token store.
         run: python -m pytest -q -m "not schemathesis"
 
   # The images install the hashed lock on python:3.14-slim; the three jobs above
@@ -705,7 +706,9 @@ jobs:
   # The FreeBSD packages and the signed pkg repository (apps/agent/build-pkg.sh) with pkg built
   # from the freebsd/pkg sources, as the release builds them; the test signs with a throwaway key
   # and has pkg accept the catalogue with its public part and refuse it with a foreign one
-  # (R-1303). The prefix is cached on the build script, which pins tag, commit and dependencies.
+  # (R-1303). The prefix is cached on the build script, which pins tag, commit and dependencies,
+  # and on the runner image: a pkg built on another image is not restored (and the script runs
+  # pkg --version before it reuses a prefix).
   pkg-repo:
     name: FreeBSD pkg repo (build + signature)
     runs-on: ubuntu-26.04
@@ -719,10 +722,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             $(bash scripts/release/build-pkg-tool.sh --deps) openssl
+      - id: image
+        name: Runner image
+        run: echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/pkg-tool
-          key: pkg-tool-ubuntu-26.04-${{ hashFiles('scripts/release/build-pkg-tool.sh') }}
+          key: pkg-tool-${{ steps.image.outputs.image }}-${{ hashFiles('scripts/release/build-pkg-tool.sh') }}
       - name: Build pkg from source
         run: bash scripts/release/build-pkg-tool.sh "$HOME/pkg-tool"
       - name: Build and verify the signed pkg repo
@@ -1078,7 +1084,8 @@ jobs:
       # one run to the next (apt_cache.sh). Its key is a hash over the archives the package set
       # needs, so a hit holds them all; a miss restores the newest entry of the prefix and is
       # saved under its own key, and a failed download saves what it fetched under
-      # <key>-partial-<run>-<attempt>, so the next run fetches only the rest. apt takes a cached
+      # <key>-partial-<run>-<attempt>, so the next run fetches only the archives that were not
+      # complete (a half-loaded one is dropped by the check below). apt takes a cached
       # archive whose size matches the index without hashing it, so apt_archives_verify.sh
       # keeps only those whose SHA256 the signed index names.
       - id: apt-key
@@ -1350,10 +1357,11 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # Audit C7: FRP_VERSION (+ artifact SHAs) is pinned in five places that must move
+  # Audit C7: FRP_VERSION (+ artifact SHAs) is pinned in six places that must move
   # in lockstep — drift breaks the tunnel at runtime, not in CI. The heavy-tier VM
   # bootstrap (scripts/vm/bootstrap_linux.sh) stages the same frpc sidecar
-  # and is the 4th pin; scripts/tests/freebsd_box.sh (frpc freebsd_amd64) the 5th.
+  # and is the 4th pin; scripts/tests/freebsd_box.sh (frpc freebsd_amd64) the 5th;
+  # PinnedVersion in apps/agent/internal/frpc/frpcpin.go the 6th.
   frp-consistency:
     name: Pinned versions + signing key in lockstep
     runs-on: ubuntu-26.04
@@ -1552,7 +1560,9 @@ jobs:
   ops-scripts:
     name: Ops scripts (shellcheck + update test)
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    # Above the key (10) and install (16) steps plus the rest of the job (~7 min): a crawling
+    # mirror ends in the install step, and the partial state is still saved (R-1641).
+    timeout-minutes: 40
     env:
       APT_PKGS: minisign gnome-keyring
     steps:
@@ -1571,7 +1581,8 @@ jobs:
       # the point: this job must not go green on a signature path that never ran.
       # gnome-keyring lets lib_e2e_stack_test.sh run its keyring cases against a
       # real daemon in a D-Bus session of the test's own; without it, the same SKIP.
-      # Both come through the apt archive cache of the job rust (apt_cache.sh).
+      # Both come through an apt archive cache (apt_cache.sh) as in the job rust, with a
+      # prefix of this job's own (apt-ops-).
       - id: apt-key
         name: apt cache key
         timeout-minutes: 10

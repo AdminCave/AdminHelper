@@ -379,6 +379,25 @@ for t in "test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engi
     || bad "${t%%.py*} skip, sqlite path with postgres: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
 done
 
+# test_db_token_store follows _postgres_url of the ca-issuer conftest: the first of
+# DATABASE_URL and AH_TEST_DB that starts with postgres (R-1748).
+TS="tests/test_db_token_store.py:101: kein Postgres (AH_TEST_DB) — der TOCTOU-Test braucht echte Nebenläufigkeit"
+ts_run() {  # ts_run <DATABASE_URL> <AH_TEST_DB>
+  OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="ca-issuer-pytest" \
+        DATABASE_URL="$1" AH_TEST_DB="$2" SHIM_SKIP="$TS" \
+        "$PYSHIM/bash" "$RUN" unit --strict --step "ca-issuer pytest" 2>&1); rc=$?
+}
+ts_run '' "sqlite:///$WORK/postgres/x.db"
+[ $rc -eq 0 ] && grep -q "1 test-skips" <<<"$OUT" && ! grep -q "strict-failed" <<<"$OUT" \
+  && ok "token-store skip under a SQLite AH_TEST_DB with postgres in its path is an honest test-skip" \
+  || bad "token-store skip, sqlite path with postgres: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+for pair in "|postgresql+psycopg://x@localhost/y" "postgresql://x@localhost/y|"; do
+  ts_run "${pair%%|*}" "${pair#*|}"
+  [ $rc -eq 1 ] && grep -q "strict-failed: .*test_db_token_store.*(test-skip)" <<<"$OUT" \
+    && ok "token-store skip with a Postgres in ${pair%%|*}${pair#*|} fails the run" \
+    || bad "token-store skip, postgres [$pair]: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+done
+
 # In the server step DATABASE_URL wins over AH_TEST_DB, as in the step itself: a
 # SQLite DATABASE_URL beside a Postgres AH_TEST_DB is no Postgres for the suite.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="server-pytest" \
