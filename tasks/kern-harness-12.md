@@ -1,5 +1,5 @@
 # Harness: Texte, heavy.sh, clippy, review.sh risk, approve und Test-Loeschung — Task-Ledger
-Status: geplant · Branch: feature/kern-harness-12 · Review: pro Task
+Status: aktiv · Branch: feature/kern-harness-12 · Review: pro Task
 Spec: docs/features/kern-harness-12.md (Roadmap R-0441, R-0578, R-0579, R-0580, R-0745, R-1096, R-1123, R-1754, R-1755)
 Heavy: none — Harness-Skripte und Texte; heavy.sh wird hermetisch in heavy_test.sh geprueft, clippy laeuft in der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
