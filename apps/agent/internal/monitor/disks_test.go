@@ -91,6 +91,9 @@ func TestBoundedStatsDoesNotWaitForTheDeadlineWhenAllAnswer(t *testing.T) {
 func TestBoundedStatsAsksAHungMountOnlyOnce(t *testing.T) {
 	hung := make(chan struct{})
 	released := make(chan struct{}, 2)
+	// The goroutine of the hung mount may not have run yet when the first run returns (a loaded
+	// runner under -race, R-1820): the test waits for it to reach stat before it counts.
+	entered := make(chan struct{}, 2)
 	var mu sync.Mutex
 	asks := map[string]int{}
 	stat := func(m string) (fsStat, error) {
@@ -98,6 +101,7 @@ func TestBoundedStatsAsksAHungMountOnlyOnce(t *testing.T) {
 		asks[m]++
 		mu.Unlock()
 		if m == "/mnt/once-hung" {
+			entered <- struct{}{}
 			<-hung
 		}
 		return fsStat{Mount: m}, nil
@@ -120,6 +124,11 @@ func TestBoundedStatsAsksAHungMountOnlyOnce(t *testing.T) {
 	mounts := []string{"/mnt/once-ok", "/mnt/once-hung"}
 	if got := boundedStats(mounts, deadline, stat); len(got) != 1 || got[0].Mount != "/mnt/once-ok" {
 		t.Fatalf("first run = %+v, want /mnt/once-ok only", got)
+	}
+	select {
+	case <-entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the stat of the hung mount never started")
 	}
 
 	// The hung mount is not asked: the run ends without a deadline, since all it asked answered.
