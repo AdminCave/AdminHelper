@@ -39,8 +39,10 @@ Beweis: Dedup-Key ref:harness:scripts/tests/run.sh:desktop-cargo (R-1096)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html (nur falls dort der clippy-Aufruf steht)
 
-### T4 — review.sh risk: --range A..B ab der Merge-Base  [ ]
+### T4 — review.sh risk: --range A..B ab der Merge-Base  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b6d08ffb0 2026-11-26T11:29:04+01:00
+Review: approve (.ah-out/review/kern-harness-12/T4.verdict.json)
 Änderung: `risk --range A..B` und `A...B` diffen ab `git merge-base A B`; die Musterliste kommt weiter vom Basis-Stand. Test: main rueckt nach dem Abzweigen mit einer Risikodatei vor → `risk --range main..branch` zaehlt sie nicht.
 Beweis: R-1755
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
