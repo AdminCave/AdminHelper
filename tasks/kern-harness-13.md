@@ -1,5 +1,5 @@
 # Harness: veraltete Verweise, Toolchain-Gleichlauf, Multi-Worker-Stack, Pflicht-Checks — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-13 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-13 · Review: pro Task
 Spec: docs/features/kern-harness-13.md (Roadmap R-0377, R-1419, R-1060, R-0843, R-1753)
 Heavy: none — Harness-Skripte und Texte; der Stack-Abschnitt laeuft im PR-Job integration-stack, die Lockstep- und Konsistenz-Pruefungen hermetisch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,8 +61,10 @@ Review: approve (.ah-out/review/kern-harness-13/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: → T5
 
-### T5 — Doku: Toolchain-Lockstep, Multi-Worker-Stack und Pflicht-Check-Liste (R-1419, R-1060, R-0843, R-1753)  [ ]
+### T5 — Doku: Toolchain-Lockstep, Multi-Worker-Stack und Pflicht-Check-Liste (R-1419, R-1060, R-0843, R-1753)  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7ab41afc7 2026-11-26T22:46:22+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Lockstep-Absatz (Go-Patch gleich der go.mod-Toolchain statt „Patch frei“, Box-Python gleich dem
 Dockerfile-Python), Stack-Test (Multi-Worker-Abschnitt) und Ruleset-Absatz (Liste und ihre Prüfung), DE+EN.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
