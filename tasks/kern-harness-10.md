@@ -35,8 +35,10 @@ Beweis: .ah-out/weekly/2026-11-10-1027/gui/last.out.log:392 (`no space left on d
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: → T6
 
-### T3 — Marker ohne Zufallsport; build_failed nur am wdio-Hook (R-1421, R-1672)  [ ]
+### T3 — Marker ohne Zufallsport; build_failed nur am wdio-Hook (R-1421, R-1672)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1747d4cf2 2026-11-26T15:00:31+01:00
+Review: approve (.ah-out/review/kern-harness-10/T3.verdict.json)
 Änderung: `first_marker` (heavy.sh:707) ersetzt `tcp-<Ziffern>` durch `tcp-<port>`; `build_failed` (heavy.sh:722)
 bekommt den Schritt und greift nur bei Desktop-Spec-Schritten und der Hook-Zeile
 `Error in hook: SevereServiceError: tauri build failed`. Faelle mit Gegenprobe in heavy_test.sh.

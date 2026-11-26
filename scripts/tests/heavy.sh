@@ -709,8 +709,9 @@ RETRIES=3
 # must fail the same WAY, not merely fail — a step that breaks differently each
 # time is not a stable candidate for a regression claim.
 first_marker() {  # first_marker <logfile>
+  # A random port (`tcp-NNNNN`) differs on every retry of the same fault (R-1421).
   grep -aE '^[[:space:]]*(FAIL|strict-failed:|FEHLER|Error:)' "$1" 2>/dev/null \
-    | head -1 | sed 's/^[[:space:]]*//'
+    | head -1 | sed -E 's/^[[:space:]]*//; s/tcp-[0-9]+/tcp-<port>/g'
 }
 
 # A rerun by name that run.sh rejected in its dry pass (R-1206): the step never
@@ -722,9 +723,11 @@ step_unaddressable() {  # step_unaddressable <logfile>
 
 # A desktop spec whose `tauri build` failed runs against whatever binary the box
 # still holds, so its red result says nothing about the commit (R-1667: a missing
-# sidecar on the base hid a regression as `extern`).
-build_failed() {  # build_failed <logfile>
-  grep -aqF 'tauri build failed' "$1" 2>/dev/null
+# sidecar on the base hid a regression as `extern`). Only the wdio hook of a
+# desktop spec step says so (R-1672): the launcher unit test prints the same words.
+build_failed() {  # build_failed <step> <logfile>
+  case "$1" in desktop_e2e_*|"desktop-e2e smoke") ;; *) return 1 ;; esac
+  grep -aqF 'HookError [SevereServiceError]: tauri build failed' "$2" 2>/dev/null
 }
 
 # Desktop suites report per spec (`spec <name>: fail`), so the retry can target
@@ -926,7 +929,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  second box: run.sh rejected the step name — candidate stays unconfirmed"
     w2_teardown; return 0
   fi
-  if [ "$rc" != 0 ] && build_failed "$OUT/w2-head-$safe.log"; then
+  if [ "$rc" != 0 ] && build_failed "$step" "$OUT/w2-head-$safe.log"; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); tauri build failed on the second box"
     note "  second box: tauri build failed — the spec ran against an old binary, candidate stays unconfirmed"
     w2_teardown; return 0
@@ -955,7 +958,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  base ${base:0:8}: run.sh rejected the step name — no counter-check, candidate stays unconfirmed"
     w2_teardown; return 0
   fi
-  if [ "$rc" != 0 ] && build_failed "$OUT/w2-base-$safe.log"; then
+  if [ "$rc" != 0 ] && build_failed "$step" "$OUT/w2-base-$safe.log"; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="red on two boxes; tauri build failed on base ${base:0:8}"
     note "  base ${base:0:8}: tauri build failed — no counter-check, candidate stays unconfirmed"
     w2_teardown; return 0

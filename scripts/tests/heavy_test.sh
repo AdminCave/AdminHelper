@@ -573,6 +573,26 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 grep -q 'AH_SPEC=theme-toggle' "$SHIM_STATE/iter.args" \
   && ok "the desktop retry names the failing spec" || bad "retry args: $(cat "$SHIM_STATE/iter.args")"
 
+# ── 4f2: a random port in the marker is no different fault (R-1421) ──────────
+port_case() {  # port_case <port2> <port3> <port4>
+  mk_case
+  export SHIM_ITER_SEQ="1 1 1 1" SHIM_W2_HEAD_RC=0
+  export SHIM_ITER_OUT1="  FAIL  web vitest
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+  export SHIM_ITER_OUT2="  FAIL tunnel tcp-$1 refused" SHIM_ITER_OUT3="  FAIL tunnel tcp-$2 refused"
+  export SHIM_ITER_OUT4="  FAIL tunnel tcp-$3 refused"
+  artifact "web vitest:fail:19"
+}
+port_case 40113 51207 33480
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' && grep -qF 'FAIL tunnel tcp-<port> refused' <<<"$out" \
+  && ok "markers differing only in the port -> candidate" || bad "port markers: $(history_of)"
+port_case 40113 40113 40113
+export SHIM_ITER_OUT4="  FAIL session tcp-40113 refused"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,fail,' \
+  && ok "markers differing beyond the port stay differing" || bad "differing markers: $(history_of)"
+
 # ── 4g: the second VM ─────────────────────────────────────────────────────────
 # Shared setup for the candidate cases: red three times on the first box.
 candidate_case() {
@@ -725,25 +745,55 @@ report_of | grep -qF 'step not addressable by --step on base' \
 # ── 4g3: a second-box run whose tauri build failed is no evidence (R-1667) ───
 # The Sammellauf of 2026-11-20: the base build lacked the frpc sidecar, the spec
 # ran against an old binary, and a real regression was reported as `extern`.
-candidate_case
+# Only a desktop spec step builds through the wdio hook (R-1672).
+desktop_candidate_case() {
+  mk_case
+  export SHIM_ITER_SEQ="1 1 1 1"
+  export SHIM_ITER_OUT="  FAIL  desktop_e2e_misc"
+  export SHIM_ITER_OUT1="  FAIL  desktop_e2e_misc
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+  artifact "desktop_e2e_misc:fail:120"
+}
+HOOK_LINE="ERROR @wdio/cli:launcher: HookError [SevereServiceError]: tauri build failed (1)"
+desktop_candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
-export SHIM_W2_BASE_OUT="HookError [SevereServiceError]: tauri build failed (1)"
+export SHIM_W2_BASE_OUT="$HOOK_LINE"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-history_of | grep -q ',all,web vitest,unbestaetigt,' \
+history_of | grep -q ',all,desktop_e2e_misc,unbestaetigt,' \
   && ok "the base build failed -> unbestaetigt, not extern" || bad "rows: $(history_of)"
 report_of | grep -qF 'tauri build failed on base' \
   && ok "the report says the base was not built" || bad "table: $(report_of | grep '^| all')"
 
-candidate_case
+desktop_candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
-export SHIM_W2_HEAD_OUT="HookError [SevereServiceError]: tauri build failed (1)"
+export SHIM_W2_HEAD_OUT="$HOOK_LINE"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-history_of | grep -q ',all,web vitest,unbestaetigt,' \
+history_of | grep -q ',all,desktop_e2e_misc,unbestaetigt,' \
   && ok "the HEAD build failed on the second box -> unbestaetigt, not reg" || bad "rows: $(history_of)"
 [ "$(cat "$SHIM_STATE/w2.n")" = 1 ] \
   && ok "no counter-check after HEAD was not built" || bad "$(cat "$SHIM_STATE/w2.n") w2 runs"
+
+# The same hook line in a step that is no desktop spec (a unit test printing it):
+# the base is a counter-check like any other.
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+export SHIM_W2_BASE_OUT="$HOOK_LINE"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,extern,' \
+  && ok "the hook line outside a desktop spec step is no failed build" || bad "rows: $(history_of)"
+
+# A desktop spec step whose log carries the words without the hook (the launcher
+# unit test's message): no failed build either.
+desktop_candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+export SHIM_W2_BASE_OUT="AssertionError: expected tauri build failed (1) in the output"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,desktop_e2e_misc,extern,' \
+  && ok "the bare words without the hook are no failed build" || bad "rows: $(history_of)"
 
 # ── 4h: a confirmed regression becomes a roadmap row + a short ledger ────────
 roadmap_of() { cat "$AH_PRIVATE_DIR/ROADMAP.md" 2>/dev/null; }
