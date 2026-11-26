@@ -245,7 +245,7 @@ func TestReprovisionStoresTheHashOfTheBundleText(t *testing.T) {
 // frpc may run.
 func TestReprovisionWarnsWhenSystemctlDoesNotAnswer(t *testing.T) {
 	calls := setupSyncTest(t, "https://srv.example")
-	isActive = func(context.Context) (bool, error) {
+	frpcService.active = func(context.Context) (bool, error) {
 		return false, errors.New("systemctl is-active frpc.service: context deadline exceeded")
 	}
 	out := captureLog(t)
@@ -289,9 +289,9 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 			calls := setupSyncTest(t, "https://srv.example")
 			calls.active = tc.running
 			tc.prepare(t)
-			restart, enable := restartService, enableService
-			restartService = func(context.Context) error { return errors.New("systemctl failed") }
-			enableService = restartService
+			restart, enable := frpcService.restart, frpcService.enable
+			frpcService.restart = func(context.Context) error { return errors.New("systemctl failed") }
+			frpcService.enable = frpcService.restart
 			out := captureLog(t)
 
 			// R-1682: Apply reports the failed start to provision, which then prints no success line.
@@ -312,7 +312,7 @@ func TestReprovisionWarnsWhenStartingFrpcFails(t *testing.T) {
 				t.Errorf("hash file is still there (stat: %v), want it removed", err)
 			}
 
-			restartService, enableService = restart, enable
+			frpcService.restart, frpcService.enable = restart, enable
 			srv, fetches := hashServer(t, `{"hash":"`+hashConfig(bundleToml)+`"}`, bundleToml)
 			pointSyncAt(t, srv.URL)
 			if err := Sync(context.Background()); err != nil {
@@ -390,8 +390,8 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 			calls := setupSyncTest(t, "https://srv.example")
 			writeFrpcState(t)
 			calls.active = true
-			disable := disableService
-			disableService = func(context.Context) error { return errors.New("systemctl failed") }
+			disable := frpcService.disable
+			frpcService.disable = func(context.Context) error { return errors.New("systemctl failed") }
 			out := captureLog(t)
 
 			if err := tc.provision(); !errors.Is(err, ErrServiceDeferred) {
@@ -409,7 +409,7 @@ func TestReprovisionWarnsWhenStoppingFrpcFails(t *testing.T) {
 				t.Errorf("hash file is still there (stat: %v), want it removed", err)
 			}
 
-			disableService = disable
+			frpcService.disable = disable
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			pointSyncAt(t, srv.URL)
 			if err := Sync(context.Background()); err != nil {

@@ -43,18 +43,16 @@ func setupSyncTest(t *testing.T, srvURL string) *seamCalls {
 	frpDirSecured.Store(false)
 	t.Cleanup(func() { frpDirSecured.Store(false) })
 	calls := &seamCalls{}
-	origRestart, origDisable, origEnable, origActive := restartService, disableService, enableService, isActive
-	origReload, origDown, origOwns := reloadService, isDown, ownsAdminPort
-	restartService = func(context.Context) error { calls.restarts++; calls.active = true; return nil }
-	disableService = func(context.Context) error { calls.disables++; calls.active = false; return nil }
-	enableService = func(context.Context) error { calls.enables++; calls.active = true; return nil }
-	isActive = func(context.Context) (bool, error) { return calls.active, nil }
-	reloadService = func(context.Context) error { calls.reloads++; return nil }
-	isDown = func(context.Context) (bool, error) { return !calls.active, nil }
-	ownsAdminPort = func(int) bool { return true }
+	orig := frpcService
+	frpcService.restart = func(context.Context) error { calls.restarts++; calls.active = true; return nil }
+	frpcService.disable = func(context.Context) error { calls.disables++; calls.active = false; return nil }
+	frpcService.enable = func(context.Context) error { calls.enables++; calls.active = true; return nil }
+	frpcService.active = func(context.Context) (bool, error) { return calls.active, nil }
+	frpcService.reload = func(context.Context) error { calls.reloads++; return nil }
+	frpcService.down = func(context.Context) (bool, error) { return !calls.active, nil }
+	frpcService.ownsAdminPort = func(int) bool { return true }
 	t.Cleanup(func() {
-		restartService, disableService, enableService, isActive = origRestart, origDisable, origEnable, origActive
-		reloadService, isDown, ownsAdminPort = origReload, origDown, origOwns
+		frpcService = orig
 	})
 	return calls
 }
@@ -232,8 +230,8 @@ func TestSyncKeepsOldHashWhenStartingFrpcFails(t *testing.T) {
 			calls := setupSyncTest(t, srv.URL)
 			writeFrpcState(t)
 			calls.active = active
-			enableService = func(context.Context) error { return errors.New("systemctl failed") }
-			restartService = func(context.Context) error { return errors.New("systemctl failed") }
+			frpcService.enable = func(context.Context) error { return errors.New("systemctl failed") }
+			frpcService.restart = func(context.Context) error { return errors.New("systemctl failed") }
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 
 			if err := Sync(context.Background()); err == nil {
@@ -357,8 +355,8 @@ func TestSyncFrpcSystemctlWithoutAnswerChangesNothing(t *testing.T) {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
-	isDown = func(context.Context) (bool, error) { return false, noAnswer }
-	ownsAdminPort = func(int) bool { return false }
+	frpcService.down = func(context.Context) (bool, error) { return false, noAnswer }
+	frpcService.ownsAdminPort = func(int) bool { return false }
 	fetches := serveToml(t, twoTunnelsToml)
 	files, actions := frpFiles(t), *calls
 
@@ -386,10 +384,10 @@ func TestSyncReloadsWithoutAnswerFromSystemd(t *testing.T) {
 		t.Fatalf("Sync with two tunnels: %v", err)
 	}
 	noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
-	isDown = func(context.Context) (bool, error) { return false, noAnswer }
-	isActive = func(context.Context) (bool, error) { return false, noAnswer }
+	frpcService.down = func(context.Context) (bool, error) { return false, noAnswer }
+	frpcService.active = func(context.Context) (bool, error) { return false, noAnswer }
 	var atReload string
-	reloadService = func(context.Context) error {
+	frpcService.reload = func(context.Context) error {
 		calls.reloads++
 		atReload = readFile(t, config.FrpConfigFile())
 		return nil
@@ -430,9 +428,9 @@ func TestSyncWithoutAnswerFromSystemdNoReloadKeepsTheHash(t *testing.T) {
 				t.Fatalf("Sync with the first tunnel: %v", err)
 			}
 			noAnswer := errors.New("systemctl is-active frpc.service: context deadline exceeded")
-			isDown = func(context.Context) (bool, error) { return false, noAnswer }
-			isActive = func(context.Context) (bool, error) { return false, noAnswer }
-			reloadService = func(context.Context) error { calls.reloads++; return c.reload }
+			frpcService.down = func(context.Context) (bool, error) { return false, noAnswer }
+			frpcService.active = func(context.Context) (bool, error) { return false, noAnswer }
+			frpcService.reload = func(context.Context) error { calls.reloads++; return c.reload }
 			serveToml(t, c.next)
 			before := *calls
 
@@ -460,9 +458,9 @@ func TestSyncEndedDuringReloadKeepsTheStartedRecord(t *testing.T) {
 	started := readFile(t, startedHashFile())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	reload := reloadService
-	reloadService = func(ctx context.Context) error { cancel(); return ctx.Err() }
-	restartService = func(ctx context.Context) error { calls.restarts++; return ctx.Err() }
+	reload := frpcService.reload
+	frpcService.reload = func(ctx context.Context) error { cancel(); return ctx.Err() }
+	frpcService.restart = func(ctx context.Context) error { calls.restarts++; return ctx.Err() }
 	serveToml(t, twoTunnelsToml)
 
 	if err := Sync(ctx); !errors.Is(err, context.Canceled) {
@@ -475,7 +473,7 @@ func TestSyncEndedDuringReloadKeepsTheStartedRecord(t *testing.T) {
 		t.Fatalf("started record = %q, want it kept %q", got, started)
 	}
 
-	reloadService = reload
+	frpcService.reload = reload
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("next Sync: %v", err)
 	}
@@ -668,7 +666,7 @@ func TestSyncKeepsFilesWhenStoppingFrpcFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			setupSyncTest(t, srv.URL)
-			disableService = func(context.Context) error { return errors.New("systemctl failed") }
+			frpcService.disable = func(context.Context) error { return errors.New("systemctl failed") }
 			writeFrpcState(t)
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 
@@ -704,7 +702,7 @@ func TestReloadWhenOnlyProxiesChange(t *testing.T) {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	var atReload string
-	reloadService = func(context.Context) error {
+	frpcService.reload = func(context.Context) error {
 		calls.reloads++
 		atReload = readFile(t, config.FrpConfigFile())
 		return nil
@@ -754,7 +752,7 @@ func TestReloadFailureRestartsFrpc(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
-	reloadService = func(context.Context) error { calls.reloads++; return errors.New("api status code [401]") }
+	frpcService.reload = func(context.Context) error { calls.reloads++; return errors.New("api status code [401]") }
 	out := captureLog(t)
 
 	serveToml(t, twoTunnelsToml)
@@ -783,12 +781,12 @@ func TestReloadNotAfterAFailedRestart(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("Sync with the tunnel: %v", err)
 	}
-	restart := restartService
-	restartService = func(context.Context) error { return errors.New("systemctl failed") }
+	restart := frpcService.restart
+	frpcService.restart = func(context.Context) error { return errors.New("systemctl failed") }
 	if err := applyBundle(bundleToml); !errors.Is(err, ErrServiceDeferred) {
 		t.Fatalf("Apply with a failing restart = %v, want ErrServiceDeferred", err)
 	}
-	restartService = restart
+	frpcService.restart = restart
 
 	serveToml(t, bundleToml) // Apply pointed the sync config at its own URL
 	if err := Sync(context.Background()); err != nil {
@@ -1188,7 +1186,7 @@ func TestReloadOnlyWhenFrpcHoldsTheAdminPort(t *testing.T) {
 		t.Fatalf("Sync with the first tunnel: %v", err)
 	}
 	checked := 0
-	ownsAdminPort = func(port int) bool { checked = port; return false }
+	frpcService.ownsAdminPort = func(port int) bool { checked = port; return false }
 
 	serveToml(t, twoTunnelsToml)
 	if err := Sync(context.Background()); err != nil {
@@ -1453,7 +1451,7 @@ func TestRefusalStaysAnErrorWhenStoppingFrpcFails(t *testing.T) {
 			serveToml(t, refused)
 			writeFrpcState(t)
 			calls.active = true
-			disableService = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
+			frpcService.disable = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
 
 			err := run()
 			if err == nil {
@@ -1482,8 +1480,8 @@ func TestStopFrpcDropsTheTunnelsWhenSystemdFails(t *testing.T) {
 			oldHash, _ := os.ReadFile(config.FrpHashFile())
 			srv, _ := hashServer(t, `{"hash": null}`, nil)
 			pointSyncAt(t, srv.URL)
-			disableService = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
-			ownsAdminPort = func(int) bool { return owns }
+			frpcService.disable = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
+			frpcService.ownsAdminPort = func(int) bool { return owns }
 			reloads := calls.reloads
 
 			err := Sync(context.Background())
@@ -1511,7 +1509,7 @@ func TestStopFrpcDropsTheTunnelsWhenSystemdFails(t *testing.T) {
 				t.Errorf("frpc.toml = %q, want the common part %q", got, commonPart(withTunnel))
 			}
 
-			disableService = func(context.Context) error { calls.disables++; return nil }
+			frpcService.disable = func(context.Context) error { calls.disables++; return nil }
 			if err := Sync(context.Background()); err != nil {
 				t.Fatalf("next Sync: %v", err)
 			}
@@ -1530,8 +1528,8 @@ func TestStopFrpcReportsAFailedTunnelDrop(t *testing.T) {
 	if err := Sync(context.Background()); err != nil {
 		t.Fatalf("first Sync: %v", err)
 	}
-	disableService = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
-	reloadService = func(context.Context) error { return errors.New("reload refused") }
+	frpcService.disable = func(context.Context) error { calls.disables++; return errors.New("systemctl failed") }
+	frpcService.reload = func(context.Context) error { return errors.New("reload refused") }
 
 	err := stopFrpc(context.Background())
 	if !errors.Is(err, errFrpcService) || !strings.Contains(err.Error(), "reload refused") {
@@ -1539,7 +1537,7 @@ func TestStopFrpcReportsAFailedTunnelDrop(t *testing.T) {
 	}
 
 	// The file is without proxies now, frpc still runs with them: the next run reloads again.
-	reloadService = func(context.Context) error { calls.reloads++; return nil }
+	frpcService.reload = func(context.Context) error { calls.reloads++; return nil }
 	reloads := calls.reloads
 	if err := stopFrpc(context.Background()); !errors.Is(err, errFrpcService) {
 		t.Errorf("second stopFrpc = %v, want the failed stop as errFrpcService", err)

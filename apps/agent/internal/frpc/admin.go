@@ -59,7 +59,7 @@ func adminAPIListens() bool {
 		return false
 	}
 	api, ok := parseAdminAPI(kv)
-	return ok && ownsAdminPort(api.port)
+	return ok && frpcService.ownsAdminPort(api.port)
 }
 
 // renewAdminAPI writes admin.conf with a free port on loopback and a new password. Sync also
