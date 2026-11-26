@@ -61,19 +61,19 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/skills/test/SKILL.md
 Task-Review: am Ende
 
-### T7 — run.sh evidence_field nimmt den Client zuerst (R-0121)  [ ]
+### T7 — run.sh evidence_field nimmt den Client zuerst (R-0121)  [~] (bereits behoben: f7b417cd4)
 Komponente: scripts · Dateien: scripts/tests/run.sh
 Änderung: keine; behoben durch f7b417cd4 (run.sh:561-573).
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (behoben)
 
-### T8 — schemathesis nie quarantaeniert (R-1128)  [ ]
+### T8 — schemathesis nie quarantaeniert (R-1128)  [~] (bereits behoben: R-1337 (181ff3f15))
 Komponente: scripts · Dateien: scripts/tests/heavy.sh
 Änderung: keine; behoben durch R-1337 (classify_red_step: schemathesis wird `fund`, ohne Retry).
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (behoben)
 
-### T9 — --step schemathesis installiert selbst (R-1133)  [ ]
+### T9 — --step schemathesis installiert selbst (R-1133)  [~] (bereits behoben: e36e45015)
 Komponente: scripts · Dateien: scripts/tests/run.sh
 Änderung: keine; behoben durch e36e45015 (run.sh:815-819, R-1338).
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
