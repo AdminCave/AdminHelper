@@ -48,6 +48,13 @@ OASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-5b2050787cfee2a9a3ba7b25cb50fe2
 PY_VERSION="${AH_PY_VERSION:-3.14.10}"
 PY_PBS_RELEASE="${AH_PY_PBS_RELEASE:-20261124}"
 PY_SHA256_LINUX_AMD64="${AH_PY_SHA256:-bfa2f9fe1691f14a98c37e206641058ad7116db117ac924fdcab744987107ad8}"
+# TLS alone vouched for the Docker key, the nodesource setup script and sh.rustup.rs
+# (R-1800). The two apt keys are checked by fingerprint (both repos sign their
+# packages, so apt does the rest), rustup-init by version and sha256 from its archive.
+DOCKER_KEY_FPR="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+NODESOURCE_KEY_FPR="6F71F525282841EEDAF851B42F59B5F99B1BE0B4"
+RUSTUP_VERSION="${AH_RUSTUP_VERSION:-1.29.3}"
+RUSTUP_SHA256_LINUX_AMD64="${AH_RUSTUP_SHA256:-b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Profile: full (default — everything, for the single-box run.sh incl. desktop GUI
 # E2E) | server (docker stack only) | agent (Go agent + packaging). server/agent
@@ -67,6 +74,14 @@ log() { printf '\n\033[1m[bootstrap] %s\033[0m\n' "$*"; }
 # another user of the box could plant first.
 DL="$(mktemp -d)"
 trap 'rm -rf "$DL"' EXIT
+# Exactly one key, with the pinned primary fingerprint; a temporary GNUPGHOME
+# keeps the box user's keyring out of it.
+key_has_fpr() {
+  local fprs
+  fprs="$(GNUPGHOME="$(mktemp -d -p "$DL")" gpg --batch --show-keys --with-colons "$1" | awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }')"
+  [ "$fprs" = "$2" ] || { echo "key $1: fingerprint ${fprs:-none}, want $2" >&2; return 1; }
+}
+
 dl() {
   curl -fsSL --retry 5 --retry-connrefused --retry-all-errors \
     --connect-timeout 30 --speed-limit 1024 --speed-time 60 "$@"
@@ -225,10 +240,9 @@ fi
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then
   $SUDO install -m 0755 -d /etc/apt/keyrings
-  key="$(mktemp)"
-  dl -o "$key" https://download.docker.com/linux/ubuntu/gpg
-  $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg "$key"
-  rm -f "$key"
+  dl -o "$DL/docker.asc" https://download.docker.com/linux/ubuntu/gpg
+  key_has_fpr "$DL/docker.asc" "$DOCKER_KEY_FPR"
+  $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg "$DL/docker.asc"
   $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
   . /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
@@ -254,10 +268,18 @@ export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
 
 log "Node ${NODE_MAJOR}.x"
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | grep -oE '[0-9]+' | head -1)" != "$NODE_MAJOR" ]; then
-  setup="$(mktemp)"
-  dl -o "$setup" "https://deb.nodesource.com/setup_${NODE_MAJOR}.x"
-  $SUDO -E bash "$setup"
-  rm -f "$setup"
+  # What setup_${NODE_MAJOR}.x writes, without running it: key, deb822 source, and
+  # the pin that keeps Ubuntu's own nodejs from winning.
+  dl -o "$DL/nodesource.asc" https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+  key_has_fpr "$DL/nodesource.asc" "$NODESOURCE_KEY_FPR"
+  $SUDO gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg "$DL/nodesource.asc"
+  $SUDO chmod a+r /usr/share/keyrings/nodesource.gpg
+  printf 'Types: deb\nURIs: https://deb.nodesource.com/node_%s.x\nSuites: nodistro\nComponents: main\nArchitectures: %s\nSigned-By: /usr/share/keyrings/nodesource.gpg\n' \
+    "$NODE_MAJOR" "$(dpkg --print-architecture)" | $SUDO tee /etc/apt/sources.list.d/nodesource.sources >/dev/null
+  printf 'Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n' \
+    | $SUDO tee /etc/apt/preferences.d/nodejs >/dev/null
+  wait_apt_lock
+  $SUDO apt-get update -qq
   wait_apt_lock
   $SUDO apt-get install -y nodejs
 fi
@@ -265,10 +287,10 @@ fi
 if [ "$PROFILE" = full ]; then
   log "Rust (rustup stable) + rustfmt + clippy  [full profile only]"
   if ! command -v cargo >/dev/null 2>&1; then
-    rustup_init="$(mktemp)"
-    dl -o "$rustup_init" https://sh.rustup.rs
-    sh "$rustup_init" -y --profile minimal
-    rm -f "$rustup_init"
+    dl -o "$DL/rustup-init" "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
+    echo "${RUSTUP_SHA256_LINUX_AMD64}  $DL/rustup-init" | sha256sum -c -
+    chmod +x "$DL/rustup-init"
+    "$DL/rustup-init" -y --profile minimal
   fi
   # shellcheck disable=SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"

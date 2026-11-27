@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/kern-harness-14/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Kommentare und Temp-Pfade)
 
-### T3 — R-1800: Docker-Schlüssel, nodesource und rustup gepinnt  [ ]
+### T3 — R-1800: Docker-Schlüssel, nodesource und rustup gepinnt  [x]
 Komponente: scripts · Dateien: scripts/vm/bootstrap_linux.sh, scripts/tests/harness_consistency_test.sh, DEVELOPMENT.md, changelog.d/kern-harness-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3cc6782da 2026-11-27T20:38:52+01:00
+Review: approve (.ah-out/review/kern-harness-14/T3.verdict.json)
 Änderung: Docker-Schlüssel nur mit dem Fingerprint aus der Spec (sonst Abbruch); nodesource in der Form aus Kevins Antwort (Empfehlung: Repo als deb822 von Hand, Schlüssel per Fingerprint, Apt-Pin wie das Setup-Skript); rustup-init aus dem Archiv mit gepinnter Version und sha256. harness_consistency_test verlangt die Pins (Fingerprint 40 Hex, sha256 64 Hex) und keinen Download eines Skripts, das ausgeführt wird.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: DEVELOPMENT.md (Box-Bootstrap: was gepinnt ist) · changelog.d/kern-harness-14.md
