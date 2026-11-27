@@ -1,5 +1,5 @@
 # klein-doku-12 — Task-Ledger
-Status: bereit · Branch: feature/klein-doku-12 · Review: pro Task
+Status: erledigt · Branch: feature/klein-doku-12 · Review: pro Task
 Spec: docs/features/klein-doku-12.md (Roadmap R-1774, R-1802)
 Heavy: none — Doku, Kommentare und ein Quelltext-Test
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
