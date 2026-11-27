@@ -53,8 +53,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T6 — R-1812: gemeinsamer Testvektor für den Renew-Nachweis (ca-issuer)  [ ]
+### T6 — R-1812: gemeinsamer Testvektor für den Renew-Nachweis (ca-issuer)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/fixtures/renew_proof_vector.json, apps/ca-issuer/tests/test_renew_proof_vector.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @1f3675c4a 2026-11-27T15:07:40+01:00
+Review: approve (.ah-out/review/kern-ca-15/T6.verdict.json)
 Änderung: ein fester Vektor (selbstsigniertes P-256-Zertifikat, CSR, proof über `RENEW_PROOF_PREFIX` + CSR-DER); `_check_proof` nimmt ihn an und lehnt ihn mit verändertem Präfix ab. Go (T7) und Rust (T8) prüfen dieselbe Datei mit ihrem eigenen Präfix: weicht eine Kopie ab, wird ihr Test rot statt jeder Renew 403 (Prüfer-Nit T2).
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_renew_proof_vector.py
 Doku: keine (Test)
