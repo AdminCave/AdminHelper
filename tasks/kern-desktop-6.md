@@ -88,10 +88,12 @@ Review: approve (.ah-out/review/kern-desktop-6/T9.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage::
 Doku: → T12
 
-### T10 — Ping-Spalte folgt der Einstellung (R-1710)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/components/settings/WorkspaceSection.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/pages/Connections.load.test.ts, apps/desktop/ui/src/components/settings/SettingsDialog.svelte
+### T10 — Ping-Spalte folgt der Einstellung (R-1710)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/components/settings/WorkspaceSection.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/pages/Connections.load.test.ts, apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6963a20e9 2026-11-27T09:53:21+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T10.verdict.json)
 Änderung: Schalter in den Workspace-Einstellungen (DE+EN); ist er aus, startet die Seite keine Probe und die Spalte bleibt leer, ein Umschalten wirkt ohne Neustart. Tests im Store/der Seite.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.test.ts src/pages/Connections.test.ts src/pages/Connections.load.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.test.ts src/pages/Connections.test.ts src/pages/Connections.load.test.ts src/components/SettingsModal.save.test.ts src/components/SettingsModal.nav.test.ts src/components/SettingsModal.workspace.test.ts
 Doku: → T12
 Abhängt von: T9
 

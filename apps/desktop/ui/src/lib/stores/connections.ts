@@ -287,12 +287,29 @@ const _reach = writable<Record<string, Reach>>({});
 /** Per connection id: latency in ms, null when unreachable, 'tunnel' when not probed. */
 export const reachability = { subscribe: _reach.subscribe };
 
+/** Whether the connections page probes: on unless the workspace turned it off (R-1710). */
+export function probesReachability(
+  settings: { probeReachability?: boolean } | null | undefined,
+): boolean {
+  return settings?.probeReachability !== false;
+}
+
+// A probe still waiting on probeTargets when the column is turned off must not refill it.
+let reachGeneration = 0;
+
+/** Forgets every measured latency, so the column stays empty while the probe is off. */
+export function clearReachability(): void {
+  reachGeneration++;
+  _reach.set({});
+}
+
 /** Probes the given connections from this device. Tunneled ones are behind FRP and are not
  * dialed; connections without a host or port stay unknown. Each host and port is dialed once. */
 export async function probeVisible(
   conns: readonly Connection[],
   tunneled: ReadonlySet<string>,
 ): Promise<void> {
+  const generation = reachGeneration;
   const result: Record<string, Reach> = {};
   const byTarget = new Map<string, { target: ProbeTarget; ids: string[] }>();
   const untargeted: string[] = [];
@@ -319,6 +336,7 @@ export async function probeVisible(
       for (const id of e.ids) result[id] = latencies[j] ?? null;
     });
   }
+  if (generation !== reachGeneration) return;
   _reach.update((r) => {
     const next = { ...r, ...result };
     for (const id of untargeted) delete next[id];

@@ -66,6 +66,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let osNotifications = $state(Boolean(stored.osNotifications));
   let sshConsole = $state<SshConsole>(stored.sshConsole ?? getSettingsDefaults().sshConsole);
   let restoreSessions = $state(Boolean(stored.restoreSessions));
+  let probeReachability = $state(stored.probeReachability ?? true);
   // What the terminals show, so a change made in one while its save runs is not undone here.
   let terminal = $state<TerminalPrefs>(get(terminalPrefs));
 
@@ -130,6 +131,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       terminal,
       // Unset is off, so a dialog saved without touching it writes nothing new.
       restoreSessions: restoreSessions || undefined,
+      // Unset is on, so a dialog saved without touching it writes nothing new.
+      probeReachability: probeReachability ? undefined : false,
     };
     const saved = await saveSettings(next);
     // Off means the library is gone from the device too (Cisco's condition 2, R-1102); a no-op
@@ -201,7 +204,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           data-pane="workspace"
           hidden={active !== 'workspace'}
         >
-          <WorkspaceSection {mode} {workspace} bind:intervalMinutes />
+          <WorkspaceSection {mode} {workspace} bind:intervalMinutes bind:probeReachability />
         </div>
         <div
           class="sm-pane"

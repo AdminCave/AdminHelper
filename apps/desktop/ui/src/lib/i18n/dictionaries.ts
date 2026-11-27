@@ -463,6 +463,7 @@ export const translations: Translations = {
     'settings.syncUrl': 'Sync-URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Intervall (Minuten)',
+    'settings.workspace.probeReachability': 'Erreichbarkeit der Verbindungen prüfen (Ping-Spalte)',
     'settings.allowSelfSigned': 'Selbstsignierte Zertifikate erlauben',
     'settings.resetCertPin': 'Gepinntes Zertifikat zurücksetzen',
     'settings.resetCertPin.hint':
@@ -2086,6 +2087,8 @@ export const translations: Translations = {
     'settings.syncUrl': 'Sync URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Interval (minutes)',
+    'settings.workspace.probeReachability':
+      'Check the reachability of the connections (ping column)',
     'settings.allowSelfSigned': 'Allow self-signed certificates',
     'settings.resetCertPin': 'Reset pinned certificate',
     'settings.resetCertPin.hint':

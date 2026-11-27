@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   save: vi.fn(async (): Promise<string | null> => null),
   writeCsv: vi.fn(async (path: string) => path),
   confirm: vi.fn(async () => true),
+  setProbe: (_on: boolean | undefined) => {},
 }));
 
 vi.mock('$lib/bridge', () => ({
@@ -42,20 +43,27 @@ vi.mock('../components/ui/ConfirmDialog.svelte', async (orig) => ({
   confirmDialog: h.confirm,
 }));
 vi.mock('$lib/stores/session', async () => {
-  const { writable } = await import('svelte/store');
+  const { derived, writable } = await import('svelte/store');
   const sessionStore = writable({
     settings: {
       mode: 'server',
       url: null,
       allowSelfSignedCerts: false,
       favoriteConnections: ['b'],
+      probeReachability: undefined as boolean | undefined,
     },
     session: { serverUrl: 'https://srv.example', username: 'alice', isAdmin: false },
   });
   h.setFavorites.mockImplementation(async (ids: string[]) => {
     sessionStore.update((s) => ({ ...s, settings: { ...s.settings, favoriteConnections: ids } }));
   });
-  return { sessionStore, setFavoriteConnections: h.setFavorites };
+  h.setProbe = (on) =>
+    sessionStore.update((s) => ({ ...s, settings: { ...s.settings, probeReachability: on } }));
+  return {
+    sessionStore,
+    settings: derived(sessionStore, (s) => s.settings),
+    setFavoriteConnections: h.setFavorites,
+  };
 });
 vi.mock('$lib/stores/connectFlow', () => ({ initiateConnect: h.connect }));
 vi.mock('$lib/stores/editor', () => ({ openEditor: h.edit }));
@@ -143,6 +151,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   h.visible = null;
+  h.setProbe(undefined);
   clearInMemory();
   searchTerm.set('');
 });
@@ -500,6 +509,29 @@ describe('Connections page', () => {
     expect(h.remove.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b', 'c']);
     expect(h.deletePassword).toHaveBeenCalledTimes(1);
     expect(h.deletePassword).toHaveBeenCalledWith(B);
+  });
+
+  // R-1710: the probe follows the setting of the workspace, without a restart.
+  it('does not probe while the workspace has the probe turned off', async () => {
+    h.setProbe(false);
+    await renderPage();
+    expect(h.visible).toBeNull();
+  });
+
+  it('turning the probe off stops it and empties the column, turning it on starts it', async () => {
+    await renderPage();
+    const v = h.visible!();
+    await probeVisible(v.conns as Connection[], v.tunneled);
+    expect(get(reachability)).toMatchObject({ a: null });
+
+    h.visible = null;
+    h.setProbe(false);
+    await waitFor(() => expect(h.stop).toHaveBeenCalledTimes(1), { timeout: 30_000 });
+    expect(get(reachability)).toEqual({});
+    expect(h.visible).toBeNull();
+
+    h.setProbe(true);
+    await waitFor(() => expect(h.visible).not.toBeNull(), { timeout: 30_000 });
   });
 
   it('stops the probe when the page goes', async () => {

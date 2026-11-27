@@ -128,6 +128,8 @@ export interface Settings {
   // The snippets of the terminal, kept in the workspace; null: never changed, the panel shows
   // its default list. An empty list stays empty.
   snippets?: Snippet[] | null;
+  // The reachability probe of the connections page, kept in the workspace; on when absent.
+  probeReachability?: boolean;
 }
 
 // A command of the snippet panel of the terminal.
