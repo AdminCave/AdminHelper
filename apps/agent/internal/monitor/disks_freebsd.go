@@ -53,9 +53,10 @@ func collectDisks() []DiskInfo {
 			stats = append(stats, st)
 		}
 	}
+	bounded = uniqueMounts(bounded)
 	answered := boundedStats(bounded, time.After(shareStatTimeout), statfsOf)
 	if len(answered) < len(bounded) {
-		logger.Warnf("disks: %d network mount(s) did not answer statfs within %s or still hang from an earlier run, left out of this run",
+		logger.Warnf("disks: %d mount(s) on or below a network share did not answer statfs within %s or still hang from an earlier run, left out of this run",
 			len(bounded)-len(answered), shareStatTimeout)
 	}
 	return disksFromFsstat(append(stats, answered...), "freebsd")

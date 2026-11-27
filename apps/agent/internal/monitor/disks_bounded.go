@@ -31,6 +31,20 @@ var pendingStats = struct {
 	mounts map[string]bool
 }{mounts: map[string]bool{}}
 
+// uniqueMounts drops a path that is listed twice (a stacked mount shows up once per layer in
+// getfsstat) so that the count of mounts left out is not raised by a path that was asked once.
+func uniqueMounts(mounts []string) []string {
+	seen := make(map[string]bool, len(mounts))
+	var out []string
+	for _, m := range mounts {
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // underNetMount says whether mount lies below one of the network mounts shares: resolving its path
 // walks through the share and hangs with it.
 func underNetMount(mount string, shares []string) bool {
