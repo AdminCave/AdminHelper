@@ -9,9 +9,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -196,6 +198,9 @@ func TestRenewSwapsIdentity(t *testing.T) {
 		if body.CSR == "" {
 			t.Error("CSR fehlt im Renew-Body")
 		}
+		if err := checkRenewProof(r.TLS.PeerCertificates, body); err != nil {
+			t.Errorf("proof: %v", err)
+		}
 		_ = json.NewEncoder(w).Encode(IssueResponse{
 			Cert: "new-leaf", Fullchain: "new-leaf+int", Chain: "int+root",
 		})
@@ -220,6 +225,31 @@ func TestRenewSwapsIdentity(t *testing.T) {
 	if got, _ := os.ReadFile(KeyPath(dir)); string(got) == string(keyPEM) {
 		t.Fatal("Key wurde nicht rotiert")
 	}
+}
+
+// checkRenewProof verifies body.Proof the way the issuer does: against the key of
+// the presented client certificate, over RenewProofPrefix + the CSR's DER.
+func checkRenewProof(peers []*x509.Certificate, body RenewRequest) error {
+	if len(peers) == 0 {
+		return errors.New("no client certificate")
+	}
+	pub, ok := peers[0].PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return errors.New("client key is not ECDSA")
+	}
+	block, _ := pem.Decode([]byte(body.CSR))
+	if block == nil {
+		return errors.New("CSR is not PEM")
+	}
+	sig, err := base64.StdEncoding.DecodeString(body.Proof)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(append([]byte(RenewProofPrefix), block.Bytes...))
+	if !ecdsa.VerifyASN1(pub, digest[:], sig) {
+		return errors.New("signature does not verify")
+	}
+	return nil
 }
 
 // The ctx of a run ends a renewal whose request the issuer holds, long before the

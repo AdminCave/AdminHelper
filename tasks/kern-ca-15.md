@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-ca-15/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew.py tests/test_schemathesis.py
 Doku: → T5
 
-### T2 — R-1812: Agent signiert den Renew mit dem alten Schlüssel  [ ]
+### T2 — R-1812: Agent signiert den Renew mit dem alten Schlüssel  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/renew_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @bb891dfe9 2026-11-27T14:49:44+01:00
+Review: approve (.ah-out/review/kern-ca-15/T2.verdict.json)
 Änderung: `RenewRequest.Proof`; `Renew` liest den bisherigen Schlüssel, signiert Präfix + CSR-DER (`ecdsa.SignASN1` über SHA-256) und schickt `proof`. Test: der Testserver prüft den proof gegen das vorgelegte Client-Zertifikat (mTLS) mit derselben Nachricht.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/enroll/
 Doku: → T5
