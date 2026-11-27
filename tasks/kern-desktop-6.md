@@ -1,5 +1,5 @@
 # Desktop-Zuverlaessigkeit: Sitzung, Zertifikat, Tunnel, RDP, SFTP, Ping, Feed — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-6 · Review: pro Task
 Spec: docs/features/kern-desktop-6.md (Roadmap R-1709, R-1689, R-1691, R-1707, R-1708, R-1710, R-1711)
 Heavy: linux-full — Desktop-Journeys (Login, Tunnel, Verbindungen) und Web-Client-Auth; kein Stack-, PKI-Server- oder Install-Pfad geaendert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -115,8 +115,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/… DE+EN · changelog.d/kern-desktop-6.md
 Task-Review: am Ende
 
-### T13 — Doku-Funde der Abschlussprüfung: Ping-Schalter, Code der Erneuerung  [ ]
+### T13 — Doku-Funde der Abschlussprüfung: Ping-Schalter, Code der Erneuerung  [x]
 Komponente: scripts · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2a4cef399 2026-11-27T10:39:04+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Nutzer-Doku der Spalte Ping DE+EN nennt den Schalter je Workspace (Standard an). Entwickler-Doku DE+EN: eine Erneuerung ohne Antwort scheitert nach einem Transportfehler mit `ERR_NETWORK`, nach 502/503/504 mit `ERR_CONNECTION`; welche Transportfehler die Sitzung halten (Verbindungsaufbau gescheitert oder Abbruch ohne Antwort), welche sie beenden (TLS-Ablehnung, Frist nach dem Verbindungsaufbau).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html
