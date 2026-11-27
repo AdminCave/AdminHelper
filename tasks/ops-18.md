@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-18 — Betriebsskripte: Snapshot, Restore-Herkunft, Env-Prüfung, Backup-Rolle — Task-Ledger
-Status: aktiv · Branch: feature/ops-18 · Review: pro Task
+Status: bereit · Branch: feature/ops-18 · Review: pro Task
 Spec: docs/features/ops-18.md (Roadmap R-1782, R-1786, R-1821, R-1783)
 Heavy: linux-full — scripts/install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (backup_restore und upgrade_path im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -59,8 +59,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py tes
 Doku: → T6
 Abhängt von: T4
 
-### T6 — Doku DE+EN und Changelog  [ ]
-Komponente: docs · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-18.md
+### T6 — Doku DE+EN und Changelog  [x]
+Komponente: scripts · Dateien: docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-18.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0557644b8 2026-11-27T14:29:26+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Restore: Herkunftsprüfung und `--allow-foreign`; pg-backup liest als `ah_backup`; `BACKUP_DB_PASSWORD` in der Env-Liste; Changelog neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Seiten
