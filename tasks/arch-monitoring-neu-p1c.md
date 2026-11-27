@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1c — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1c.md (Roadmap R-1637, R-1793, R-1521)
 Heavy: linux-full — Monitoring-Migration (Alembic-Revision und Startschritt) und Monitoring-API; dazu vor dem Merge die Abnahme `run.sh integration --strict --step upgrade-path` auf einer Pool-VM (Kevin 2026-11-27, „Vor der nächsten Beta“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -266,8 +266,10 @@ PASS/FAIL wie die bestehenden Schritte, shellcheck-sauber. Der Lauf auf der Pool
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T14
 
-### T14 — Doku DE+EN und CHANGELOG-Fragment (R-1637, R-1793, R-1521)  [ ]
+### T14 — Doku DE+EN und CHANGELOG-Fragment (R-1637, R-1793, R-1521)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/arch-monitoring-neu-p1c.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7d62e043c 2026-11-27T16:38:18+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Task-Review: am Ende
 Änderung:
 - **Entwickler-Doku:**
