@@ -128,7 +128,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `open`, `keyring-core`, `zbus-secret-service-keyring-store` (Linux), `apple-native-keyring-store` (macOS), `tauri-plugin-shell`, `tauri-plugin-dialog`,
 `tauri-plugin-notification`, `tauri-plugin-log`,
 `tauri-plugin-single-instance` (nur Desktop-Ziele), `windows` (nur Windows), `log`, `chrono`, `regex`,
-`rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
+`rustls`, `sha2`, `ring`, `rcgen`, `base64` (Renew-Nachweis, `MIT OR Apache-2.0`), `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
 `toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
 `ironrdp-connector`, `ironrdp-session` und `ironrdp-rdpdr-native` (eingebettetes RDP, Git-Revision des Forks
 `github.com/AdminCave/IronRDP`, Upstream `github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten),

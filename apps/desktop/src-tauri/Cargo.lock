@@ -13,6 +13,7 @@ name = "adminhelper"
 version = "0.47.0"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.22.1",
  "bzip2",
  "chrono",
  "futures-util",
@@ -38,6 +39,7 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest 0.13.5",
+ "ring",
  "russh-sftp",
  "rustls",
  "rustls-pki-types",

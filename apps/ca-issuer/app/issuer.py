@@ -11,12 +11,15 @@ client's CSR nor the calling server can widen identity, scope or lifetime.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import datetime
 import logging
 import threading
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
@@ -28,6 +31,28 @@ logger = logging.getLogger("ca-issuer.issuer")
 
 class IssuanceError(Exception):
     """Raised when issuance is refused (bad token, deprovisioned, bad input)."""
+
+
+RENEW_PROOF_PREFIX = b"AdminHelper renew v1\x00"
+
+
+def _check_proof(
+    current: x509.Certificate, csr: x509.CertificateSigningRequest, proof: str
+) -> None:
+    """The renewing client holds the key of the certificate it presents: it signed
+    RENEW_PROOF_PREFIX + the CSR's DER with it (R-1812)."""
+    try:
+        signature = base64.b64decode(proof, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise IssuanceError("proof is not valid Base64") from exc
+    key = current.public_key()
+    if not isinstance(key, ec.EllipticCurvePublicKey):
+        raise IssuanceError("presented certificate has no ECDSA key")
+    message = RENEW_PROOF_PREFIX + csr.public_bytes(serialization.Encoding.DER)
+    try:
+        key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+    except InvalidSignature as exc:
+        raise IssuanceError("proof does not match the presented certificate") from exc
 
 
 class IssuerUnavailable(Exception):
@@ -215,9 +240,15 @@ class Issuer:
         _, _, scope = self._presented(verified_cert_pem)
         return self._intermediate(scope).trust_generation
 
-    def renew(self, verified_cert_pem: bytes, csr_pem: bytes) -> dict[str, str]:
+    def renew(
+        self, verified_cert_pem: bytes, csr_pem: bytes, proof: str | None = None
+    ) -> dict[str, str]:
         current, cn, scope = self._presented(verified_cert_pem)
         csr = self._load_csr(csr_pem)
+        if proof is None:
+            logger.warning("Renew without proof of possession: %s (scope=%s)", cn, scope)
+        else:
+            _check_proof(current, csr, proof)
 
         # Renew at the CURRENT policy for the line's audience (browser vs native, as
         # the register records it), not at the old span: sign_leaf cuts a leaf short
