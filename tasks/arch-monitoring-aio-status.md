@@ -35,8 +35,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_check
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Push-Pfad: Geschwister der Check-Bedingung, Reihenfolge der Bewertung (R-1825)  [ ]
+### T3 — Push-Pfad: Geschwister der Check-Bedingung, Reihenfolge der Bewertung (R-1825)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_probe_when.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2040bd1fe 2026-11-27T12:18:02+01:00
+Review: approve (.ah-out/review/arch-monitoring-aio-status/T3.verdict.json)
 Änderung: Helfer `_sibling_names(config)` (Geschwister aus den Regeln und aus `config["when"]`); `_probe_siblings(db, check, config)` (`agent.py:525`) nutzt ihn. Der Push (`:161`) bewertet die Checks aus `_push_checks` (`:418`) stabil sortiert: erst Probe-Checks ohne Geschwister-Bedingung und alle übrigen Typen, dann die mit, in jeder Gruppe nach ID; eine Config, die kein JSON ist, zählt zur ersten Gruppe (die Bewertung meldet sie wie heute). Tests: Report-Ende-zu-Ende mit Test-Modul, Check-Bedingung ruht/bewertet, das Ergebnis des Geschwisters aus demselben Report zählt unabhängig von den IDs (ersetzt den Reihenfolge-Test), keine Abfrage ohne Geschwister-Bedingung.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_when.py tests/test_probe_checker.py tests/test_agent_report.py tests/test_agent_report_v4.py
 Doku: → T5

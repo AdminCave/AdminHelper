@@ -158,7 +158,7 @@ def agent_report(
     # roundtrips (each with a 10s timeout) on the report path (5.20).
     check_lines: list[str] = []
     now = utcnow_naive()
-    for check in _push_checks(db, server_id):
+    for check in _in_rating_order(_push_checks(db, server_id)):
         # Before the throttle: a collector the load gate held back is throttled too.
         unmeasured = None
         if shed_since is not None and now - shed_since >= _LOAD_SHED_KEEPS_AT_MOST:
@@ -434,6 +434,25 @@ def _push_checks(db: Session, server_id: str) -> list[MonitorCheck]:
     )
 
 
+def _in_rating_order(checks: list[MonitorCheck]) -> list[MonitorCheck]:
+    """The checks by ID, those whose `when` names a sibling after all others: a sibling's result
+    of this report counts whatever the IDs (R-1825). Stable, and by the stored configs only, so
+    two concurrent pushes still lock the state rows in the same sequence (4.46)."""
+    return sorted(checks, key=_names_a_sibling)
+
+
+def _names_a_sibling(check: MonitorCheck) -> bool:
+    if check.check_type != "probe" or not check.config:
+        return False
+    try:
+        config = json.loads(check.config)
+    except (ValueError, RecursionError):
+        # Rated with the first group: the evaluation reports the broken config as before,
+        # inside the isolation of each check, which a raise here would bypass.
+        return False
+    return bool(_sibling_names(config))
+
+
 def _evaluate_push_check(
     db: Session,
     check: MonitorCheck,
@@ -456,7 +475,7 @@ def _evaluate_push_check(
             # A probe's result sits under its check id in the report; the config, stored
             # as written, cannot carry the id of its own row.
             config["_check_id"] = check.id
-            siblings = _probe_siblings(db, check, config.get("rules"))
+            siblings = _probe_siblings(db, check, config)
             if siblings is not None:
                 config["_siblings"] = siblings
 
@@ -522,22 +541,36 @@ def _result_lines(
     )
 
 
-def _probe_siblings(db: Session, check: MonitorCheck, rules: object) -> dict | None:
-    """The stored results of the module's other probe checks at the check's instance that a
-    rule's `when` names, by catalog check key; None, without a query, when no rule names one.
-
-    Read without a lock and in the evaluation order by ID: a sibling rated earlier in this
-    report counts with its new result, a later one with that of the report before. The
-    checker ignores a result older than the sibling's freshness bound (R-1638)."""
-    names = sorted(
+def _sibling_names(config: object) -> list[str]:
+    """The catalog check keys the check's or a rule's `when` names, sorted."""
+    if not isinstance(config, dict):
+        return []
+    rules = config.get("rules")
+    whens = [
+        rule.get("when")
+        for rule in (rules if isinstance(rules, list) else [])
+        if isinstance(rule, dict)
+    ]
+    whens.append(config.get("when"))
+    return sorted(
         {
-            rule["when"]["check"]
-            for rule in (rules if isinstance(rules, list) else [])
-            if isinstance(rule, dict)
-            and isinstance(rule.get("when"), dict)
-            and isinstance(rule["when"].get("check"), str)
+            when["check"]
+            for when in whens
+            if isinstance(when, dict) and isinstance(when.get("check"), str)
         }
     )
+
+
+def _probe_siblings(db: Session, check: MonitorCheck, config: object) -> dict | None:
+    """The stored results of the module's other probe checks at the check's instance that the
+    check's or a rule's `when` names, by catalog check key; None, without a query, when no
+    `when` names one.
+
+    Read without a lock, after the checks that name no sibling (_in_rating_order): such a
+    sibling counts with its result of this report. One that names a sibling itself is rated
+    in the same group by ID, so a later one counts with its result of the report before. The
+    checker ignores a result older than the sibling's freshness bound (R-1638)."""
+    names = _sibling_names(config)
     if not names or check.module_id is None:
         return None
     instance = (
