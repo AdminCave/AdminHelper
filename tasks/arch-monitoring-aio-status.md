@@ -26,8 +26,10 @@ Review: approve (.ah-out/review/arch-monitoring-aio-status/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_when.py tests/test_catalog.py tests/test_check_configs.py tests/test_module_sync.py tests/test_checks_crud.py tests/test_rule_form.py tests/test_agent_plan.py tests/test_rule_model_prototype.py
 Doku: → T5
 
-### T2 — Bewertung: der Check ruht als Ganzes (R-1825)  [ ]
+### T2 — Bewertung: der Check ruht als Ganzes (R-1825)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_probe_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e3a2b9e2a 2026-11-27T12:15:21+01:00
+Review: approve (.ah-out/review/arch-monitoring-aio-status/T2.verdict.json)
 Änderung: `ProbeChecker.evaluate` (`probe.py:312`) prüft nach der Frische-Grenze und vor `status == "error"` (`:361`) `config["when"]`: Hält es bekannt nicht (`_condition_holds(when, {}, siblings, now, factor) is False`), ist der Check `ok`, `problems` und `firing` leer, `resting` je Regel `{"key", "when"}`, Meldung `Resting (<check>.<field> = <Wert>): Probe failed: <error>` bzw. `…: OK: <Werte>`; ein erfolgreicher Lauf speichert Werte und Baseline wie heute. Fehlender, veralteter oder unbrauchbarer Bedingungswert: Bewertung wie heute (Fehler bleibt `critical`). Nicht-gelaufen-Werte, unbekannter Status und Veraltung bleiben vor der Bedingung. Tests für Ruhen bei Fehler und bei Erfolg, Bewerten bei fehlendem, veraltetem (auch `max_age`) und erfülltem Bedingungswert, `firing` aus dem Lauf davor fällt beim Ruhen weg.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_checker.py tests/test_rule_model_prototype.py tests/test_rule_model_differential.py
 Doku: → T5

@@ -15,7 +15,8 @@ Order: the agent's own status first (a probe it did not run says why), then fres
 self-throttle stretches the interval by its probe factor), then the rules on the values. A
 rule describes the alerting case; the worst level that holds wins. A rule with `clear` that
 held in the run before holds until the value passes clear (R-1638); a rule with `when` rests
-while its condition is told and does not hold.
+while its condition is told and does not hold. A check with `when` rests as a whole the same
+way, before an error of the run: `ok`, with the run's outcome in the message (R-1825).
 """
 
 from __future__ import annotations
@@ -292,6 +293,11 @@ def _rate(rules: object, values: dict, baseline: dict | None, ts: float) -> tupl
     return rating.status, rating.problems
 
 
+def _ok_text(values: dict) -> str:
+    shown = [f"{field} = {_shown(value)}" for field, value in values.items()]
+    return f"OK: {join_capped(shown)}" if shown else "Probe OK"
+
+
 def _firing(prev_details: dict | None) -> list[str]:
     keys = prev_details.get("firing") if isinstance(prev_details, dict) else None
     return [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
@@ -301,9 +307,10 @@ class ProbeChecker:
     """Rates the result of one probe the agent ran.
 
     Config: sensor, target, params, fields, rules, interval_s, timeout_s, credential,
-    test_object (check_configs.ProbeConfig). The agent router adds `_check_id`, the key
-    of the result in the report's probes block, and `_siblings`, the stored results of the
-    module's other probe checks at the same instance that a rule's `when` names.
+    test_object, when (check_configs.ProbeConfig). The agent router adds `_check_id`, the
+    key of the result in the report's probes block, and `_siblings`, the stored results of
+    the module's other probe checks at the same instance that the check's or a rule's `when`
+    names.
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
@@ -358,29 +365,52 @@ class ProbeChecker:
                 [f"Last probe result is {int(age // 60)} min old; the agent no longer runs it"],
             )
 
-        if status == "error":
-            return done("critical", [f"Probe failed: {error}" if error else "Probe failed"])
+        siblings = config.get("_siblings")
+        siblings = siblings if isinstance(siblings, dict) else {}
+        when = config.get("when")
+        # Before the error: in an AIO backup the target is stopped, the run fails, and the
+        # check is to rest all the same (ADR 0004 §6.4). Only a condition that is told and
+        # fails rests it: missing or old data never silences it.
+        rests = (
+            isinstance(when, dict) and _condition_holds(when, {}, siblings, now, factor) is False
+        )
+        failed = f"Probe failed: {error}" if error else "Probe failed"
+        if status == "error" and not rests:
+            return done("critical", [failed])
 
-        current = _values(result.get("values"), config.get("fields"))
-        if measured_ts != ts:
-            # A new run: the run before it becomes the baseline of delta rules. The same
-            # run sent again keeps its baseline, else a delta would fall to 0 one report later.
-            baseline = values
-        details.update(measured_ts=ts, values=current, baseline=baseline)
+        if status == "ok":
+            current = _values(result.get("values"), config.get("fields"))
+            if measured_ts != ts:
+                # A new run: the run before it becomes the baseline of delta rules. The same
+                # run sent again keeps its baseline, else a delta would fall to 0 one report
+                # later.
+                baseline = values
+            details.update(measured_ts=ts, values=current, baseline=baseline)
+        if rests:
+            rules = config.get("rules")
+            details["resting"] = [
+                {"key": _rule_key(rule), "when": when}
+                for rule in (rules if isinstance(rules, list) else [])
+                if isinstance(rule, dict)
+            ]
+            details["firing"] = []
+            # Told and failed: the sibling and its value are there (_condition_holds).
+            told = siblings[when["check"]]["values"][when["field"]]
+            outcome = failed if status == "error" else _ok_text(current)
+            reason = f"{when['check']}.{when['field']} = {_shown(told)}"
+            return "ok", f"Resting ({reason}): {outcome}", {"_details": details}
+
         rating = _rating(
             config.get("rules"),
             current,
             baseline,
             ts,
             firing=frozenset(firing),
-            siblings=config.get("_siblings"),
+            siblings=siblings,
             report_ts=now,
             factor=factor,
         )
         details.update(firing=rating.firing, resting=rating.resting)
         if rating.status != "ok":
             return done(rating.status, rating.problems)
-        shown = [f"{field} = {_shown(value)}" for field, value in current.items()]
-        details["problems"] = []
-        message = f"OK: {join_capped(shown)}" if shown else "Probe OK"
-        return "ok", message, {"_details": details}
+        return "ok", _ok_text(current), {"_details": details}
