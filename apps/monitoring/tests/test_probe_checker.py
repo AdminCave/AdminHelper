@@ -562,18 +562,21 @@ def test_a_rule_rests_while_its_condition_on_the_own_result_fails():
     assert _details(rated)["resting"] == []
 
 
-@pytest.mark.parametrize("status_code", [None, "200x", [200]])
+@pytest.mark.parametrize("status_code", [None, [200]])
 def test_a_condition_without_a_usable_value_lets_the_rule_rate(status_code):
     values = {"duration_ms": 900}
     if status_code is not None:
         values["status_code"] = status_code
     rated = _run(values, **_GATED)
-    if status_code == "200x":
-        # A text is a value: eq 200 is told and fails.
-        assert rated[0] == "ok"
-    else:
-        assert rated[0] == "warning"
-        assert _details(rated)["resting"] == []
+    assert rated[0] == "warning"
+    assert _details(rated)["resting"] == []
+
+
+def test_a_text_is_a_value_the_condition_tells():
+    # eq 200 is told on "200x" and fails: the rule rests.
+    rated = _run({"status_code": "200x", "duration_ms": 900}, **_GATED)
+    assert rated[0] == "ok"
+    assert [r["key"] for r in _details(rated)["resting"]] == ["duration_ms.warning"]
 
 
 def test_a_resting_rule_ends_its_hysteresis():

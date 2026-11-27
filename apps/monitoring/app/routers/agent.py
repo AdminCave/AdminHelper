@@ -456,6 +456,9 @@ def _evaluate_push_check(
             # A probe's result sits under its check id in the report; the config, stored
             # as written, cannot carry the id of its own row.
             config["_check_id"] = check.id
+            siblings = _probe_siblings(db, check, config.get("rules"))
+            if siblings is not None:
+                config["_siblings"] = siblings
 
         # Reuse the checker registry instead of a hand-written if/elif that
         # duplicated the push-checker list across imports, the in_-filter and
@@ -517,6 +520,61 @@ def _result_lines(
         duration_ms=0 if metrics else None,
         extra_metrics=metrics,
     )
+
+
+def _probe_siblings(db: Session, check: MonitorCheck, rules: object) -> dict | None:
+    """The stored results of the module's other probe checks at the check's instance that a
+    rule's `when` names, by catalog check key; None, without a query, when no rule names one.
+
+    Read without a lock and in the evaluation order by ID: a sibling rated earlier in this
+    report counts with its new result, a later one with that of the report before. The
+    checker ignores a result older than the sibling's freshness bound (R-1638)."""
+    names = sorted(
+        {
+            rule["when"]["check"]
+            for rule in (rules if isinstance(rules, list) else [])
+            if isinstance(rule, dict)
+            and isinstance(rule.get("when"), dict)
+            and isinstance(rule["when"].get("check"), str)
+        }
+    )
+    if not names or check.module_id is None:
+        return None
+    instance = (
+        MonitorCheck.module_instance.is_(None)
+        if check.module_instance is None
+        else MonitorCheck.module_instance == check.module_instance
+    )
+    rows = (
+        db.query(MonitorCheck, MonitorState)
+        .outerjoin(MonitorState, MonitorState.check_id == MonitorCheck.id)
+        .filter(
+            MonitorCheck.server_id == check.server_id,
+            MonitorCheck.module_id == check.module_id,
+            instance,
+            MonitorCheck.check_type == "probe",
+            MonitorCheck.module_check_key.in_(names),
+            MonitorCheck.id != check.id,
+        )
+        .order_by(MonitorCheck.id)
+        .all()
+    )
+    siblings: dict[str, dict] = {}
+    for sibling, state in rows:
+        details = _prev_details(state) or {}
+        try:
+            config = json.loads(sibling.config) if sibling.config else {}
+        except json.JSONDecodeError:
+            config = {}
+        siblings.setdefault(
+            sibling.module_check_key,
+            {
+                "values": details.get("values"),
+                "measured_ts": details.get("measured_ts"),
+                "interval_s": config.get("interval_s") if isinstance(config, dict) else None,
+            },
+        )
+    return siblings
 
 
 def _locked_state(db: Session, check_id: str) -> MonitorState | None:

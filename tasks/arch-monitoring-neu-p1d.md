@@ -41,8 +41,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_check
 Doku: → T8
 Abhängt von: T1
 
-### T3 — Geschwister-Ergebnisse im Push-Pfad (R-1638)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_probe_when.py
+### T3 — Geschwister-Ergebnisse im Push-Pfad (R-1638)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_probe_when.py, apps/monitoring/tests/test_probe_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f06a21303 2026-11-27T07:07:18+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1d/T3.verdict.json)
 Änderung: `_evaluate_push_check` (`agent.py:437`) legt nur für eine Probe, deren Regeln `when.check` tragen, `config["_siblings"]` an: je `module_check_key` die gespeicherten `values`, `measured_ts` und `interval_s` der Probe-Checks derselben Instanz (`server_id`, `module_id`, `module_instance`), gelesen ohne Sperre; die Auswertungsreihenfolge nach ID (`_push_checks`, `:418`) bleibt. Neue Testdatei (SPDX): Report-Ende-zu-Ende mit einem Test-Modul aus zwei Probes, Regel ruht, bewertet bei fehlendem, veraltetem oder fremdem Geschwister (andere Instanz, anderer Server), keine Abfrage ohne `when.check`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_when.py tests/test_probe_checker.py tests/test_agent_report.py tests/test_agent_report_v4.py
 Doku: → T8
@@ -93,3 +95,4 @@ Abhängt von: T1, T2, T3, T4, T5, T6, T7
 - 2026-11-27 Plan: Die Ausnahme mit Geltung „Regel“ (P1b hatte sie P1d zugeordnet) braucht die Wirkung „prüfen, nicht bewerten“ aus P1c und wird R-1826 (`neu`); P1d liefert Schlüssel und Override `enabled`.
 - 2026-11-27 T1: Die Prüfungen je Regel (`clear` auf der sicheren Seite, Bedingungswert zum Operator, `max_age` nur mit `check`) sitzen in den Validatoren von `Rule` und `Condition`, damit jede wirksame Regel sie beim Bauen trägt; `rule_problems` prüft den Regelsatz (doppelte Schlüssel), nur im Katalog (`Module`) und in den Schreibpfaden der Regel-Schicht (T7): Altzeilen mit zwei Regeln gleichen Felds und Levels bleiben im Agent-Plan (Prüfer-Fund T1) und werden in T5 eingefroren; damit keine Hysterese über einen geteilten Schlüssel läuft, lehnt `Check` in T2 `clear` an einer Regel ab, deren Schlüssel ein zweites Mal vorkommt (keine gespeicherte Zeile trägt `clear` vor P1d, Prüfer-Nit T1). `clear_fits` ist öffentlich für den Merge (T4). `max_age` ist auf eine Woche begrenzt (Integer-Grenzen der OpenAPI).
 - 2026-11-27 T2: `_rating` nimmt zusätzlich `factor` (Probe-Faktor des Reports), damit ein Geschwister dieselbe Frischegrenze bekommt wie die eigene Probe (`_stale_after`, gemeinsam für beide). Eine ruhende Regel trägt ihren Schlüssel nicht in `firing` weiter: ruht sie, endet ihre Hysterese, und nach dem Ruhen zählt wieder der Grenzwert. Die Meldung nennt `clears at` nur, solange die Hysterese die Regel hält. `Check` lehnt `clear` an einem geteilten Schlüssel ab (Nit T1, `model.py`).
+- 2026-11-27 T3: `_probe_siblings` liest die Geschwister in einer Abfrage (Check samt Zustand, ohne Sperre) und nur für Regeln mit `when.check`; ein Check ohne `module_id` hat keine Geschwister. Ausgeschaltete Geschwister filtert es nicht: ihr Ergebnis veraltet und lässt die Regel dann bewerten. Gibt es einen Schlüssel an derselben Instanz zweimal, gilt der Check mit der kleinsten ID. Der Prüfer-Nit aus T2 (Parameter `"200x"`) ist hier als eigener Test behoben (`test_probe_checker.py`).
