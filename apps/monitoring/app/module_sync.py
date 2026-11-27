@@ -109,8 +109,9 @@ def instance_checks(
     db: Session, finding: MonitorFinding, *, lock: bool = False
 ) -> list[MonitorCheck]:
     """Every check the finding's module brought to its instance, in creation order. With
-    lock, held FOR UPDATE: adopting rewrites their rule layers, which PUT /checks/{id} and
-    /rules read and write under the same lock."""
+    lock, held FOR NO KEY UPDATE: adopting rewrites their rule layers, which PUT /checks/{id}
+    and /rules read and write under the same lock. Not FOR UPDATE, which would also wait
+    for the FOR KEY SHARE a status row of the push path takes on its check."""
     query = (
         db.query(MonitorCheck)
         .filter(
@@ -120,7 +121,7 @@ def instance_checks(
         )
         .order_by(MonitorCheck.created_at, MonitorCheck.id)
     )
-    return (query.with_for_update() if lock else query).all()
+    return (query.with_for_update(key_share=True) if lock else query).all()
 
 
 def tombstoned_keys(db: Session, finding: MonitorFinding) -> set[str]:
@@ -534,7 +535,7 @@ def _update(
     summary: dict,
     containers: list[dict],
     sockets: list[dict] | None,
-    now: datetime,
+    now: datetime | None = None,
 ) -> str | None:
     """Give the row the catalog's new definition; why not, or None. The admin's interval
     and timeout stay (the only parts of a probe config besides rules the admin can edit,
@@ -572,7 +573,7 @@ def _update(
     row.config = json.dumps(config)
     row.module_check_hash = definition_hash(check)
     if not check.central:
-        at = iso_utc(now)
+        at = iso_utc(now or utcnow_naive())
         store_layer(row, catalog, overrides, [{**c, "at": at} for c in conflicts])
         for c in conflicts:
             logger.warning(

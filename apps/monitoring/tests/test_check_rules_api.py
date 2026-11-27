@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app import module_sync
-from app.models import MonitorCheck, MonitorFinding
+from app.models import MonitorCheck, MonitorFinding, MonitorStatusChange
 from app.module_sync import adopt
 from app.rule_layer import effective, read_layer, store_layer
 from app.template_sync import read_overrides
@@ -337,3 +337,57 @@ def test_adopting_holds_the_rows_whose_layers_it_rewrites(client_db, db_engine, 
         adopting.rollback()
     with factory() as api:
         assert api.query(MonitorCheck).filter_by(id=web_id).with_for_update(nowait=True).one()
+
+
+def _put_rules(client, factory, check_id, config):
+    r = client.put(f"/checks/{check_id}/rules", json={"overrides": {SLOW_KEY: {"value": 5000}}})
+    return r.status_code == 200
+
+
+def _put_check(client, factory, check_id, config):
+    r = client.put(f"/checks/{check_id}", json={"config": {**config, "rules": CHANGED}})
+    return r.status_code == 200
+
+
+def _adopt_again(client, factory, check_id, config):
+    with factory() as db:
+        module_sync._adopt(db, db.query(MonitorFinding).one(), CATALOG, LATER)
+        db.rollback()
+    return True
+
+
+@pytest.mark.parametrize(
+    "write", [_put_rules, _put_check, _adopt_again], ids=["put-rules", "put-check", "adopt"]
+)
+def test_a_status_row_of_the_push_path_holds_up_no_rule_write(
+    client_db,
+    db_engine,
+    actions,  # noqa: F811
+    write,
+):
+    """The push path writes a status row before its commit, and the row's foreign key holds
+    the check FOR KEY SHARE until then; the rule writes lock it FOR NO KEY UPDATE, which does
+    not wait for that."""
+    _postgres_only(db_engine)
+    client, factory = client_db
+    web_id, _ = _adopted(factory)
+    config = _row(factory, web_id)["config"]
+    done = []
+    with factory() as pusher:
+        pusher.add(
+            MonitorStatusChange(
+                check_id=web_id, old_status="ok", new_status="critical", at=NOW, origin="state"
+            )
+        )
+        pusher.flush()
+        worker = threading.Thread(
+            target=lambda: done.append(write(client, factory, web_id, config))
+        )
+        worker.start()
+        worker.join(30)
+        blocked = worker.is_alive()
+        pusher.rollback()
+    worker.join(60)
+
+    assert not blocked
+    assert done == [True]

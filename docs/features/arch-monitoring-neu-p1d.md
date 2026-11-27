@@ -222,8 +222,8 @@ Text mit JSON, `NULL` für Checks ohne Regelsatz (alle außer Probe-Checks) und 
 - `RuleConflict`: `key`, `kind` (`both_changed`, `removed`, `redefined`, `clear_dropped`), `part` (`value`, `clear`,
   `level` oder `null`), `at` (UTC, ISO 8601 mit `Z`).
 - Ein `PUT` schreibt Schicht, `config.rules` und Marke in einer Transaktion. Beide `PUT`-Routen lesen die Zeile mit
-  `FOR UPDATE`, und das Übernehmen (`_adopt`) sperrt die Checks einer Instanz ebenso, in fester Reihenfolge; so
-  überschreibt keiner den anderen. Die Konflikte bleiben bei jedem `PUT` stehen.
+  `FOR NO KEY UPDATE`, und das Übernehmen (`_adopt`) sperrt die Checks einer Instanz ebenso, in fester Reihenfolge;
+  so überschreibt keiner den anderen, und Statuszeilen des Push-Pfads (`FOR KEY SHARE` über ihren FK) warten nicht. Die Konflikte bleiben bei jedem `PUT` stehen.
 - **`PUT /checks/{id}`:** Hat eine Probe eine Schicht und kommt `config.rules` geändert an, gilt
   `overrides_from(layer.catalog, rules)`. Ist das nicht ausdrückbar, antwortet die Route mit 422: `"This change to the
   rules cannot be kept across catalog updates (<Grund>); change them with PUT /checks/{id}/rules"`. Gespeichert

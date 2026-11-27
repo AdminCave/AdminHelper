@@ -421,7 +421,12 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
 )
 def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)):
     """Updates a check."""
-    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).with_for_update().first()
+    check = (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.id == check_id)
+        .with_for_update(key_share=True)
+        .first()
+    )
     if not check:
         raise HTTPException(404, "Check not found")
 
@@ -548,9 +553,9 @@ def _stored_rules(check: MonitorCheck) -> list:
 
 def _rules_check(db: Session, check_id: str, *, lock: bool = False) -> MonitorCheck:
     """The module probe check whose catalog rules the request is about; with lock, held FOR
-    UPDATE like adopting holds it, so neither writes over the other's layer."""
+    NO KEY UPDATE like adopting holds it, so neither writes over the other's layer."""
     query = db.query(MonitorCheck).filter(MonitorCheck.id == check_id)
-    check = (query.with_for_update() if lock else query).first()
+    check = (query.with_for_update(key_share=True) if lock else query).first()
     if check is None:
         raise HTTPException(404, "Check not found")
     if check.module_id is None or check.check_type != "probe":
