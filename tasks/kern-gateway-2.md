@@ -1,5 +1,5 @@
 # Gateway: Webhook-Trigger auf :8444, Upstream-Keepalive — Task-Ledger
-Status: bereit · Branch: feature/kern-gateway-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-gateway-2 · Review: pro Task
 Spec: docs/features/kern-gateway-2.md (Roadmap R-1687, R-1717)
 Heavy: linux-full — Gateway-Konfiguration und Server-API; der Stack-Test unter enforce läuft im PR (integration-stack)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -59,4 +59,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Betrieb: Ratelimit und Body-Grenze des Triggers auf der zertifikatslosen Ebene. Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-gateway-2.md
+Task-Review: am Ende
+
+### T6 — Doku: Trigger-Absatz DE und Spec nachziehen (Abschlussprüfung, R-1687)  [ ]
+Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/features/kern-gateway-2.md
+Änderung: Den verstümmelten deutschen Trigger-Absatz der API-Referenz reparieren (doppelte Phrase, Edit-Rest). Die Spec
+an das verworfene T1 und die beantwortete Port-Frage anpassen.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/api-reference.html, docs/features/kern-gateway-2.md
 Task-Review: am Ende
