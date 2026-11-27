@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-7 — Desktop: SFTP-Upload über eine Teil-Datei, Feed nach dem Abmelden — Task-Ledger
-Status: geplant · Branch: feature/kern-desktop-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-desktop-7 · Review: am Ende
 Spec: docs/features/kern-desktop-7.md (Roadmap R-1708, R-1830)
 Heavy: linux-full — Desktop (SFTP-Datenpfad, Benachrichtigungen); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
