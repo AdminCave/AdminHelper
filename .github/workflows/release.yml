@@ -423,19 +423,87 @@ jobs:
           if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────────────
+  # Fails before the ten-minute pkg build when the release could not sign anyway. A job
+  # that names a secret gets its value on its runner, even when a step sees only an
+  # expression over it: so this check runs alone, without checkout or anything installed.
+  # ─────────────────────────────────────────────────────────────────────────
+  pkg-signing-key:
+    name: Require the pkg signing key
+    timeout-minutes: 5
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      - name: Require the pkg signing key
+        env:
+          HAS_PKG_REPO_SIGNING_KEY: ${{ secrets.PKG_REPO_SIGNING_KEY != '' }}
+        run: |
+          [ "$HAS_PKG_REPO_SIGNING_KEY" = true ] || {
+            echo "::error::PKG_REPO_SIGNING_KEY not set — the signed FreeBSD pkg repo is mandatory (its public key is pinned in apps/agent/freebsd/adminhelper-pkg.pub and the OPNsense plugin)."
+            exit 1
+          }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # pkg(8) from the freebsd/pkg sources and the FreeBSD frpc, in a job of its own
+  # that names no secret (R-1787): what the build and apt-get run as root never shares
+  # a runner with the pkg signing key. The libraries pkg loads, except glibc's, travel
+  # along (build-pkg-tool.sh --bundle-libs), so the release job signs without apt-get.
+  # The archive's SHA-256 goes to the release job as a job output, which checks the
+  # archive before it unpacks it. Tag runs only, like the release job that needs it.
+  # ─────────────────────────────────────────────────────────────────────────
+  freebsd-pkg-tool:
+    name: Build the FreeBSD pkg tool
+    needs: pkg-signing-key
+    timeout-minutes: 30
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the pkg tool and fetch the FreeBSD frpc
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends $(bash scripts/release/build-pkg-tool.sh --deps)
+          bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
+          bash scripts/release/build-pkg-tool.sh --bundle-libs "$RUNNER_TEMP/pkg-tool"
+          FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o "$RUNNER_TEMP/frpc.tar.gz" \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
+          echo "${FRP_SHA256_FREEBSD_AMD64}  $RUNNER_TEMP/frpc.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
+      # tar keeps the exec bits, which upload-artifact drops.
+      - name: Pack the pkg tool and frpc
+        id: pack
+        run: |
+          set -euo pipefail
+          tar czf pkg-tool.tar.gz -C "$RUNNER_TEMP" pkg-tool frp-freebsd
+          echo "sha256=$(sha256sum pkg-tool.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: freebsd-pkg-tool
+          path: pkg-tool.tar.gz
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Gather every artifact, build SHA256SUMS, publish a DRAFT release.
   # draft: true -> nothing is public until a human presses "Publish".
   # ─────────────────────────────────────────────────────────────────────────
   release:
     name: Draft GitHub Release
     timeout-minutes: 30
-    needs: [desktop-linux, agent, agent-windows-smoke, desktop-windows, image-pins]
+    needs: [desktop-linux, agent, agent-windows-smoke, desktop-windows, image-pins, freebsd-pkg-tool]
     # Gate on the MANDATORY builds. desktop-windows is best-effort
     # (continue-on-error), so its failure must not block the draft — but a
     # failed desktop-linux, agent or agent-windows-smoke must, to avoid a
     # partial-asset draft that looks complete while missing core assets, or one
     # whose Windows agent does not start.
-    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.agent-windows-smoke.result == 'success' && needs.image-pins.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.agent-windows-smoke.result == 'success' && needs.image-pins.result == 'success' && needs.freebsd-pkg-tool.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-26.04
     permissions:
       contents: write
@@ -462,6 +530,20 @@ jobs:
           mkdir -p stage
           mv artifacts/image-pins/IMAGES stage/IMAGES
           rmdir artifacts/image-pins
+      # pkg and frpc come from the job freebsd-pkg-tool, which never sees the signing key
+      # (R-1787); nothing is installed before pkg signs. The archive must match the SHA-256
+      # that job reported, and leaves artifacts/ like the image pins.
+      - name: Take the pkg tool
+        env:
+          PKG_TOOL_SHA256: ${{ needs.freebsd-pkg-tool.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PKG_TOOL_SHA256" ] || { echo "::error::freebsd-pkg-tool reported no SHA-256"; exit 1; }
+          echo "${PKG_TOOL_SHA256}  artifacts/freebsd-pkg-tool/pkg-tool.tar.gz" | sha256sum -c -
+          tar xzf artifacts/freebsd-pkg-tool/pkg-tool.tar.gz -C "$RUNNER_TEMP"
+          rm -- artifacts/freebsd-pkg-tool/pkg-tool.tar.gz
+          rmdir artifacts/freebsd-pkg-tool
+          LD_LIBRARY_PATH="$RUNNER_TEMP/pkg-tool/lib" "$RUNNER_TEMP/pkg-tool/sbin/pkg" --version
       # The release-bound updater (scripts/update.sh) consumes ONE versioned asset:
       # the runtime bundle. Its MANIFEST.sha256 + VERSION let the host verify and
       # atomically swap exactly this release's runtime files (compose + ops scripts);
@@ -490,20 +572,6 @@ jobs:
       # installation trusts. The key's public part must be apps/agent/freebsd/adminhelper-pkg.pub
       # (SHA-256 of its DER form in docs/developer/cicd). The output goes to pkg-out/ and
       # joins the agent repo bundle in the next step (build-repo.sh clears its OUT_DIR).
-      # Building pkg from outside sources and fetching frpc run in a step of their own
-      # without the signing key (R-1452): only the step that signs sees the secret.
-      - name: Build the pkg tool and fetch the FreeBSD frpc
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            $(bash scripts/release/build-pkg-tool.sh --deps) openssl
-          bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
-          FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
-          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o "$FRP_DIR/frpc.tar.gz" \
-            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
-          echo "${FRP_SHA256_FREEBSD_AMD64}  $FRP_DIR/frpc.tar.gz" | sha256sum -c -
-          tar xzf "$FRP_DIR/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
       - name: Build signed FreeBSD pkg repo (agent + OPNsense plugin)
         env:
           PKG_REPO_SIGNING_KEY: ${{ secrets.PKG_REPO_SIGNING_KEY }}
@@ -526,7 +594,8 @@ jobs:
             echo "::error::PKG_REPO_SIGNING_KEY public key sha256 $got != pinned $want (apps/agent/freebsd/adminhelper-pkg.pub, docs/developer/cicd) — wrong secret?"; exit 1; }
           # download-artifact drops the exec bit; build-pkg.sh installs with its own mode.
           AGENT=artifacts/agent/adminhelper-agent-freebsd-x86_64
-          PATH="$RUNNER_TEMP/pkg-tool/sbin:$PATH" VERSION="$VER" AGENT_BINARY="$AGENT" \
+          PATH="$RUNNER_TEMP/pkg-tool/sbin:$PATH" LD_LIBRARY_PATH="$RUNNER_TEMP/pkg-tool/lib" \
+            VERSION="$VER" AGENT_BINARY="$AGENT" \
             FRPC_BINARY="$FRP_DIR/frp_${FRP_VERSION}_freebsd_amd64/frpc" OUT_DIR=pkg-out \
             PKG_REPO_KEY="$KEYDIR/key.pem" bash apps/agent/build-pkg.sh
           echo "=== FreeBSD pkg repo ==="; find pkg-out/freebsd -type f | sort

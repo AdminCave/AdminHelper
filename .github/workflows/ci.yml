@@ -731,6 +731,16 @@ jobs:
           key: pkg-tool-${{ steps.image.outputs.image }}-${{ hashFiles('scripts/release/build-pkg-tool.sh') }}
       - name: Build pkg from source
         run: bash scripts/release/build-pkg-tool.sh "$HOME/pkg-tool"
+      # The release signs with this pkg in a job that installs nothing (R-1787): bundled with its
+      # libraries, pkg must run in a bare Ubuntu of the runner's release without the build
+      # dependencies.
+      - name: Run the bundled pkg without its build dependencies
+        run: |
+          set -euo pipefail
+          bash scripts/release/build-pkg-tool.sh --bundle-libs "$HOME/pkg-tool"
+          docker run --rm -v "$HOME/pkg-tool:/opt/pkg-tool:ro" -e LD_LIBRARY_PATH=/opt/pkg-tool/lib \
+            ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db \
+            /opt/pkg-tool/sbin/pkg --version
       - name: Build and verify the signed pkg repo
         # As root: pkg update refuses a database directory not owned by root (0/0) or group-writable.
         run: sudo env PKG_TOOL_PREFIX="$HOME/pkg-tool" bash scripts/tests/pkg_repo_build_test.sh
