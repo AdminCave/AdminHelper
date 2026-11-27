@@ -20,8 +20,8 @@ Roadmap: R-1708 (BUG), R-1830 (BUG). Beide von Kevin am 2026-11-27 angenommen.
   - Der Rückstand der neuen Sitzung kann dann OS-Meldungen auslösen.
 
 ## Ziel und Nicht-Ziele
-- Ein Upload schreibt nach `.<name>.ah-part` im Zielordner und benennt erst danach um. Bei jedem Fehler entfernt er
-  die Teil-Datei.
+- Ein Upload schreibt nach `.<name>.ah-part` im Zielordner und benennt erst danach um. Bei jedem Fehler, den er noch
+  melden kann, entfernt er die Teil-Datei; nach einem Verbindungsabbruch bleibt sie bis zum nächsten Upload liegen.
   - Vor dem Schreiben entfernt er einen alten Eintrag unter dem Teil-Namen und legt die Teil-Datei dann mit
     `WRITE|CREATE|EXCLUDE` neu an. Ein Symlink unter diesem Namen wird damit nie verfolgt.
   - Überschreiben bleibt eine Wahl des Nutzers. Ohne `overwrite` schlägt der Upload fehl, wenn das Ziel existiert,
@@ -34,9 +34,14 @@ Roadmap: R-1708 (BUG), R-1830 (BUG). Beide von Kevin am 2026-11-27 angenommen.
 `docs/developer/desktop.html` und `docs/en/developer/desktop.html` (der SFTP-Absatz), `changelog.d/kern-desktop-7.md`.
 
 ## Risiken und Rollback
-- **Upload:** `posix-rename@openssh.com` gibt es nicht auf jedem Server. Ohne diese Erweiterung entfernt der Upload
-  beim Überschreiben zuerst das Ziel und benennt dann um. Dazwischen liegt ein kurzes Fenster ohne Datei, aber nie
-  eine abgeschnittene Datei.
+- **Upload:** russh-sftp 3.0.1 kennt kein `posix-rename@openssh.com`, und das SFTP-v3-Rename von OpenSSH ersetzt
+  keine Datei. Beim Überschreiben entfernt der Upload darum das Ziel unmittelbar vor dem Umbenennen. Dazwischen liegt
+  ein kurzes Fenster ohne Datei, aber nie eine abgeschnittene Datei. Ein Link am Ziel wird aufgelöst: Die Datei, auf
+  die er zeigt, wird ersetzt, der Link bleibt.
+  - Die ersetzte Datei ist eine neue: Eigentümer und Gruppe übernimmt der Upload, wo der Server es dem Hochladenden
+    erlaubt (root, eine eigene Gruppe), sonst gehören sie ihm. Hardlinks und ACLs der alten Datei gehen verloren, und
+    in einem Ordner ohne Schreibrecht lässt sich eine beschreibbare Datei nicht mehr ersetzen (Kevin 2026-11-27:
+    hingenommen).
   - Die Rechte werden ab dem ersten Byte gesetzt, wie im ersten Bau.
   - Rollback: je ein Revert der Task-Commits.
 - **Feed:** nur ein zusätzlicher Wächter.

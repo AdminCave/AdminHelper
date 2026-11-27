@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-7 — Desktop: SFTP-Upload über eine Teil-Datei, Feed nach dem Abmelden — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-desktop-7 · Review: am Ende
 Spec: docs/features/kern-desktop-7.md (Roadmap R-1708, R-1830)
 Heavy: linux-full — Desktop (SFTP-Datenpfad, Benachrichtigungen); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -68,8 +68,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: keine (nur Test)
 
-### T6 — Doku und Spec an den Bau angleichen  [ ]
+### T6 — Doku und Spec an den Bau angleichen  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/features/kern-desktop-7.md, changelog.d/kern-desktop-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @655f8ab7c 2026-11-27T16:47:26+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der SFTP-Absatz sagt, dass eine abgebrochene Verbindung die Teil-Datei bis zum nächsten Upload liegen lässt, nennt die Übernahme des Eigentümers und die hingenommenen Folgen (Hardlinks, ACLs, schreibgeschützter Ordner). Die Spec beschreibt den Umbenenn-Weg ohne `posix-rename` und die Risiken.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
