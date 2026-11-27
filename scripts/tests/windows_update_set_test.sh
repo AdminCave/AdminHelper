@@ -13,7 +13,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT/apps/agent/build-windows-update.sh"
-command -v minisign >/dev/null || { echo "FAIL: minisign missing" >&2; exit 1; }
+command -v minisign >/dev/null || { echo "SKIP: minisign missing"; exit 75; }
 
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
