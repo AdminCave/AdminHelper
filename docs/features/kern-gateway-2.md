@@ -27,7 +27,7 @@ und `:144`), der :8444-Server (`:187-188`) und `provision/activate` (`:199`). Di
 - :443 bleibt unverändert, der Trigger ist dort weiter mit Zertifikat erreichbar.
 - Der Dialog zeigt die URL auf dem Enrollment-Port. Die Antworten mit Token (Anlegen, Rotieren) tragen dazu `trigger_port`
   (`ENROLL_PORT`, `apps/server/app/core/config.py:287`); der Host bleibt der der Seite.
-- Jeder `proxy_pass`-Weg zu `app` und `issuer` sendet `Connection ""`.
+- (verworfen, T1) `Connection ""` an jedem `proxy_pass`-Weg: seit nginx 1.29.7 Default, das Gateway-Image ist 1.30.6.
 
 **Nicht-Ziele:** Den Trigger von :443 entfernen; die Ratelimits des Servers ändern; ein eigener Port für Webhooks.
 
@@ -35,7 +35,7 @@ und `:144`), der :8444-Server (`:187-188`) und `provision/activate` (`:199`). Di
 
 | Bereich | Dateien |
 |---|---|
-| Gateway | `apps/gateway/nginx.conf`, `apps/gateway/identity-headers.conf` |
+| Gateway | `apps/gateway/nginx.conf` |
 | Gateway-Tests | `apps/server/tests/test_gateway_container.py`, `scripts/tests/integration_stack_test.sh` |
 | Server | `apps/server/app/modules/hooks/router.py`, `apps/server/app/modules/hooks/schemas.py`, `apps/server/tests/test_hooks.py`, OpenAPI-Snapshot |
 | Web | `apps/web/src/modals/WebhookTokenModal.svelte`, ein Test dazu, `apps/web/src/lib/api/` (Typ) |
@@ -50,7 +50,7 @@ und `:144`), der :8444-Server (`:187-188`) und `provision/activate` (`:199`). Di
 ## Trade-offs
 
 - Port im Dialog: aus der Server-Antwort statt fest 8444, weil `ENROLL_PORT` den Host-Port setzt
-  (`docker-compose.yml:291`). Alternative: fest 8444 im Web; falsch bei geändertem `ENROLL_PORT`. Das ist die offene Frage.
+  (`docker-compose.yml:291`). Alternative: fest 8444 im Web; falsch bei geändertem `ENROLL_PORT`. Kevin 2026-11-27: Port vom Server.
 - Body-Grenze 1 MiB statt 10 MiB (:443): Webhook-Payloads sind JSON aus Fremdsystemen, 1 MiB reicht für die Beispiele
   unter `docs/examples/`, und die zertifikatslose Ebene bleibt klein.
 
