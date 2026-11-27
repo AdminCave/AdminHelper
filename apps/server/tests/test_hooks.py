@@ -12,6 +12,8 @@ import logging
 
 import pytest
 
+from app.core import config
+
 WEBHOOK = {"name": "wh", "hook_type": "webhook", "script": "-- noop"}
 
 
@@ -131,6 +133,33 @@ class TestHookCreateValidation:
         r = test_client.post("/api/hooks", json=WEBHOOK, headers=h)
         assert r.status_code == 201, r.text
         assert r.json().get("token")  # the one-time webhook token is returned
+        # The trigger URL points at the enrollment plane (R-1687).
+        assert r.json()["trigger_port"] == 8444
+
+    def test_the_token_answers_name_a_changed_enrollment_port(
+        self, test_client, db_session, admin_user, monkeypatch
+    ):
+        monkeypatch.setattr(config, "ENROLL_PORT", 9444)
+        h = _login(test_client, "admin", "adminpass")
+        r = test_client.post("/api/hooks", json=WEBHOOK, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["trigger_port"] == 9444
+        rotated = test_client.post(f"/api/hooks/{r.json()['id']}/rotate", headers=h)
+        assert rotated.status_code == 200, rotated.text
+        assert rotated.json()["trigger_port"] == 9444
+        assert rotated.json()["token"] != r.json()["token"]
+
+    def test_hooks_without_a_token_name_no_trigger_port(self, test_client, db_session, admin_user):
+        h = _login(test_client, "admin", "adminpass")
+        event = {
+            "name": "e",
+            "hook_type": "event",
+            "script": "x",
+            "event_triggers": ["connection.created"],
+        }
+        r = test_client.post("/api/hooks", json=event, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["token"] is None and r.json()["trigger_port"] is None
 
     @pytest.mark.parametrize(
         "payload",

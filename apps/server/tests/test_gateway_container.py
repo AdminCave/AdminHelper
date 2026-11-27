@@ -367,6 +367,29 @@ def test_the_access_plane_answers_the_internal_routes_itself_with_404():
     assert _args(access[("/",)], "proxy_pass") == [["http://app"]]
 
 
+def test_webhook_triggers_come_over_the_enrollment_plane_under_their_own_zone():
+    # R-1687: CI systems call a webhook without a client certificate, so its two trigger
+    # routes are open on :8444, POST only, limited per address in a zone of their own.
+    zones = {args[1]: args for args in _args(_nginx_http(), "limit_req_zone")}
+    assert zones["zone=hooks:10m"] == ["$binary_remote_addr", "zone=hooks:10m", "rate=5r/s"]
+
+    servers = _servers()
+    triggers = [("=", "/api/hooks/trigger"), ("~", "^/api/hooks/trigger/[^/]+$")]
+    enroll = _locations(servers["8444"])
+    for key in triggers:
+        trigger = enroll[key]
+        assert _args(trigger, "limit_except") == [["POST"]], key
+        assert _args(trigger, "limit_req") == [["zone=hooks", "burst=20", "nodelay"]], key
+        assert _args(trigger, "client_max_body_size") == [["1m"]], key
+        assert _args(trigger, "proxy_pass") == [["http://app"]], key
+        # Its own proxy_set_header ends the inheritance of the server level's emptied
+        # identity headers, so it must empty them again.
+        headers = {args[0]: args[1:] for args in _args(trigger, "proxy_set_header")}
+        assert headers["X-Client-Verify"] == headers["X-Client-Cert"] == ['""'], key
+    for port in ("443", "8445", "127.0.0.1:8081"):
+        assert not set(triggers) & set(_locations(servers[port])), port
+
+
 class Gateway:
     """A container of the gateway image in the module's network."""
 
@@ -400,11 +423,11 @@ class Gateway:
         assert result.returncode == 0 and result.stdout.strip(), result.stderr
         return result.stdout.strip()
 
-    def fetch(self, path: str = PROBE, port: int = 8445) -> str:
+    def fetch(self, path: str = PROBE, port: int = 8445, method: str = "GET") -> str:
         """HTTP status of path on a plane (the repo plane by default) as the client container
         gets it, the path sent as is (dot segments included); 000 for no answer."""
         url = f"https://{self.name}:{port}{path}"
-        curl = ["curl", "-sk", "--path-as-is", "--max-time", "2", "-o", "/dev/null"]
+        curl = ["curl", "-sk", "--path-as-is", "--max-time", "2", "-o", "/dev/null", "-X", method]
         curl += ["-w", "%{http_code}", url]
         result = subprocess.run(
             [self.docker, "exec", self.setup.client, *curl], capture_output=True, text=True
@@ -537,6 +560,25 @@ def test_on_the_access_plane_internal_routes_get_404_while_the_rest_goes_to_the_
         refused = {path: box.fetch(path, port=443) for path in internal}
         assert refused == dict.fromkeys(internal, "404"), box.logs()
         assert box.fetch("/api/servers", port=443) == "502", box.logs()
+
+
+def test_on_the_enrollment_plane_only_the_webhook_triggers_reach_the_server(gateway_setup):
+    # No server runs in the module's network: a path the gateway forwards gets 502, one it
+    # refuses itself 404, a method it refuses 403.
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        forwarded = ["/api/hooks/trigger", "/api/hooks/trigger/some-token"]
+        got = {path: box.fetch(path, port=8444, method="POST") for path in forwarded}
+        assert got == dict.fromkeys(forwarded, "502"), box.logs()
+        assert box.fetch("/api/hooks/trigger/some-token", port=8444) == "403", box.logs()
+        refused = [
+            "/api/hooks",
+            "/api/hooks/trigger/some-token/x",
+            "/api/hooks/some-id",
+            "/api/servers",
+        ]
+        got = {path: box.fetch(path, port=8444, method="POST") for path in refused}
+        assert got == dict.fromkeys(refused, "404"), box.logs()
 
 
 def test_on_the_repo_plane_one_address_gets_429_beyond_its_cap_while_its_downloads_go_on(

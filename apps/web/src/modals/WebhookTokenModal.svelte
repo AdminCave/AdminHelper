@@ -16,17 +16,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
     open: boolean;
     title?: string;
     token: string;
+    /** Port of the gateway's enrollment plane, which takes triggers without a client
+     * certificate (R-1687); without it the page's own origin. */
+    triggerPort?: number | null;
     onClose: () => void;
   }
 
-  let { open, title, token, onClose }: Props = $props();
+  let { open, title, token, triggerPort, onClose }: Props = $props();
 
   const curlExample = $derived.by(() => {
     if (!token) return '';
     // Prefer the header variant: a token in the URL path leaks into access logs, proxy
     // logs and browser history. The server accepts both /trigger (header) and
     // /trigger/{token} (path) (3.101).
-    return `curl -X POST -H "X-Hook-Token: ${token}" ${window.location.origin}/api/hooks/trigger`;
+    const base = triggerPort
+      ? `https://${window.location.hostname}:${triggerPort}`
+      : window.location.origin;
+    return `curl -X POST -H "X-Hook-Token: ${token}" ${base}/api/hooks/trigger`;
   });
 
   function copy() {
