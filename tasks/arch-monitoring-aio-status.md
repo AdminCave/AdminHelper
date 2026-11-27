@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-aio-status — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-aio-status · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-aio-status · Review: pro Task
 Spec: docs/features/arch-monitoring-aio-status.md (Roadmap R-1825)
 Heavy: linux-full — geänderter Push-Pfad (`routers/agent.py`: Reihenfolge der Bewertung, Geschwister der Check-Bedingung) und neuer Katalog-Check; keine Migration, kein Server-, Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
