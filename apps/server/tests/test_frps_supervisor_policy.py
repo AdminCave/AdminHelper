@@ -8,7 +8,7 @@ port up that bindPort, vhostHTTPSPort and webServer.port of the copy leave free,
 user of its own (FRPS_POLICY_USER: no root, neither the UID of frps nor that of the requests to
 the dashboard, outside the group of frps) and given FRPS_READ_SECONDS to answer on /healthz;
 frps starts either way. Its copy of frps.toml ends in a fixed [[httpPlugins]] block for that
-port (op NewProxy), which an input must not carry itself and a copy from an earlier run must
+port (ops Login and NewProxy), which an input must not carry itself and a copy from an earlier run must
 carry as it does. Every poll asks /healthz again; a plugin that does not answer is KILLed and
 started anew, with a log line. The plugin runs until the supervisor ends, through restarts of
 frps; it moves along when a new copy takes its port.
@@ -193,7 +193,7 @@ def test_the_plugin_goes_up_to_65535_from_the_highest_port_allowed(box):
 
 
 # A [[httpPlugins]] block the input brings along, for the port of the plugin: one of its own,
-# the very one the supervisor appends and that one with ops beyond NewProxy.
+# the very one the supervisor appends and that one with ops beyond Login and NewProxy.
 INBOUND = {
     "foreign": lambda port: (
         f'\n[[httpPlugins]]\nname = "own"\naddr = "127.0.0.1:{port}"\npath = "/h"\n'
@@ -201,7 +201,7 @@ INBOUND = {
     ),
     "as the supervisor appends it": _plugin_block,
     "with more ops": lambda port: _plugin_block(port).replace(
-        'ops = ["NewProxy"]', 'ops = ["NewProxy", "Login"]'
+        'ops = ["Login", "NewProxy"]', 'ops = ["Login", "NewProxy", "NewUserConn"]'
     ),
 }
 
@@ -244,16 +244,25 @@ def _block_twice(box: Box):
 
 def _no_ops(box: Box):
     copy = box.current / "frps.toml"
-    copy.write_text(copy.read_text().replace('ops = ["NewProxy"]\n', ""))
+    copy.write_text(copy.read_text().replace('ops = ["Login", "NewProxy"]\n', ""))
+
+
+def _block_without_login(box: Box):
+    copy = box.current / "frps.toml"
+    text = copy.read_text()
+    assert text.count('ops = ["Login", "NewProxy"]\n') == 1
+    copy.write_text(text.replace('ops = ["Login", "NewProxy"]\n', 'ops = ["NewProxy"]\n'))
 
 
 # Copies an earlier run left: one from before the plugin, one whose block names another port
-# (FRPS_POLICY_PORT changed since), one with the block twice, one with the block cut short.
+# (FRPS_POLICY_PORT changed since), one with the block twice, one with the block cut short,
+# one from a version whose block let frps admit a login without asking the plugin.
 OLD_COPIES = {
     "without the block": _strip_block,
     "the block at another port": _block_elsewhere,
     "the block twice": _block_twice,
     "the block without ops": _no_ops,
+    "the block without Login": _block_without_login,
 }
 
 
@@ -558,7 +567,7 @@ def test_in_the_frps_image_the_plugin_runs_as_its_user_before_frps_starts(
         assert "does not answer" not in logs
         copy = box.exec("cat", f"{ACTIVE_DIR}/current/frps.toml")
         assert copy.stdout.endswith(
-            'addr = "127.0.0.1:7480"\npath = "/handler"\nops = ["NewProxy"]\n'
+            'addr = "127.0.0.1:7480"\npath = "/handler"\nops = ["Login", "NewProxy"]\n'
         )
 
 
