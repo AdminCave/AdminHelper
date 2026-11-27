@@ -10,13 +10,11 @@ merged selbst („du darfst alles mergen“), obwohl der Zug `scripts/install.sh
 
 ## Problem je Zeile
 
-- **R-1782** `scripts/update.sh:858`: Den Laufzeit-Snapshot für den Rollback schreibt `update.sh` unter einem
-  vorhersagbaren Namen direkt nach `backups/`, und der Rollback liest ihn dort wieder (`:909`). Ziel: Der Snapshot
+- **R-1782** `scripts/update.sh`: Laufzeit-Snapshot und Rollback robuster machen. Ziel: Der Snapshot
   entsteht in einem Verzeichnis, das nur dieser Lauf anlegt, und erhält dann seinen Namen, so wie es `backup.sh`
   schon macht. Vor dem Auspacken prüft der Rollback, ob der Snapshot noch der ist, den dieser Lauf geschrieben hat.
   Einzelheiten stehen nur in `tasks/private/`.
-- **R-1786** `scripts/restore.sh:20,48`: `restore.sh` spielt jedes Archiv ein, egal wem es gehört und wer es ändern
-  konnte. Ziel (Kevin 2026-11-27): Abgelehnt wird ein Archiv,
+- **R-1786** `scripts/restore.sh`: Restore prüft die Herkunft des Archivs. Ziel (Kevin 2026-11-27): Abgelehnt wird ein Archiv,
   - das weder dem Aufrufer noch root gehört,
   - das für Gruppe oder andere beschreibbar ist,
   - oder das in einem Ordner liegt, den andere beschreiben können (ohne Sticky-Bit).
