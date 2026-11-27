@@ -14,8 +14,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-27 R-1824: Feld `Assertion-Änderung:` entfernen, die Lint-Prüfung samt ihren Fällen in scripts/tests/ledger_test.sh geht mit.
 - R-1803, Nit zur Entscheidung in tasks/kern-netretry-1.md: das Ledger ist erledigt und Geschichte; hier festgehalten: `apps/gateway/Dockerfile` (`apk upgrade`) bleibt aus demselben Grund wie `apps/frps/Dockerfile` ohne Wiederholung.
 
-### T1 — R-1824: Ledger-Feld Assertion-Änderung entfernen  [ ]
+### T1 — R-1824: Ledger-Feld Assertion-Änderung entfernen  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a99cc5035 2026-11-27T17:07:28+01:00
+Review: approve (.ah-out/review/kern-harness-14/T1.verdict.json)
 Änderung: `ledger.sh lint` prüft nur noch `Test-Löschung:` (Form und eine Zeile je Task); die Fälle für `Assertion-Änderung:` in ledger_test.sh gehen, die für `Test-Löschung:` bleiben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: keine (tasks/README.md beschreibt das Feld nicht)

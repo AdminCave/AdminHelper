@@ -279,19 +279,17 @@ case "$CMD" in
       /^## / { flush(); open = 0 }
       END { flush() }' "$LEDGER")
 
-    # A declared test deletion or assertion change (R-0206) needs the test and a
-    # reason: task-close.sh lets a test go only for the <file>::<test> named in a
-    # committed Test-Löschung: line, and a deletion or change nobody can explain
-    # is the one thing it exists to stop.
-    for field in Test-Löschung Assertion-Änderung; do
-      while IFS= read -r entry; do
-        echo "ERROR  $field: '$entry' is not <file>::<test> — <reason>" >&2
-        RC=1
-      done < <(sed -n "s/^$field:[[:space:]]*//p" "$LEDGER" \
-        | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
-        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
-        | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
-    done
+    # A declared test deletion (R-0206) needs the test and a reason: task-close.sh
+    # lets a test go only for the <file>::<test> named in a committed
+    # Test-Löschung: line, and a deletion nobody can explain is the one thing it
+    # exists to stop.
+    while IFS= read -r entry; do
+      echo "ERROR  Test-Löschung: '$entry' is not <file>::<test> — <reason>" >&2
+      RC=1
+    done < <(sed -n "s/^Test-Löschung:[[:space:]]*//p" "$LEDGER" \
+      | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
+      | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
     # A test deleted under a risk path (scripts/dev/review-risk.txt) is Kevin's
     # to decide, not a line in the gate report (R-0578): the task waits on [?],
     # or a `Kevin JJJJ-MM-TT:` item under ## Entscheidungen names the file.
@@ -338,7 +336,7 @@ case "$CMD" in
         }' "$LEDGER")
     fi
 
-    # One line of each per task: the gate reads only the first (review.sh
+    # One line per task: the gate reads only the first (review.sh
     # task_field), so a second one would announce nothing (R-0297).
     while IFS= read -r msg; do
       echo "ERROR  $msg" >&2
@@ -346,7 +344,7 @@ case "$CMD" in
     done < <(awk '
       /^###[ \t]/ { id = $2; next }
       /^## / { id = "" }
-      id != "" && match($0, /^(Test-Löschung|Assertion-Änderung):/) {
+      id != "" && match($0, /^Test-Löschung:/) {
         f = substr($0, 1, RLENGTH - 1)
         if (++n[id, f] == 2) print id ": two " f ": lines — a task declares them on one line; join the entries with ; (tasks/README.md)"
       }' "$LEDGER")
