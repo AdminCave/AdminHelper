@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-18 — Betriebsskripte: Snapshot, Restore-Herkunft, Env-Prüfung, Backup-Rolle — Task-Ledger
-Status: erledigt · Branch: feature/ops-18 · Review: pro Task
+Status: bereit · Branch: feature/ops-18 · Review: pro Task
 Spec: docs/features/ops-18.md (Roadmap R-1782, R-1786, R-1821, R-1783)
 Heavy: linux-full — scripts/install.sh, scripts/update.sh, scripts/restore.sh und docker-compose.yml (backup_restore und upgrade_path im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -76,3 +76,11 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
+
+### T8 — R-1783: Monitoring-Test ruft pg-backup als ah_backup  [x]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_catalog_adminhelper.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0b1cabe2e 2026-11-27T14:48:12+01:00
+Review: approve (.ah-out/review/ops-18/T8.verdict.json)
+Änderung: `_pg_backup` setzt `BACKUP_DB_PASSWORD` statt der Passwörter der Dienst-Rollen (PR-CI #701: `test_a_good_dump_lands_in_the_backup_folder` rot, rc 2); der Test ohne Passwort entfernt auch `BACKUP_DB_PASSWORD`.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_adminhelper.py
+Doku: keine (Test)
