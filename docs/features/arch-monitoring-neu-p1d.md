@@ -119,8 +119,10 @@ class Rule(_Model):
     when: Condition | None = None
 ```
 
-- **Schlüssel:** `rule_key(rule) = rule.key or f"{rule.field}.{rule.level}"`. Der Punkt ist im Muster `_KEY`
-  (`model.py:47`) nicht erlaubt, also kollidiert ein abgeleiteter nie mit einem gesetzten Schlüssel.
+- **Schlüssel:** `rule_key(rule) = rule.key or f"{rule.field}.{rule.level}"`. Ein gesetzter Schlüssel passt auf
+  `_KEY` (ohne Punkt) oder ist `<eigenes Feld>.<Stufe>`: der eingefrorene Schlüssel, den `effective` nach einer
+  Stufen-Änderung ausdrücklich setzt (T4). Er kann also einem abgeleiteten gleichen; die Eindeutigkeit tragen
+  `rule_problems` (in `Module`, in der Regel-API) und `effective`, das nur Katalog-Schlüssel ausgibt.
 - **`clear`** liegt auf der sicheren Seite der Grenze: bei `gt`/`ge` echt darunter, bei `lt`/`le` echt darüber.
   Eine feuernde Regel hält, solange `op(wert, clear)` gilt.
 - **`when`** bewertet wie heute mit `_same` und den Vergleichen von `probe.py`. `max_age` gibt es nur zusammen mit
