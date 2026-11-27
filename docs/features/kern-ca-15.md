@@ -37,7 +37,8 @@ entschieden (unten).
 ## Risiken & Rollback
 
 - Ein Fehler in der Prüfung ließe Agenten und Desktop nicht mehr erneuern. Die Tests prüfen die Signatur über
-  die Sprachgrenze (Go und Rust erzeugen, Python prüft dieselbe Form); ein Renew ohne `proof` bleibt im Übergang
+  die Sprachgrenze: ein fester Vektor (`apps/ca-issuer/tests/fixtures/renew_proof_vector.json`) wird von Python,
+  Go und Rust je mit der eigenen Kopie des Präfixes geprüft; ein Renew ohne `proof` bleibt im Übergang
   möglich, ein Rollback des ca-issuer schadet neuen Clients nicht (das Feld wird ignoriert).
 - Keine Migration, kein Wire-Format außer dem neuen optionalen Feld.
 

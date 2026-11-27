@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-15 — ca-issuer: Erneuerung mit Besitznachweis, Entrypoint-Test — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-15 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-15 · Review: pro Task
 Spec: docs/features/kern-ca-15.md (Roadmap R-1812, R-1813)
 Heavy: linux-full — apps/ca-issuer und apps/agent (Stack- und Agent-Schritte im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -46,8 +46,10 @@ Review: approve (.ah-out/review/kern-ca-15/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_entrypoint.py
 Doku: keine (Test)
 
-### T5 — Doku DE+EN und Changelog  [ ]
-Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, changelog.d/kern-ca-15.md
+### T5 — Doku DE+EN und Changelog  [x]
+Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/index.html, changelog.d/kern-ca-15.md, docs/features/kern-ca-15.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1a2fa7349 2026-11-27T15:21:11+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: ca-issuer-Absatz: `/renew` mit Besitznachweis (`proof`), Übergang ohne ihn; Changelog neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
