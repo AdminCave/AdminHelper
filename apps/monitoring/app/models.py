@@ -353,8 +353,9 @@ class MonitorObjectState(Base):
     fail_count = Column(Integer, nullable=False)
     stable = Column(Boolean, nullable=False)
     gone_at = Column(DateTime, nullable=True)
-    # The setting that excludes the object (ignore_mounts …, R-1636): the checker still
-    # names it, as not_collected, so the object list shows it instead of losing it.
+    # What excludes the object: a setting (ignore_mounts …, R-1636) or the id of a no_rating
+    # exception (R-1637). The checker still names it, as not_collected, so the object list
+    # shows it instead of losing it.
     excluded = Column(String(40), nullable=True)
 
 

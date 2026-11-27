@@ -138,8 +138,10 @@ Abhängt von: T5
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_exceptions_api.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_checks_crud.py tests/test_alerter_hub.py
 Doku: → T14
 
-### T7 — Engine mit Mustern: Mounts, Dienste, Prognose (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/app/checkers/context.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/app/checkers/forecast.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_check_engine_context.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/monitoring/tests/test_service_process_checker.py, apps/monitoring/tests/test_checker_forecast.py
+### T7 — Engine mit Mustern: Mounts, Dienste, Prognose (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/app/checkers/context.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/app/checkers/forecast.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_check_engine_context.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/monitoring/tests/test_service_process_checker.py, apps/monitoring/tests/test_checker_forecast.py, apps/monitoring/app/routers/agent.py, apps/monitoring/tests/_helpers.py, apps/monitoring/app/models.py, apps/monitoring/app/objects.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0f703842b 2026-11-27T13:42:02+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T7.verdict.json)
 Abhängt von: T2
 Änderung:
 - **Engine:** `_load_run` (`check_engine.py:521`) lädt die geltenden `no_rating`-Ausnahmen des Checks. Sie gibt dem Checker eine Musterliste `(muster, quelle)`:
@@ -300,3 +302,4 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27 T6: Eine zweite stehende Skip auf demselben Check ist 409 (eine abgeschaltete stört nicht, bis sie angeschaltet wird). Das ist eine Bedienregel, keine DB-Invariante: zwei Skips wirken wie eine, `load_skips` nimmt die kleinere id.
 - Session 2026-11-27 T6: PUT lässt den Effekt stehen, und Skip und no_rating behalten ihren Check (422); no_notify darf den Geltungsbereich weiter wechseln (R-1636, `test_a_new_scope_clears_the_old_one`). So bleibt die Spur einer Skip an einem Check, und der Router muss beim Umwidmen nicht zwei Checks schalten.
 - Session 2026-11-27 T6: `check_switch` teilt `stopped` (Entwarnung) und `started` (frischer Zustand, `updated_at` für den Planer-Verzug) aus `stop_check`/`start_check` heraus; `/exceptions` vergleicht „läuft“ vor und nach der Änderung einer Skip und ruft das passende auf, der Planer folgt nach dem Commit. `_schedule` bleibt in `routers/checks.py` (die Tests patchen dort `add_check`), `routers/exceptions.py` hat dieselben drei Zeilen in `_after_commit`.
+- Session 2026-11-27 T7: Die Muster lädt der Push-Pfad (`routers/agent.py` `_evaluate_push_check`), nicht `_load_run`: die fünf Typen mit Listen sind push-only, `_load_run` gibt für sie `None` zurück. Er setzt `config["_no_rating"]` für jeden der fünf Typen, auch leer, und überschreibt damit einen gespeicherten Schlüssel; `_load_disk_rules` lädt die Ausnahmen des resources-Checks für die Prognose selbst. Trifft ein Objekt Einstellung und Ausnahme, nennt `excluded` die Einstellung: Sie hält es auch nach dem Ende der Ausnahme draußen. Grund „Excluded by exception“, die ID löst T9 auf.

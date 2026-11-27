@@ -103,6 +103,26 @@ def standing_skip(check_id, *, id=None):
     )
 
 
+def no_rating(check_id, pattern, *, kind, id, ended=False):
+    """A no_rating exception on the objects of one check whose name matches `pattern`, as
+    the API stores it (R-1637); an ended one no longer applies."""
+    import datetime
+
+    from app.models import MonitorException
+
+    return MonitorException(
+        id=id,
+        scope_kind="object",
+        check_id=check_id,
+        object_kind=kind,
+        object_pattern=pattern,
+        effect="no_rating",
+        duration_kind="permanent",
+        origin="api",
+        ended_at=datetime.datetime(2026, 1, 1) if ended else None,
+    )
+
+
 class _ListQuery:
     """query(Model)-shim returning a fixed list (filter chainable)."""
 

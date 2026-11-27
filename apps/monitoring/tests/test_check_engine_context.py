@@ -19,7 +19,7 @@ from app.checkers import CheckContext, PartnerState
 from app.checkers.context import DiskRules
 from app.models import MonitorCheck, MonitorState
 
-from ._helpers import standing_skip
+from ._helpers import no_rating, standing_skip
 
 SEEN = datetime.datetime(2026, 11, 12, 6, 0, 0)
 
@@ -507,3 +507,25 @@ def test_disk_forecast_without_an_enabled_resources_check_of_its_host_has_no_rul
     ce.execute_check("f1")
 
     assert checker.contexts[0].disk_rules is None
+
+
+def test_disk_forecast_rules_take_the_exceptions_of_the_resources_check(monkeypatch, db_engine):
+    # Its ignore_mounts masked, its no_rating exceptions in force as they are (R-1637).
+    factory = _factory(db_engine)
+    _seed_forecast(factory)
+    with factory() as db:
+        resources = db.get(MonitorCheck, "r1")
+        config = {**json.loads(resources.config), "ignore_mounts": ["/boot/efi", "/mnt/[x]"]}
+        resources.config = json.dumps(config)
+        db.add(no_rating("r1", "/srv/*", kind="mount", id="exc-1"))
+        db.add(no_rating("r1", "/old", kind="mount", id="exc-2", ended=True))
+        db.commit()
+    checker = _ContextChecker()
+    _wire(monkeypatch, factory, checker)
+
+    ce.execute_check("f1")
+
+    rules = checker.contexts[0].disk_rules
+    assert rules.ignore_mounts == frozenset({"/boot/efi", "/mnt/[[]x]", "/srv/*"})
+    mounts = ("/boot/efi", "/mnt/[x]", "/mnt/x", "/srv/a", "/old", "/")
+    assert [m for m in mounts if rules.ignores(m)] == ["/boot/efi", "/mnt/[x]", "/srv/a"]

@@ -14,10 +14,12 @@ from __future__ import annotations
 import logging
 import math
 import time
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
 
 from app.core.time import utcnow_naive
+from app.exception_scope import OBJECT_KINDS, mask
 
 logger = logging.getLogger("monitor.agent")
 
@@ -150,14 +152,40 @@ def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]
 NOT_COLLECTED = "not_collected"
 
 
-def excluded_object(item: dict | None, setting: str) -> dict | None:
-    """The object of an entry a setting of the check excludes (R-1636): not rated, its
-    reason and mark name the setting, so the object list shows it last instead of losing
-    it. None, an entry without a key, stays None."""
+# The key under which the config of a run carries the no_rating exceptions in force on the
+# check's objects, as (pattern, exception id) (R-1637); routers/agent.py puts them in.
+NO_RATING = "_no_rating"
+
+# The settings an object can be excluded by; any other source is an exception's id.
+_SETTINGS = frozenset(kind.list_key for kind in OBJECT_KINDS.values())
+
+
+def exact_patterns(entries: object) -> list[str]:
+    """A setting's list of exact names as patterns that match only the name itself (R-1637)."""
+    return [mask(e) for e in entries if isinstance(e, str)] if isinstance(entries, list) else []
+
+
+def exclusions(config: dict, setting: str, patterns: Iterable[str]) -> list[tuple[str, str]]:
+    """The patterns that exclude an object of the check, with their source: those of the
+    setting first, so an object both exclude names the one that keeps it out after the
+    exception ends, then the no_rating exceptions in force."""
+    return [(p, setting) for p in patterns] + list(config.get(NO_RATING, []))
+
+
+def excluded_by(name: str, patterns: list[tuple[str, str]]) -> str | None:
+    """The source of the first pattern that matches `name` (fnmatch, case-sensitive)."""
+    return next((source for pattern, source in patterns if fnmatchcase(name, pattern)), None)
+
+
+def excluded_object(item: dict | None, source: str) -> dict | None:
+    """The object of an entry a setting of the check or a no_rating exception excludes
+    (R-1636, R-1637): not rated, its reason and mark name the source (the setting, or the
+    exception's id), so the object list shows it last instead of losing it. None, an entry
+    without a key, stays None."""
     if item is None:
         return None
-    reason = f"Excluded by setting {setting}"
-    return {**item, "status": NOT_COLLECTED, "reason": reason, "excluded": setting}
+    reason = f"Excluded by setting {source}" if source in _SETTINGS else "Excluded by exception"
+    return {**item, "status": NOT_COLLECTED, "reason": reason, "excluded": source}
 
 
 def whole_list(value: object) -> bool:
@@ -432,8 +460,11 @@ def _grade_load(
     return cpu_count, load_per_cpu
 
 
-def _grade_disks(grader: _Grader, config: dict, resources: dict) -> tuple[list[dict], set]:
-    """Usage and inodes per disk: (the disks after the fstype filter, ignore_mounts)."""
+def _grade_disks(
+    grader: _Grader, config: dict, resources: dict
+) -> tuple[list[dict], dict[str, str]]:
+    """Usage and inodes per disk: (the disks after the fstype filter, the source of each
+    excluded mount)."""
     # Disks — filter pseudo filesystems server-side
     # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
     raw_disks = capped_objects(resources.get("disks"))
@@ -442,14 +473,17 @@ def _grade_disks(grader: _Grader, config: dict, resources: dict) -> tuple[list[d
     disk_crit = config.get("disk_crit", 95)
     disk_warn = config.get("disk_warn", 85)
     disk_min_free_gb = config.get("disk_min_free_gb", 20)
-    ignore_mounts = set(config.get("ignore_mounts", []))
+    patterns = exclusions(config, "ignore_mounts", exact_patterns(config.get("ignore_mounts")))
+    excluded: dict[str, str] = {}
     disk_overrides = config.get("disk_overrides", {})
     inode_crit = config.get("inode_crit", 90)
     inode_warn = config.get("inode_warn", 80)
     for disk in disks:
         pct = entry_number(disk, "percent", 0)
         mount = entry_text(disk, "mount", NO_MOUNT)
-        if mount in ignore_mounts:
+        source = excluded_by(mount, patterns)
+        if source is not None:
+            excluded[mount] = source
             continue
         # The schema takes null for an override key; it counts as unset, like a missing one.
         ov = {k: v for k, v in disk_overrides.get(mount, {}).items() if v is not None}
@@ -478,7 +512,7 @@ def _grade_disks(grader: _Grader, config: dict, resources: dict) -> tuple[list[d
                 f"Inodes {mount} {inodes}%",
                 "%",
             )
-    return disks, ignore_mounts
+    return disks, excluded
 
 
 def _grade_temperatures(grader: _Grader, config: dict, resources: dict) -> list[dict]:
@@ -568,11 +602,12 @@ def _resource_objects(
     cpu: float | None,
     mem: float | None,
     disks: list[dict],
-    ignore_mounts: set,
+    excluded: dict[str, str],
     temperatures: list[dict],
 ) -> dict:
     """The object result of agent_resources (R-1559): cpu with the load, memory with the swap,
-    a mount per path, one in ignore_mounts excluded (R-1636), a sensor per name. Load
+    a mount per path, one ignore_mounts or an exception matches excluded (R-1636, R-1637), a
+    sensor per name. Load
     shedding is part of none: an object the gate leaves unmeasured is never a problem
     (ADR 0004 §2).
 
@@ -588,9 +623,9 @@ def _resource_objects(
     mounts: dict[str, dict] = {}
     for disk in disks:
         mount = entry_text(disk, "mount", NO_MOUNT)
-        if mount in ignore_mounts:
+        if mount in excluded:
             unrated = _host_object(grader, "mount", mount, mount, ())
-            mounts[mount] = excluded_object(unrated, "ignore_mounts")
+            mounts[mount] = excluded_object(unrated, excluded[mount])
         else:
             keys = (f"disk:{mount}", f"inode:{mount}")
             mounts[mount] = _host_object(grader, "mount", mount, mount, keys)
@@ -658,7 +693,7 @@ def _resources_details(
     load_per_cpu: float | None,
     problem_levels: dict[str, str],
     disks: list[dict],
-    ignore_mounts: set,
+    excluded: dict[str, str],
     temperatures: list[dict],
 ) -> dict:
     details = {
@@ -682,7 +717,7 @@ def _resources_details(
                 "free_gb": agent_number(d.get("free_gb")),
                 "inodes_percent": agent_number(d.get("inodes_percent")),
                 # Still listed, so the desktop shows the usage without a rating.
-                "ignored": entry_text(d, "mount", NO_MOUNT) in ignore_mounts,
+                "ignored": entry_text(d, "mount", NO_MOUNT) in excluded,
             }
             for d in disks
         ],
@@ -747,7 +782,7 @@ class AgentResourcesChecker:
         load_rated = not _in_container(report)
         cpu_count, load_per_cpu = _grade_load(grader, config, resources, load_rated)
         _grade_load_shed(grader, report)
-        disks, ignore_mounts = _grade_disks(grader, config, resources)
+        disks, excluded = _grade_disks(grader, config, resources)
         temperatures = _grade_temperatures(grader, config, resources)
 
         details = _resources_details(
@@ -760,7 +795,7 @@ class AgentResourcesChecker:
             load_per_cpu=load_per_cpu,
             problem_levels=grader.problem_levels,
             disks=disks,
-            ignore_mounts=ignore_mounts,
+            excluded=excluded,
             temperatures=temperatures,
         )
         # Only in a container, so the details of a host or VM stay as they were; the
@@ -769,7 +804,7 @@ class AgentResourcesChecker:
             details["load_rated"] = False
 
         message = _resources_message(grader.problems, cpu, mem)
-        objects = _resource_objects(grader, resources, cpu, mem, disks, ignore_mounts, temperatures)
+        objects = _resource_objects(grader, resources, cpu, mem, disks, excluded, temperatures)
         return grader.status, message, {"_details": details, "_objects": objects}
 
 
@@ -847,8 +882,8 @@ class ServiceProcessChecker:
     )
 
     @staticmethod
-    def _is_ignored(unit: str, ignore: set) -> bool:
-        """Checks whether a unit matches an ignore glob (with/without .service suffix)."""
+    def _excluded_by(unit: str, patterns: list[tuple[str, str]]) -> str | None:
+        """The source of the first pattern a unit matches (with/without .service suffix)."""
         # "nginx" should also match "nginx.service" and vice versa
         if unit.endswith(".service"):
             names = (unit, unit[:-8])
@@ -856,7 +891,10 @@ class ServiceProcessChecker:
             names = (unit,)
         else:
             names = (unit, f"{unit}.service")
-        return any(fnmatchcase(n, p) for n in names for p in ignore)
+        return next(
+            (s for p, s in patterns if any(fnmatchcase(n, p) for n in names)),
+            None,
+        )
 
     @staticmethod
     def _is_service(unit: str) -> bool:
@@ -902,7 +940,7 @@ class ServiceProcessChecker:
         systemd: dict,
         failed: list[str],
         enabled_inactive: list[str],
-        ignored: list[str],
+        ignored: list[tuple[str, str]],
         reasons: dict[str, str],
         host_os: object,
     ) -> dict:
@@ -910,7 +948,8 @@ class ServiceProcessChecker:
         but inactive unit, rated as in the message. The agent names no healthy unit, so the
         result is incomplete; with both lists whole and no error it says the stored units it
         does not name are ok (others_ok), so a unit that recovers turns ok. A unit of either
-        list the ignore globs match is named excluded (R-1636)."""
+        list the ignore globs or an exception match is named excluded, with its source
+        (R-1636, R-1637)."""
         items = []
         # An empty name, which _details keeps, is no key.
         for unit in filter(None, failed):
@@ -920,9 +959,11 @@ class ServiceProcessChecker:
         for unit in filter(None, enabled_inactive):
             reason = "Inactive (autostart)"
             items.append(self._service_object(unit, unit, host_os, "warning", reason))
-        for unit in filter(None, ignored):
+        for unit, source in ignored:
+            if not unit:
+                continue
             unrated = self._service_object(unit, unit, host_os, NOT_COLLECTED, "")
-            items.append(excluded_object(unrated, "ignore"))
+            items.append(excluded_object(unrated, source))
         objects: dict = {"complete": False, "items": items}
         # A list cut at the cap may hide a bad unit, and after a failed list-units the empty
         # lists prove nothing. An entry that is no name stands for no unit.
@@ -996,7 +1037,8 @@ class ServiceProcessChecker:
         if not isinstance(systemd, dict) or not systemd:
             return "unknown", "No service data in report", None
 
-        ignore = self._parse_ignore(config.get("ignore", []))
+        ignore = sorted(self._parse_ignore(config.get("ignore", [])))
+        patterns = exclusions(config, "ignore", ignore)
 
         # Only a string is a unit name. Any other entry is skipped after the cap, so it still
         # counts toward it and the work on a flooded list stays bounded (R-0552).
@@ -1013,10 +1055,12 @@ class ServiceProcessChecker:
             u for u in self._capped(systemd.get("enabled_inactive")) if isinstance(u, str)
         ]
 
-        failed = [u for u in failed_raw if not self._is_ignored(u, ignore)]
-        enabled_inactive = [u for u in enabled_inactive_raw if not self._is_ignored(u, ignore)]
-        kept = {*failed, *enabled_inactive}
-        ignored = [u for u in (*failed_raw, *enabled_inactive_raw) if u not in kept]
+        source = {u: self._excluded_by(u, patterns) for u in (*failed_raw, *enabled_inactive_raw)}
+        failed = [u for u in failed_raw if source[u] is None]
+        enabled_inactive = [u for u in enabled_inactive_raw if source[u] is None]
+        ignored = [
+            (u, source[u]) for u in (*failed_raw, *enabled_inactive_raw) if source[u] is not None
+        ]
 
         metrics = {
             "services_failed": len(failed),

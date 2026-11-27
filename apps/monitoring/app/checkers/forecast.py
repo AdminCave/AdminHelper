@@ -90,7 +90,7 @@ class DiskForecastChecker:
 
         for series in results:
             mount = (series.get("metric") or {}).get("mount", "?")
-            if rules is not None and mount in rules.ignore_mounts:
+            if rules is not None and rules.ignores(mount):
                 continue
             points: list[tuple[float, float]] = []
             for raw in series.get("values", []):

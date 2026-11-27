@@ -22,12 +22,13 @@ from app.alerter import alert_status, process_alert, resolve_notification
 from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import CheckContext, Checker, PartnerState, get_checker
+from app.checkers.agent import NO_RATING, exact_patterns, exclusions
 from app.checkers.context import DiskRules
 from app.core import database
 from app.core.bounds import storable
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
-from app.exception_scope import runs
+from app.exception_scope import load_no_rating, runs
 from app.models import MonitorCheck, MonitorState, MonitorStatusChange
 
 logger = logging.getLogger("monitor.engine")
@@ -450,7 +451,9 @@ def _load_disk_rules(db: Session, server_id) -> DiskRules | None:
     if resources is None:
         return None
     config = _json_object(resources.config) or {}
-    ignore = config.get("ignore_mounts")
+    # The patterns the resources check excludes a mount by, as on its own run.
+    config[NO_RATING] = [(e.object_pattern, e.id) for e in load_no_rating(db, resources.id)]
+    ignore = exclusions(config, "ignore_mounts", exact_patterns(config.get("ignore_mounts")))
     overrides = config.get("disk_overrides")
     default_min_free = _number(config.get("disk_min_free_gb"))
     min_free = {}
@@ -467,9 +470,7 @@ def _load_disk_rules(db: Session, server_id) -> DiskRules | None:
             if value is not None:
                 free_gb[disk["mount"]] = value
     return DiskRules(
-        ignore_mounts=frozenset(m for m in ignore if isinstance(m, str))
-        if isinstance(ignore, list)
-        else frozenset(),
+        ignore_mounts=frozenset(pattern for pattern, _ in ignore),
         min_free_gb=min_free,
         # The default of AgentResourcesConfig.disk_min_free_gb.
         default_min_free_gb=20.0 if default_min_free is None else default_min_free,

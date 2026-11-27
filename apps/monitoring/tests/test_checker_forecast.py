@@ -182,6 +182,16 @@ def test_an_ignored_mount_is_not_forecast(monkeypatch):
     assert [m["mount"] for m in metrics["_details"]["mounts"]] == ["/"]
 
 
+def test_a_mount_an_ignore_pattern_matches_is_not_forecast(monkeypatch):
+    # The patterns of DiskRules (R-1637): an exception's glob and a masked exact path.
+    mounts = ("/", "/srv/a", "/mnt/[x]", "/mnt/x")
+    patch_query(monkeypatch, [rising(m, 42.0, 2.0) for m in mounts])
+    _, _, metrics = DiskForecastChecker().run_with_context(
+        CFG, rules(ignore_mounts=frozenset({"/srv/*", "/mnt/[[]x]"}))
+    )
+    assert sorted(m["mount"] for m in metrics["_details"]["mounts"]) == ["/", "/mnt/x"]
+
+
 @pytest.mark.parametrize(
     ("free_gb", "expected"),
     [(19.9, "critical"), (20.0, "ok"), (None, "critical")],
