@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/klein-doku-12/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py
 Doku: keine (Kommentare)
 
-### T2 — curl-Regex des Download-Tests (R-1802)  [ ]
+### T2 — curl-Regex des Download-Tests (R-1802)  [x]
 Komponente: server · Dateien: apps/server/tests/test_ci_workflow.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @74d142767 2026-11-27T14:34:42+01:00
+Review: approve (.ah-out/review/klein-doku-12/T2.verdict.json)
 Änderung: `test_every_download_of_the_release_retries` fügt Backslash-Fortsetzungen zu einem Aufruf zusammen, bevor es die Flags prüft, und erkennt `curl` auch am Zeilenende; eine Gegenprobe (kleiner Test mit umbrochenem und mit flaglosem curl) zeigt, dass die Prüfung fallen kann.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: keine (Test)
