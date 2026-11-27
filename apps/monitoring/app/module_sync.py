@@ -26,7 +26,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
-from app.catalog.model import Alternative, Check, Module
+from app.catalog.model import Alternative, Check, Module, Rule, rule_problems
 from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
 from app.core.time import utcnow_naive
 from app.discovery import MAX_CONTAINER_PORTS, image_matches, image_repo, image_tag
@@ -37,6 +37,7 @@ from app.models import (
     MonitorModuleTombstone,
     MonitorState,
 )
+from app.rule_layer import convert, store_layer
 from app.template_sync import (
     TEMPLATE_CHECK_FIELDS,
     SchedulerAction,
@@ -509,6 +510,8 @@ def _create(
         module_check_hash=definition_hash(check),
         silent=silent,
     )
+    if not check.central:
+        store_layer(row, config["rules"], {})
     db.add(row)
     db.add(MonitorState(check_id=row.id, status="pending"))
     return row, None
@@ -686,6 +689,90 @@ def dismiss(db: Session, finding_id: str, *, now: datetime | None = None) -> Mon
     return finding
 
 
+def _stored_rules(row: MonitorCheck) -> tuple[list[dict] | None, str | None]:
+    try:
+        rules = [Rule.model_validate(rule) for rule in json.loads(row.config)["rules"]]
+    except (TypeError, ValueError, KeyError):
+        return None, "its rules cannot be read"
+    problems = rule_problems(rules)
+    if problems:
+        return None, problems[0]
+    return [rule.model_dump() for rule in rules], None
+
+
+def _conversion(
+    row: MonitorCheck, rules: list[dict], catalog: Catalog
+) -> tuple[tuple[list[dict], dict] | None, str | None]:
+    """((the catalog rules, the overrides), None) for a check whose rules the admin changed
+    before the layer, or (None, why it stays frozen)."""
+    module = catalog.modules.get(row.module_id)
+    check = None
+    if module is not None:
+        check = next((c for c in module.checks if c.key == row.module_check_key), None)
+    if check is None:
+        return None, "the catalog has no such check"
+    if row.module_check_hash != definition_hash(check):
+        # Also when the catalog moved the check to the monitoring service. Without a hash
+        # nothing shows the definition the rules were changed from.
+        return None, "it is bound to another definition than today's"
+    bound = [rule.model_dump() for rule in check.rules]
+    overrides, why = convert(bound, rules)
+    if overrides is None:
+        return None, why
+    return (bound, overrides), None
+
+
+def record_rule_layers(db: Session, *, catalog: Catalog | None = None) -> tuple[int, int, int]:
+    """Give the probe checks of modules without a rule layer one (R-1638); returns how many
+    it recorded, converted and left frozen. Runs at start-up before sync_catalog, which
+    gives a check without a hash today's; a check left frozen is looked at again each start.
+
+    A check whose rules are the catalog's (no mark "config") takes its stored rules as the
+    catalog state it is bound to, also with an update pending. One whose rules the admin
+    changed becomes catalog and overrides only when it is bound to today's definition and
+    they give its rules exactly (converted); else it stays as it is, and no update touches
+    its rules."""
+    catalog = catalog or get_catalog()
+    rows = (
+        db.query(MonitorCheck)
+        .filter(
+            MonitorCheck.module_id.isnot(None),
+            MonitorCheck.check_type == "probe",
+            MonitorCheck.rule_layer.is_(None),
+        )
+        .order_by(MonitorCheck.id)
+        .all()
+    )
+    recorded = converted = frozen = 0
+    for row in rows:
+        rules, why = _stored_rules(row)
+        if "config" not in read_overrides(row):
+            if rules is None:
+                logger.warning("Module check %s keeps no rule layer: %s", row.id, why)
+                continue
+            store_layer(row, rules, {})
+            recorded += 1
+            continue
+        layer = None
+        if rules is not None:
+            layer, why = _conversion(row, rules, catalog)
+        if layer is None:
+            logger.debug("Module check %s keeps the admin's rules frozen: %s", row.id, why)
+            frozen += 1
+            continue
+        store_layer(row, *layer)
+        converted += 1
+    db.commit()
+    if recorded or converted or frozen:
+        logger.info(
+            "Rule layers: %d recorded, %d converted, %d frozen (the admin's rules stay)",
+            recorded,
+            converted,
+            frozen,
+        )
+    return recorded, converted, frozen
+
+
 def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
     """Bring adopted instances up to a changed catalog; returns how many findings it
     reopened. Runs at start-up before load_all_checks, which schedules what it adds.
@@ -695,7 +782,9 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
     "changed" and open, so the admin sees it and adopting makes the new checks alert and
     writes the new definitions. A check the admin deleted is not created again. A module
     the catalog no longer has is left alone. A check bound before definitions had a hash
-    gets today's, without an update: nothing shows what it was bound from."""
+    gets today's, without an update: nothing shows what it was bound from. One whose rules
+    the admin changed and that has no rule layer gets none, so record_rule_layers does not
+    take its rules for changed from today's definition at a later start."""
     catalog = catalog or get_catalog()
     reopened = 0
     unhashed = (
@@ -704,6 +793,8 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         .all()
     )
     for row in unhashed:
+        if row.rule_layer is None and "config" in read_overrides(row):
+            continue
         module = catalog.modules.get(row.module_id)
         check = None
         if module is not None:

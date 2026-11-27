@@ -720,3 +720,35 @@ def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
             for row in old_rows
             if row[0] != "once-srv1"
         ]
+
+
+def test_the_rule_layer_upgrades_empty_and_downgrades(monkeypatch):
+    # arch-monitoring-neu-p1d T5: the column starts NULL on every check (record_rule_layers
+    # fills it at start-up); the downgrade drops only the column.
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    with scratch_db(monkeypatch, "rulelayer") as (cfg, engine):
+        command.upgrade(cfg, "f4b6d8a0c2e4")  # just before the rule layer
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_checks (id, name, check_type, config, interval, severity)"
+                    " VALUES ('c1', 'C', 'probe', '{\"rules\": []}', '5m', 'critical')"
+                )
+            )
+
+        command.upgrade(cfg, "b6d8f0a2c4e6")
+        columns = {c["name"]: c for c in inspect(engine).get_columns("monitor_checks")}
+        assert columns["rule_layer"]["nullable"] is True
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT rule_layer FROM monitor_checks")).all() == [(None,)]
+
+        command.downgrade(cfg, "f4b6d8a0c2e4")
+        assert "rule_layer" not in {
+            c["name"] for c in inspect(engine).get_columns("monitor_checks")
+        }
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT id, config FROM monitor_checks")).all() == [
+                ("c1", '{"rules": []}')
+            ]

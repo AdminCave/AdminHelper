@@ -7,12 +7,20 @@
 which stay as the catalog wrote them. A catalog update is a three-way merge of the old
 catalog, the new one and these overrides.
 
-The catalog here is a check's rules as `probe_config` dumps them; nothing reads the database.
+The catalog here is a check's rules as `probe_config` dumps them. A probe check of a module
+keeps its layer in monitor_checks.rule_layer; NULL means a check without rules or one whose
+rules the admin changed before the layer and stay theirs alone (frozen). Nothing here reads
+the database.
 """
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
+
 from app.catalog.model import Rule, clear_fits, rule_key
+from app.models import MonitorCheck
+from app.template_sync import TEMPLATE_CHECK_FIELDS, read_overrides
 
 # The parts a catalog rule sets and an override takes over.
 _RULE_PARTS = ("value", "clear", "level")
@@ -174,3 +182,63 @@ def merge(
             conflicts.append({"key": key, "kind": "clear_dropped", "part": "clear"})
         merged[key] = override
     return normalize(new, merged), conflicts
+
+
+def convert(catalog: list[dict], rules: list[dict]) -> tuple[dict | None, str | None]:
+    """(the overrides that give exactly `rules` out of the catalog, None) or (None, why not):
+    rules the admin changed before the layer. Exactly is in order and content; an explicit
+    key where the stored rule goes by the derived one is the key a level change keeps.
+    Then the check rates as before."""
+    overrides, why = overrides_from(catalog, rules)
+    if overrides is None:
+        return None, why
+    # overrides_from gives each stored rule a catalog rule of its own and switches off the
+    # rest, so the two lists are as long.
+    given = [
+        rule if "key" in stored else {part: v for part, v in rule.items() if part != "key"}
+        for rule, stored in zip(effective(catalog, overrides), rules, strict=True)
+    ]
+    if not _same(given, rules):
+        return None, "the catalog with these overrides gives the rules in another order or form"
+    return overrides, None
+
+
+def read_layer(row: MonitorCheck) -> dict | None:
+    """The check's layer, {"catalog", "overrides", "conflicts"}, or None: a check without
+    rules, a frozen one, or a column that does not hold a layer."""
+    try:
+        layer = json.loads(row.rule_layer) if row.rule_layer else None
+    except (TypeError, ValueError):
+        return None
+    if not (
+        isinstance(layer, dict)
+        and isinstance(layer.get("catalog"), list)
+        and isinstance(layer.get("overrides"), dict)
+        and isinstance(layer.get("conflicts"), list)
+    ):
+        return None
+    return layer
+
+
+def store_layer(
+    row: MonitorCheck,
+    catalog: list[dict],
+    overrides: dict[str, dict],
+    conflicts: Sequence[dict] = (),
+) -> None:
+    """Give the check the layer and the rules it rates with. The mark "config" stands exactly
+    while overrides do, so clients still see that the rules are the admin's. Raises
+    ValueError like effective."""
+    overrides = normalize(catalog, overrides)
+    config = json.loads(row.config)
+    config["rules"] = effective(catalog, overrides)
+    row.config = json.dumps(config)
+    row.rule_layer = json.dumps(
+        {"catalog": catalog, "overrides": overrides, "conflicts": list(conflicts)}
+    )
+    fields = read_overrides(row)
+    if overrides:
+        fields.add("config")
+    else:
+        fields.discard("config")
+    row.overridden_fields = json.dumps([f for f in TEMPLATE_CHECK_FIELDS if f in fields])
