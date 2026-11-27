@@ -62,3 +62,4 @@ Abhängt von: T1, T2, T3, T4
 
 ## Entscheidungen
 - 2026-11-27 (Session): Ruhen gibt `ok`, nicht `unknown` (P1d-Verhalten ruhender Regeln, Dämpfung bleibt zurückgesetzt); `when` eines Checks setzt nur das Modul (API-Sperre wie Sensor und Ziel); keine Agent-Änderung nötig (der Agent löst Container über den Namen auf). Begründung in der Spec, „Trade-offs & Alternativen“.
+- 2026-11-27 (Session, T3): Die Push-Reihenfolge hängt nur an den gespeicherten Configs; ändert ein Admin eine Config zwischen zwei gleichzeitigen Reports desselben Servers, können beide anders sortieren. Ein daraus folgender Deadlock bleibt im SAVEPOINT des einzelnen Checks (R-0635) und trifft nur diesen Server. Der Sortierschlüssel fängt `ValueError` und `RecursionError` aus `json.loads`, weil er vor der Isolation je Check läuft.
