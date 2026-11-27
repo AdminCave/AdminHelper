@@ -1,5 +1,5 @@
 # klein-nachlese-24 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-24 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-24 · Review: pro Task
 Spec: docs/features/klein-nachlese-24.md (Roadmap R-1777, R-1778, R-1838)
 Heavy: none — Agent-Nits und Doku, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -23,8 +23,10 @@ Beweis: reviewer kern-server-15 2026-11-25 (script_runner.py:371, :362)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: docs/features/kern-server-15.md, changelog.d/klein-nachlese-24.md
 
-### T3 — Doku: Status-Check von nextcloud-aio braucht nur dann Port 8000, wenn der Scan Ports sah (R-1838)  [ ]
+### T3 — Doku: Status-Check von nextcloud-aio braucht nur dann Port 8000, wenn der Scan Ports sah (R-1838)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/klein-nachlese-24.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ca09f3d00 2026-11-27T14:01:51+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: reviewer arch-monitoring-aio-status 2026-11-27 (T5, _lacks_port in module_sync.py)
 Änderung: DE + EN: "sieht der Scan Ports am Container, muss 8000 darunter sein; sah er keine, bleibt der Check gebunden".
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
