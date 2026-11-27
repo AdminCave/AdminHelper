@@ -56,8 +56,6 @@ func readPrivate(path string) ([]byte, error) {
 	return data, nil
 }
 
-// openForRead opens the file at path for reading and for its security, without following a reparse
-// point and sharing read and delete access.
 // openWhenFree opens path for reading. Just after a replace, a virus scanner or an indexer may hold
 // the file without sharing read access (ERROR_SHARING_VIOLATION), or the file it replaced may still
 // be pending deletion (ERROR_ACCESS_DENIED); it tries again until replaceWait has passed, as replace
@@ -79,6 +77,8 @@ func transient(err error) bool {
 	return errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }
 
+// openForRead opens the file at path for reading and for its security, without following a reparse
+// point and sharing read and delete access.
 func openForRead(path string) (windows.Handle, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
