@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-7 — Desktop: SFTP-Upload über eine Teil-Datei, Feed nach dem Abmelden — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-desktop-7 · Review: am Ende
 Spec: docs/features/kern-desktop-7.md (Roadmap R-1708, R-1830)
 Heavy: linux-full — Desktop (SFTP-Datenpfad, Benachrichtigungen); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -87,8 +87,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: keine (desktop.html sagt schon: Gruppe, wo der Server es erlaubt)
 
-### T8 — R-1830: waitFor im Badge-Test mit 30 s Obergrenze  [ ]
+### T8 — R-1830: waitFor im Badge-Test mit 30 s Obergrenze  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ce77da66d 2026-11-27T20:17:58+01:00
+Review: am Ende (Branch-Review)
 Änderung: `vi.waitFor` im Test „a badge count that arrives after deactivate fills nothing“ wartet bis 30 s statt der Vorgabe von 1 s (testing.md).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: keine (nur Test)

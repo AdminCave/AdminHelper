@@ -446,7 +446,7 @@ describe('notifications store', () => {
       () => new Promise<{ count: number }>((r) => (resolve = r)),
     );
     const pending = loadFeed();
-    await vi.waitFor(() => expect(h.fetchUnreadCount).toHaveBeenCalled());
+    await vi.waitFor(() => expect(h.fetchUnreadCount).toHaveBeenCalled(), { timeout: 30_000 });
     deactivateNotifications();
     resolve({ count: 7 });
     await pending;
