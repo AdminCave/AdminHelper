@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-7 — Desktop: SFTP-Upload über eine Teil-Datei, Feed nach dem Abmelden — Task-Ledger
-Status: bereit · Branch: feature/kern-desktop-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-desktop-7 · Review: am Ende
 Spec: docs/features/kern-desktop-7.md (Roadmap R-1708, R-1830)
 Heavy: linux-full — Desktop (SFTP-Datenpfad, Benachrichtigungen); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -15,6 +15,8 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Plan: T1 baut auf dem Stand aus kern-desktop-6 T8 (Prüfrunde 3) auf. Neu ist dabei: `remove_file(part)`, danach `WRITE|CREATE|EXCLUDE`.
 - Aus kern-desktop-6 übernommen (dort entschieden): russh-sftp 3.0.1 kennt kein `posix-rename@openssh.com`, darum entfernt der Upload beim Überschreiben das Ziel unmittelbar vor dem Umbenennen. Ein Link am Ziel wird aufgelöst und durchgeschrieben, die Datei, auf die er zeigt, wird ersetzt; der Link bleibt. Die Angaben `posix-rename` und „Symlink am Ziel wird ersetzt“ in T1 beschreiben den Plan, nicht den Bau.
 - Kevin 2026-11-27: Beim Überschreiben übernimmt der Upload Eigentümer und Gruppe der alten Datei best-effort (scheitert das `SETSTAT`, bleiben sie die des Hochladenden). Hardlinks, ACLs und eine beschreibbare Datei in einem schreibgeschützten Ordner sind hingenommen und dokumentiert.
+- Kevin 2026-11-27: Branch-Prüfung Runde 2 request_changes (zwei kleine wichtig) → T7/T8 bauen, derselbe Prüfer prüft in einer dritten Runde nur das Delta.
+- T7: der Rückfall (fremde Datei, nur die Gruppe) hat keinen Test: er braucht eine alte Datei eines anderen Nutzers, also root auf der Testmaschine. SFTP trägt uid und gid in einem Feld (russh-sftp schickt eine fehlende uid als 0), darum geht die Gruppe mit der eigenen uid der Teil-Datei.
 
 ### T1 — R-1708: SFTP-Upload über `.<name>.ah-part`  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
@@ -76,3 +78,15 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
+
+### T7 — R-1708: Gruppe auch bei fremdem Eigentümer übernehmen  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
+Änderung: Scheitert das Setzen von uid und gid der alten Datei (sie gehört einem anderen Nutzer), versucht der Upload die Gruppe allein, mit der eigenen uid der Teil-Datei; best-effort wie vorher.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
+Doku: keine (desktop.html sagt schon: Gruppe, wo der Server es erlaubt)
+
+### T8 — R-1830: waitFor im Badge-Test mit 30 s Obergrenze  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.test.ts
+Änderung: `vi.waitFor` im Test „a badge count that arrives after deactivate fills nothing“ wartet bis 30 s statt der Vorgabe von 1 s (testing.md).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
+Doku: keine (nur Test)
