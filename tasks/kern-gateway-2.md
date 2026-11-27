@@ -9,7 +9,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-27 (Notiz R-1687): Webhook-Route auf :8444 ohne mTLS, mit Token und Ratelimit.
 - Kevin 2026-11-27: Port im Dialog aus `trigger_port` der Token-Antworten (additives API-Feld), nicht fest 8444.
 
-### T1 — Gateway: Connection "" an jedem Weg zum Upstream (R-1717)  [ ]
+### T1 — Gateway: Connection "" an jedem Weg zum Upstream (R-1717)  [~] (Befund widerlegt: nginx sendet seit 1.29.7 keinen Connection-Header mehr, Upstream-Keepalive ist Default (nginx.org CHANGES 1.29.7); das Gateway-Image ist 1.30.6. Gegenprobe 2026-11-27 auf dem alten Stand: ein Upstream-Stub sah auf 443 und 8444 (location /, /ca/trust, /enroll, provision/activate) keinen Connection-Header)
 Komponente: server · Dateien: apps/gateway/identity-headers.conf, apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
 Änderung: `proxy_set_header Connection ""` in `identity-headers.conf` und im :8444-Server samt `activate`-Location. Test aus
 nginx.conf: jede Location mit `proxy_pass` auf `app`/`issuer` erbt oder setzt den leeren Connection-Header; im Container:
