@@ -49,9 +49,16 @@ class TestKey:
     def test_an_explicit_key_names_the_rule(self):
         assert rule_key(Rule(**_STATUS, key="reachable")) == "reachable"
 
-    def test_a_key_with_a_dot_is_refused_so_it_never_meets_a_derived_one(self):
+    @pytest.mark.parametrize("key", ["duration_ms.critical", "status_code.slow", "a.b", "Up"])
+    def test_a_key_with_a_dot_names_only_the_own_field_with_a_level(self, key):
+        # So that it never meets another rule's derived key.
         with pytest.raises(ValidationError):
-            Rule(**_STATUS, key="status_code.critical")
+            Rule(**_STATUS, key=key)
+
+    @pytest.mark.parametrize("level", ["info", "warning", "critical"])
+    def test_the_own_field_with_a_level_is_the_key_a_rule_keeps_over_a_level_change(self, level):
+        # The admin's level change keeps the rule's name (rule_layer.effective).
+        assert rule_key(Rule(**_STATUS, key=f"status_code.{level}")) == f"status_code.{level}"
 
     def test_two_rules_with_one_derived_key_are_refused(self):
         twice = {**_STATUS, "value": 204}

@@ -13,6 +13,7 @@ is only a hint; the agent asks the port the process really listens on.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -140,6 +141,7 @@ class RuleUnless(_Model):
 
 
 COMPARE_OPS = ("lt", "le", "gt", "ge")
+LEVELS = ("info", "warning", "critical")
 # A sibling's result may be up to a week old before a condition on it counts as unknown.
 CONDITION_MAX_AGE = 7 * 86400
 
@@ -201,7 +203,7 @@ class Rule(_Model):
     op: Literal["eq", "ne", "lt", "le", "gt", "ge", "in", "max_age", "delta_gt", "drop_pct_gt"]
     value: _Scalar | list[_Scalar]
     # info: a hint without an alarm (R-1280): the check shows it, nothing notifies.
-    level: Literal["info", "warning", "critical"]
+    level: Literal[LEVELS]
     # Kevin 2026-11-16 (R-1475): the agent leaves a field out when there is nothing to rate
     # (no replication link, no certificate, no license pack); that is ok, not unknown.
     if_absent: Literal["ok"] | None = None
@@ -209,8 +211,9 @@ class Rule(_Model):
     # (R-1480: Defender's real-time protection in passive mode).
     unless: RuleUnless | None = None
     # The rule's name in the admin's overrides and in a catalog merge (R-1638); without one
-    # it is <field>.<level> (rule_key).
-    key: str | None = Field(None, pattern=_KEY)
+    # it is <field>.<level> (rule_key). One with a dot is such a name of the rule's own field:
+    # the key a rule keeps when the admin changes its level (rule_layer.effective).
+    key: str | None = Field(None, min_length=1)
     # Hysteresis: once the rule fires it holds until the value passes clear.
     clear: StrictInt | StrictFloat | None = None
     # The rule rates only while the condition holds or cannot be told.
@@ -227,6 +230,14 @@ class Rule(_Model):
 
     @model_validator(mode="after")
     def _value_fits_op(self) -> Rule:
+        if (
+            self.key is not None
+            and re.fullmatch(_KEY, self.key) is None
+            and self.key not in {f"{self.field}.{level}" for level in LEVELS}
+        ):
+            raise ValueError(
+                f"rule key {self.key!r} is neither a name nor {self.field!r} with a level"
+            )
         v = self.value
         _value_fits(self.op, v, "")
         if self.op == "drop_pct_gt" and not (_is_number(v) and 0 < v < 100):
