@@ -670,6 +670,176 @@ def test_firing_and_resting_are_empty_on_a_plain_result():
     assert (details["firing"], details["resting"]) == ([], [])
 
 
+# --- the check rests as a whole (R-1825) ---
+
+_BACKUP = {"field": "backup", "op": "eq", "value": False, "check": "aio"}
+_STATUS = {
+    "fields": ["status_code", "maintenance"],
+    "rules": [_rule("status_code", "ne", 200), _rule("maintenance", "eq", True, "warning")],
+    "when": _BACKUP,
+}
+_FAILED = {"ts": T0, "status": "error", "error": "connection refused"}
+_RESTING = [
+    {"key": "status_code.critical", "when": _BACKUP},
+    {"key": "maintenance.warning", "when": _BACKUP},
+]
+# The details of a rated run five minutes before, with a rule that held.
+_BEFORE = {
+    "ts": T0 - 300,
+    "status": "ok",
+    "measured_ts": T0 - 300,
+    "values": {"status_code": 503, "maintenance": False},
+    "baseline": {"status_code": 200, "maintenance": False},
+    "firing": ["status_code.critical"],
+}
+
+
+def _aio(backup, age=60, interval_s=300):
+    return {
+        "aio": {"values": {"backup": backup}, "measured_ts": T0 - age, "interval_s": interval_s}
+    }
+
+
+@pytest.mark.parametrize(
+    ("error", "text"),
+    [("connection refused", "Probe failed: connection refused"), ("", "Probe failed")],
+)
+def test_a_failed_run_rests_while_the_condition_fails(error, text):
+    level, msg, metrics = _rate(
+        {**_FAILED, "error": error}, _BEFORE, _siblings=_aio(True), **_STATUS
+    )
+    assert (level, msg) == ("ok", f"Resting (aio.backup = true): {text}")
+    details = metrics["_details"]
+    assert (details["problems"], details["firing"]) == ([], [])
+    assert details["resting"] == _RESTING
+    # A failed run measures nothing: the last measured run stays.
+    assert details["measured_ts"] == T0 - 300
+    assert details["values"] == _BEFORE["values"]
+    assert details["baseline"] == _BEFORE["baseline"]
+    assert (details["status"], details["ts"]) == ("error", T0)
+
+
+def test_a_measured_run_rests_and_keeps_its_values():
+    result = _ok({"status_code": 503, "maintenance": True})
+    level, msg, metrics = _rate(result, _BEFORE, _siblings=_aio(True), **_STATUS)
+    assert (level, msg) == (
+        "ok",
+        "Resting (aio.backup = true): OK: status_code = 503, maintenance = true",
+    )
+    details = metrics["_details"]
+    assert (details["problems"], details["firing"]) == ([], [])
+    assert details["resting"] == _RESTING
+    # Stored as if rated: the run before becomes the baseline of the next one.
+    assert details["measured_ts"] == T0
+    assert details["values"] == {"status_code": 503, "maintenance": True}
+    assert details["baseline"] == _BEFORE["values"]
+
+
+def test_a_resting_check_without_values_says_so():
+    rated = _rate(_ok({}), _siblings=_aio(True), **{**_STATUS, "fields": []})
+    assert rated[:2] == ("ok", "Resting (aio.backup = true): Probe OK")
+
+
+def test_the_check_rates_while_the_condition_holds():
+    siblings = _aio(False)
+    assert _rate(_FAILED, _BEFORE, _siblings=siblings, **_STATUS)[:2] == (
+        "critical",
+        "Probe failed: connection refused",
+    )
+    rated = _rate(_ok({"status_code": 503, "maintenance": True}), _siblings=siblings, **_STATUS)
+    assert rated[0] == "critical"
+    assert _details(rated)["resting"] == []
+    assert _details(rated)["firing"] == ["status_code.critical", "maintenance.warning"]
+
+
+@pytest.mark.parametrize(
+    ("when", "siblings"),
+    [
+        (_BACKUP, None),
+        (_BACKUP, {}),
+        (_BACKUP, {"aio": "garbage"}),
+        (_BACKUP, {"aio": {"values": {}, "measured_ts": T0, "interval_s": 300}}),
+        (_BACKUP, {"aio": {"values": {"backup": True}, "interval_s": 300}}),
+        (_BACKUP, {"other": _aio(True)["aio"]}),
+        # Older than two intervals and a run of the sibling.
+        (_BACKUP, _aio(True, age=901)),
+        (_BACKUP, _aio(True, age=7501, interval_s=3600)),
+        ({**_BACKUP, "max_age": 600}, _aio(True, age=601)),
+        # Not a condition at all: as if there were none.
+        ("garbage", _aio(True)),
+        ({**_BACKUP, "check": None}, _aio(True)),
+    ],
+)
+def test_a_condition_that_cannot_be_told_lets_the_check_rate(when, siblings):
+    config = {**_STATUS, "when": when}
+    if siblings is not None:
+        config["_siblings"] = siblings
+    level, msg, metrics = _rate(_FAILED, _BEFORE, **config)
+    assert (level, msg) == ("critical", "Probe failed: connection refused")
+    assert metrics["_details"]["resting"] == []
+    assert metrics["_details"]["firing"] == _BEFORE["firing"]
+
+
+@pytest.mark.parametrize(
+    ("when", "age", "interval_s"),
+    [
+        (_BACKUP, 900, 300),
+        (_BACKUP, 7500, 3600),
+        ({**_BACKUP, "max_age": 600}, 600, 300),
+        ({**_BACKUP, "max_age": 3600}, 3600, 300),
+    ],
+)
+def test_a_fresh_enough_condition_rests_the_check(when, age, interval_s):
+    siblings = _aio(True, age=age, interval_s=interval_s)
+    rated = _rate(_FAILED, _siblings=siblings, **{**_STATUS, "when": when})
+    assert rated[:2] == ("ok", "Resting (aio.backup = true): Probe failed: connection refused")
+
+
+def test_the_agents_probe_factor_stretches_the_conditions_freshness():
+    siblings = _aio(True, age=2 * 300 * 2 + 300)
+    rated = _rate(_FAILED, None, STAMP, _phase(2), _siblings=siblings, **_STATUS)
+    assert rated[0] == "ok"
+    assert _rate(_FAILED, _siblings=siblings, **_STATUS)[0] == "critical"
+
+
+@pytest.mark.parametrize(
+    ("result", "level", "text"),
+    [
+        (
+            {"ts": T0, "status": "no_credential", "error": ""},
+            "warning",
+            "No credential stored on the host for this check",
+        ),
+        ({"ts": T0, "status": "weird"}, "unknown", 'Unknown probe status "weird"'),
+        ({**_FAILED, "ts": None}, "unknown", "Probe result without a time"),
+        (
+            {**_FAILED, "ts": T0 - 1000},
+            "unknown",
+            "Last probe result is 16 min old; the agent no longer runs it",
+        ),
+    ],
+)
+def test_what_comes_before_the_rules_stays_before_the_condition(result, level, text):
+    rated = _rate(result, _BEFORE, _siblings=_aio(True), **_STATUS)
+    assert rated[:2] == (level, text)
+    assert _details(rated)["resting"] == []
+
+
+def test_a_resting_check_ends_its_hysteresis():
+    config = {"fields": ["duration_ms"], "rules": [_SLOW], "when": _BACKUP}
+    first = _run({"duration_ms": 600}, _siblings=_aio(False), **config)
+    assert _details(first)["firing"] == ["duration_ms.warning"]
+    failed = {**_FAILED, "ts": T0 + 300}
+    rested = _rate(failed, _details(first), _stamp(300), _siblings=_aio(True, age=-240), **config)
+    assert rested[0] == "ok"
+    assert _details(rested)["firing"] == []
+    after = _aio(False, age=-540)
+    assert _run({"duration_ms": 450}, _details(rested), 600, _siblings=after, **config)[0] == "ok"
+    # Without the rest the rule would still hold, on the wrong side of clear.
+    held = _run({"duration_ms": 450}, _details(first), 600, _siblings=after, **config)
+    assert held[0] == "warning"
+
+
 # --- push path ---
 
 
