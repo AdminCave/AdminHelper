@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login.r
 Doku: → T12
 Abhängt von: T3
 
-### T5 — Tunnel-Status traegt den frps-Login (R-1691)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+### T5 — Tunnel-Status traegt den frps-Login (R-1691)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/models.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @83ec5eb6c 2026-11-27T09:05:09+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T5.verdict.json)
 Änderung: der Log-Task setzt aus den Zeilen von frpc einen Login-Zustand im `FrpcState` (Start: verbindet; „login to server success“: angemeldet; „try to connect to server“ oder „connect to server error“: kein Kontakt), nur fuer die eigene Generation; `TunnelStatus` liefert ihn. Tests: Zeilen-Auswertung als reine Funktion mit den woertlichen v0.72.0-Zeilen, Generationswechsel setzt zurueck.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc::
 Doku: → T12

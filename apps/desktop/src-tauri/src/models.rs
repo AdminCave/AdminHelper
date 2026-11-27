@@ -369,6 +369,19 @@ pub struct TunnelStatus {
     pub visitors: Vec<String>,
     /// Where each visitor of the running frpc listens; empty while none runs.
     pub bindings: Vec<VisitorBinding>,
+    /// Whether the running frpc is signed in at frps; `None` while none runs.
+    pub login: Option<TunnelLogin>,
+}
+
+/// The sign-in of a running frpc at frps, as its log tells it (`frpc::login_after`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TunnelLogin {
+    /// Started or lost its sign-in, the next attempt pending.
+    Connecting,
+    LoggedIn,
+    /// The last attempt did not reach frps or was refused there; frpc keeps trying.
+    NoContact,
 }
 
 /// Where a visitor listens: the port the server's visitor TOML asked for and the local port on
