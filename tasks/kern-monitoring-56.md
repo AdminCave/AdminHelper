@@ -9,8 +9,10 @@ Heavy: none — nur Monitoring-Logik und Schemas, kein Stack-, Gateway-, PKI- od
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1690: eine Recovery startet den Regel-Cooldown nicht neu  [ ]
+### T1 — R-1690: eine Recovery startet den Regel-Cooldown nicht neu  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter_cooldown.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @dfcd36211 2026-11-27T21:02:57+01:00
+Review: approve (.ah-out/review/kern-monitoring-56/T1.verdict.json)
 Änderung: `_is_in_cooldown` zählt nur gesendete Zeilen, deren `new_status` kein `ok` ist; ein Ausfall kurz nach der Entwarnung geht wieder raus. Test erst rot.
 Beweis: main@6895f8eaf apps/monitoring/app/alerter.py:669-690 · Dedup-Key: bug:monitoring:alerter.py:recovery-restarts-cooldown
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_cooldown.py tests/test_alerter.py

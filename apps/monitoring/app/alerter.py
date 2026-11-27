@@ -696,6 +696,9 @@ def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) ->
             MonitorAlertLog.check_id == check.id,
             MonitorAlertLog.sent_at >= cutoff,
             MonitorAlertLog.success == True,  # noqa: E712
+            # A recovery is not an alert (R-1690): counting it held back a second
+            # failure shortly after the all-clear on every channel of the rule.
+            MonitorAlertLog.new_status != "ok",
         )
         .first()
     )
