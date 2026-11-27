@@ -522,6 +522,8 @@ def test_a_module_probe_config_may_leave_out_the_measuring_parts_at_their_defaul
         ("credential", {"ref": "other/other/api", "use": "bearer"}),
         ("credential", None),
         ("test_object", True),
+        # The check rests while its module's condition holds not (R-1825): the module's to set.
+        ("when", {"field": "backup", "op": "eq", "value": False, "check": "aio"}),
     ],
 )
 def test_a_module_probe_refuses_a_change_of_what_it_measures(client_db, part, value):
@@ -534,6 +536,26 @@ def test_a_module_probe_refuses_a_change_of_what_it_measures(client_db, part, va
     assert r.status_code == 422, r.text
     assert "its module sets the rest" in r.text
     assert client.get(f"/checks/{cid}").json() == before
+
+
+def test_a_module_probe_keeps_the_condition_its_module_set(client_db):
+    client, factory = client_db
+    when = {"field": "backup", "op": "eq", "value": False, "check": "aio"}
+    cid = _add_module_probe(factory, config={**_PROBE, "when": when})
+    before = client.get(f"/checks/{cid}").json()
+
+    r = client.put(f"/checks/{cid}", json={"config": _PROBE})
+
+    assert r.status_code == 422, r.text
+    assert "its module sets the rest" in r.text
+    assert client.get(f"/checks/{cid}").json() == before
+
+    rules = [{**_PROBE["rules"][0], "level": "warning"}]
+    r = client.put(f"/checks/{cid}", json={"config": {**_PROBE, "when": when, "rules": rules}})
+
+    assert r.status_code == 200, r.text
+    config = client.get(f"/checks/{cid}").json()["config"]
+    assert (config["when"], config["rules"]) == (when, rules)
 
 
 def test_a_module_probe_refuses_a_config_of_another_form(client_db):

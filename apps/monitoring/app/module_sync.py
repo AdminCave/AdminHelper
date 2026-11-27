@@ -391,9 +391,18 @@ def probe_config(
             if scheme is None and check.sensor == "http":
                 scheme = "https" if summary.get("tls") else "http"
         elif t.kind != "loopback":
-            name, why = _target_name(
-                module, t.kind, t.service, key, summary, containers, t.image_fallback
-            )
+            if t.container is not None:
+                # A fixed container of the installation, not the instance's own (R-1825).
+                seen = any(c["name"] == t.container for c in containers)
+                name, why = (
+                    (t.container, None)
+                    if seen
+                    else (None, f"no container {t.container} on this host")
+                )
+            else:
+                name, why = _target_name(
+                    module, t.kind, t.service, key, summary, containers, t.image_fallback
+                )
             if not name:
                 return None, why
             # The agent asks a container's only port when the hint does not listen (target.go
@@ -434,6 +443,9 @@ def probe_config(
         },
         "test_object": check.test_object,
     }
+    if check.when is not None:
+        # Only when set, so the configs of the checks without one stay as they were.
+        config["when"] = check.when.model_dump()
     try:
         ProbeConfig.model_validate(config)
     except ValueError as exc:
