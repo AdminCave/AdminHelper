@@ -86,6 +86,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // A certificate the server no longer admits (R-0224): revoked, or not recorded once
   // the transition is over. The way out is the same, a reset and a new registration.
   let certRevoked = $derived(errorCode === 'ERR_CERT_REVOKED');
+  // An expired device certificate (checked before the login is sent) or one the gateway
+  // refuses (R-1689): the same way out as a revoked one.
+  let certInvalid = $derived(errorCode === 'ERR_DEVICE_CERT_INVALID');
   // Never show the machine-readable code to the user; keep only the human text.
   let displayError = $derived(withoutErrorCodes(error));
 
@@ -344,6 +347,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
             type="button"
             class="btn ghost login-secondary"
             data-action="cert-revoked-reset"
+            onclick={() => resetIdentity('login.certRevoked.confirm', 'login.certRevoked.done')}
+            disabled={busy}
+          >
+            {$t('login.resetDeviceId')}
+          </button>
+        {:else if certInvalid}
+          <div class="login-error" data-msg="cert-invalid">{$t('login.deviceCertInvalid')}</div>
+          <button
+            type="button"
+            class="btn ghost login-secondary"
+            data-action="cert-invalid-reset"
             onclick={() => resetIdentity('login.certRevoked.confirm', 'login.certRevoked.done')}
             disabled={busy}
           >

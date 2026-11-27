@@ -36,8 +36,10 @@ Review: approve (.ah-out/review/kern-desktop-6/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- auth::
 Doku: → T12
 
-### T4 — Login-Hinweis fuer ein ungueltiges Geraete-Zertifikat (R-1689)  [ ]
+### T4 — Login-Hinweis fuer ein ungueltiges Geraete-Zertifikat (R-1689)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Login.revoked.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @20cca7a1b 2026-11-27T09:03:22+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T4.verdict.json)
 Änderung: `ERR_DEVICE_CERT_INVALID` zeigt einen eigenen Hinweis (DE+EN) mit demselben Ausweg wie `ERR_CERT_REVOKED` (Identitaet zuruecksetzen, Token-Formular). Test im bestehenden Revoked-Test: Hinweis und Knopf erscheinen, der rohe Code nicht.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login.revoked.test.ts
 Doku: → T12

@@ -674,6 +674,8 @@ export const translations: Translations = {
       'Die Geräte-Identität dieses Geräts wird gelöscht. Danach registrierst du das Gerät mit einem Einmal-Token vom Admin neu. Fortfahren?',
     'login.certRevoked.done':
       'Geräte-Identität zurückgesetzt. Registriere das Gerät jetzt mit einem Einmal-Token neu.',
+    'login.deviceCertInvalid':
+      'Das Zertifikat dieses Geräts ist abgelaufen oder wird nicht mehr angenommen. Setze die Geräte-Identität zurück und registriere das Gerät mit einem Einmal-Token vom Admin neu.',
     'login.resetDeviceId.localOnly':
       'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
     'login.enroll.token': 'Enrollment-Token',
@@ -2292,6 +2294,8 @@ export const translations: Translations = {
       'The identity of this device will be deleted. Afterwards you register the device again with a one-time token from your administrator. Continue?',
     'login.certRevoked.done':
       'Device identity reset. Now register the device again with a one-time token.',
+    'login.deviceCertInvalid':
+      'The certificate of this device has expired or is no longer accepted. Reset the device identity and register the device again with a one-time token from your administrator.',
     'login.resetDeviceId.localOnly':
       'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
     'login.enroll.token': 'Enrollment token',
