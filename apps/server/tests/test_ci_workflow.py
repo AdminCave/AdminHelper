@@ -567,32 +567,42 @@ def test_every_job_has_a_timeout_below_the_github_default(name):
     assert not missing
 
 
+_DOWNLOAD_FLAGS = ("--retry ", "--connect-timeout ", "--speed-time 30 ", "--speed-limit 1024 ")
+
+
+def _curl_calls(script: str) -> list[str]:
+    # A call wrapped with a trailing backslash is one command: its flags may sit on any line.
+    joined = re.sub(r"\\\n\s*", " ", script)
+    return [line for line in joined.splitlines() if re.search(r"(^|[\s$(])curl(\s|$)", line)]
+
+
+def _curl_calls_missing_flags(script: str) -> list[str]:
+    return [
+        call
+        for call in _curl_calls(script)
+        if not all(flag in f"{call} " for flag in _DOWNLOAD_FLAGS)
+    ]
+
+
+def test_the_download_check_follows_wrapped_curl_calls_and_catches_a_bare_one():
+    wrapped = "curl -fsSL --retry 5 \\\n  --connect-timeout 30 --speed-time 30 \\\n  --speed-limit 1024 -o x u"
+    assert _curl_calls(wrapped) != [] and _curl_calls_missing_flags(wrapped) == []
+    assert len(_curl_calls_missing_flags("echo hi\ncurl")) == 1
+    assert len(_curl_calls_missing_flags("curl -fsSL --retry 5 -o x u")) == 1
+
+
 def test_every_download_of_the_release_retries():
     # One GitHub Releases blip must not fail a tag's release run (R-1799), and a download that
     # stalls aborts after 30 s below 1 KiB/s instead of holding the job until its timeout (R-1801).
     for name in ("release.yml", "ci.yml"):
         workflow = yaml.safe_load(_CI.with_name(name).read_text(encoding="utf-8"))
-        curls = [
-            line
+        runs = [
+            step.get("run", "")
             for job in workflow["jobs"].values()
             for step in job.get("steps", [])
-            for line in step.get("run", "").splitlines()
-            if re.search(r"(^|[\s$(])curl\s", line)
         ]
-        assert curls, name
-        assert [
-            line
-            for line in curls
-            if not all(
-                flag in line
-                for flag in (
-                    "--retry ",
-                    "--connect-timeout ",
-                    "--speed-time 30 ",
-                    "--speed-limit 1024 ",
-                )
-            )
-        ] == [], name
+        assert [call for run in runs for call in _curl_calls(run)], name
+        assert [call for run in runs for call in _curl_calls_missing_flags(run)] == [], name
 
 
 def _comment_above(lines: list[str], step_name: str) -> str:
