@@ -20,6 +20,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         ? $t('tunnel.activeNamed', { name: tn.status.visitorName })
         : $t('tunnel.active');
     }
+    if (tn.ui === 'noContact') return $t('tunnel.noContact');
     if (tn.ui === 'disconnected') return $t('tunnel.disconnected');
     return $t('tunnel.inactive');
   });
@@ -86,7 +87,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .tunnel-indicator[data-status='connecting'] .tunnel-dot {
     background: var(--warning);
   }
-  .tunnel-indicator[data-status='disconnected'] .tunnel-dot {
+  .tunnel-indicator[data-status='disconnected'] .tunnel-dot,
+  .tunnel-indicator[data-status='noContact'] .tunnel-dot {
     background: var(--danger);
   }
   /* The collapsed sidebar hides the label and has no room for the button either. */

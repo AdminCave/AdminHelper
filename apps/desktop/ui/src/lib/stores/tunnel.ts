@@ -19,7 +19,15 @@ import { sessionStore } from './session';
 import { reportError } from './statusBar';
 import { tNow } from '$lib/i18n';
 
-export type TunnelUiState = 'idle' | 'connecting' | 'connected' | 'disconnected';
+export type TunnelUiState = 'idle' | 'connecting' | 'connected' | 'noContact' | 'disconnected';
+
+/** What a status says: a running frpc counts as connected only once it is signed in at frps. */
+function uiOf(status: TunnelStatus): TunnelUiState {
+  if (!status.running) return 'disconnected';
+  if (status.login === 'noContact') return 'noContact';
+  if (status.login === 'connecting') return 'connecting';
+  return 'connected';
+}
 
 interface TunnelStoreState {
   ui: TunnelUiState;
@@ -32,6 +40,9 @@ const RESTART_FIRST_MS = 5_000;
 const RESTART_MAX_MS = 60_000;
 // A frpc that has run this long since its start ends a restart series: one tick.
 const RESTART_HELD_MS = REFRESH_INTERVAL_MS;
+// While a running frpc signs in, its status is asked this often: the tick would leave
+// "connecting" standing for up to a minute after every start.
+const LOGIN_POLL_MS = 3_000;
 
 const initial: TunnelStoreState = { ui: 'idle', status: null, mappings: [] };
 const _state = writable<TunnelStoreState>(initial);
@@ -57,6 +68,8 @@ let inFlight: {
   next: Promise<void> | null;
   restart: boolean;
 } | null = null;
+let loginTimer: ReturnType<typeof setTimeout> | null = null;
+
 // One status-bar message per series of failures (failed reconciliations, frpc-error); a
 // successful reconciliation ends the series, inside a restart series only its end does.
 let errorReported = false;
@@ -80,6 +93,8 @@ function stopPolling(): void {
   activationGen++;
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  if (loginTimer) clearTimeout(loginTimer);
+  loginTimer = null;
   cancelRestart();
   endRestarts();
   refusalReported = false;
@@ -186,9 +201,11 @@ async function reconcileOnce(gen: number): Promise<void> {
   } catch (err) {
     if (gen !== activationGen) return;
     // The backend leaves a running frpc untouched; only a first start that failed
-    // leaves "connecting" behind.
+    // leaves "connecting" behind, a frpc still signing in does too and runs on.
     _state.update((s) =>
-      s.ui === 'connecting' ? { ...s, ui: 'disconnected', status: { running: false } } : s,
+      s.ui === 'connecting' && !s.status?.running
+        ? { ...s, ui: 'disconnected', status: { running: false } }
+        : s,
     );
     // A failed tick while the restarted frpc holds is a new series and plans no restart; a
     // failed restart plans the next one after a longer pause, unless one already waits: a
@@ -242,11 +259,30 @@ async function reconcileOnce(gen: number): Promise<void> {
     _state.update((s) => ({ ...s, mappings }));
     return;
   }
-  _state.set({
-    ui: refresh.status.running ? 'connected' : 'disconnected',
-    status: refresh.status,
-    mappings,
-  });
+  _state.set({ ui: uiOf(refresh.status), status: refresh.status, mappings });
+  watchLogin(gen);
+}
+
+/** Ask for the status again soon while the running frpc of activation `gen` signs in. */
+function watchLogin(gen: number): void {
+  const s = get(_state);
+  if (loginTimer || gen !== activationGen || s.ui !== 'connecting' || !s.status?.running) return;
+  loginTimer = setTimeout(() => void checkLogin(gen), LOGIN_POLL_MS);
+}
+
+async function checkLogin(gen: number): Promise<void> {
+  loginTimer = null;
+  let status: TunnelStatus;
+  try {
+    status = await bridge.tunnelStatus();
+  } catch {
+    return; // the next tick brings the status
+  }
+  // Only the sign-in of a frpc still running: an end or a stop meanwhile belongs to the
+  // reconciliation and its events.
+  if (gen !== activationGen || !status.running || !get(_state).status?.running) return;
+  _state.update((s) => ({ ...s, ui: uiOf(status), status }));
+  watchLogin(gen);
 }
 
 export async function stop(): Promise<void> {

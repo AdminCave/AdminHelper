@@ -54,8 +54,10 @@ Review: approve (.ah-out/review/kern-desktop-6/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc::
 Doku: → T12
 
-### T6 — Tunnel-Anzeige: kein Kontakt zum Tunnel-Server (R-1691)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/components/TunnelIndicator.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T6 — Tunnel-Anzeige: kein Kontakt zum Tunnel-Server (R-1691)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/components/TunnelIndicator.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/StatusFooter.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5a17de6a5 2026-11-27T09:12:53+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T6.verdict.json)
 Änderung: `TunnelStatus` im IPC-Typ um den Login-Zustand; der Store macht aus laufend + angemeldet „verbunden“, aus laufend + kein Kontakt einen neuen Zustand mit eigenem Text (DE+EN) im Indikator, laufend + verbindet bleibt „verbindet“. Tests im Store.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
 Doku: → T12

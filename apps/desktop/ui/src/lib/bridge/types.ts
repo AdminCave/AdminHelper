@@ -169,7 +169,12 @@ export interface TunnelStatus {
   visitors?: string[];
   /** Where each visitor of the running frpc listens. */
   bindings?: VisitorBinding[];
+  /** The sign-in of the running frpc at frps, from its log; null while none runs. */
+  login?: TunnelLogin | null;
 }
+
+/** `connecting` until frpc is signed in at frps, `noContact` after an attempt that failed. */
+export type TunnelLogin = 'connecting' | 'loggedIn' | 'noContact';
 
 /** Where a visitor listens: the server's port and the local port on 127.0.0.1 it got instead. */
 export interface VisitorBinding {

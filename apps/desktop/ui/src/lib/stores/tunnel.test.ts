@@ -10,12 +10,13 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import type { RefreshOutcome, TunnelMapping, TunnelRefresh } from '$lib/bridge/types';
+import type { RefreshOutcome, TunnelLogin, TunnelMapping, TunnelRefresh } from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   refreshTunnel: vi.fn(),
   fetchTunnels: vi.fn(),
   stopTunnel: vi.fn(),
+  tunnelStatus: vi.fn(),
   reportError: vi.fn(),
   session: {
     session: null as { serverUrl: string; username: string } | null,
@@ -27,6 +28,7 @@ vi.mock('$lib/bridge', () => ({
   refreshTunnel: h.refreshTunnel,
   fetchTunnels: h.fetchTunnels,
   stopTunnel: h.stopTunnel,
+  tunnelStatus: h.tunnelStatus,
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/i18n', () => ({
@@ -150,6 +152,80 @@ describe('tunnel store: activation', () => {
     markError('frpc crashed');
     expect(get(tunnelUi)).toBe('disconnected');
     expect(h.reportError).toHaveBeenCalled();
+  });
+});
+
+// R-1691: a running frpc is "connected" only once it is signed in at frps.
+describe('tunnel store: sign-in of frpc at the tunnel server (R-1691)', () => {
+  function signingIn(login: TunnelLogin): TunnelRefresh {
+    const r = refreshed('started');
+    return { ...r, status: { ...r.status, login } };
+  }
+  const running = (login: TunnelLogin) => ({ running: true, visitors: ['db-visitor'], login });
+
+  it('a signed-in frpc is connected, one without contact is not', async () => {
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('loggedIn'));
+    await startIfServerMode();
+    expect(get(tunnelUi)).toBe('connected');
+
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('noContact'));
+    await refreshNow();
+    expect(get(tunnelUi)).toBe('noContact');
+    expect(get(tunnelStatus)?.running).toBe(true);
+  });
+
+  it('a frpc signing in stays connecting and is asked again until it is signed in', async () => {
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('connecting'));
+    h.tunnelStatus
+      .mockResolvedValueOnce(running('connecting'))
+      .mockResolvedValueOnce(running('noContact'))
+      .mockResolvedValueOnce(running('loggedIn'));
+    await startIfServerMode();
+    expect(get(tunnelUi)).toBe('connecting');
+    expect(h.tunnelStatus).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(h.tunnelStatus).toHaveBeenCalledTimes(1);
+    expect(get(tunnelUi)).toBe('connecting');
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(get(tunnelUi)).toBe('noContact');
+    // Without contact frpc retries by itself; the tick brings its sign-in.
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(h.tunnelStatus).toHaveBeenCalledTimes(2);
+
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('loggedIn'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(get(tunnelUi)).toBe('connected');
+  });
+
+  it('a failed tick leaves a frpc signing in as it is', async () => {
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('connecting'));
+    await startIfServerMode();
+    h.refreshTunnel.mockRejectedValueOnce(new Error('no answer'));
+    await refreshNow();
+    expect(get(tunnelUi)).toBe('connecting');
+    expect(get(tunnelStatus)?.running).toBe(true);
+  });
+
+  it('an answer for a frpc that ended or was stopped meanwhile changes nothing', async () => {
+    const pending = deferred<ReturnType<typeof running>>();
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('connecting'));
+    h.tunnelStatus.mockReturnValueOnce(pending.promise);
+    await startIfServerMode();
+    await vi.advanceTimersByTimeAsync(3_000);
+    markTerminated();
+    pending.resolve(running('loggedIn'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(get(tunnelUi)).toBe('disconnected');
+
+    await stop();
+    h.refreshTunnel.mockResolvedValueOnce(signingIn('connecting'));
+    await startIfServerMode();
+    await stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.tunnelStatus).toHaveBeenCalledTimes(1);
+    expect(get(tunnelUi)).toBe('idle');
   });
 });
 
