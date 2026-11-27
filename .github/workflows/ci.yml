@@ -731,6 +731,16 @@ jobs:
           key: pkg-tool-${{ steps.image.outputs.image }}-${{ hashFiles('scripts/release/build-pkg-tool.sh') }}
       - name: Build pkg from source
         run: bash scripts/release/build-pkg-tool.sh "$HOME/pkg-tool"
+      # The release signs with this pkg in a job that installs nothing (R-1787): bundled with its
+      # libraries, pkg must run in a bare Ubuntu of the runner's release without the build
+      # dependencies.
+      - name: Run the bundled pkg without its build dependencies
+        run: |
+          set -euo pipefail
+          bash scripts/release/build-pkg-tool.sh --bundle-libs "$HOME/pkg-tool"
+          docker run --rm -v "$HOME/pkg-tool:/opt/pkg-tool:ro" -e LD_LIBRARY_PATH=/opt/pkg-tool/lib \
+            ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db \
+            /opt/pkg-tool/sbin/pkg --version
       - name: Build and verify the signed pkg repo
         # As root: pkg update refuses a database directory not owned by root (0/0) or group-writable.
         run: sudo env PKG_TOOL_PREFIX="$HOME/pkg-tool" bash scripts/tests/pkg_repo_build_test.sh
@@ -774,7 +784,7 @@ jobs:
           mkdir -p "$dl" "$rel/repos/AdminCave/AdminHelper/releases"
           printf '{"tag_name":"v0.0.0-ci"}' > "$rel/repos/AdminCave/AdminHelper/releases/latest"
           cp apps/agent/adminhelper-agent.exe "$dl/adminhelper-agent-windows-x86_64.exe"
-          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o "$RUNNER_TEMP/frpc.zip" \
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o "$RUNNER_TEMP/frpc.zip" \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           echo "${FRP_SHA256_WINDOWS_AMD64}  $RUNNER_TEMP/frpc.zip" | sha256sum -c -
           unzip -p "$RUNNER_TEMP/frpc.zip" "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > "$dl/frpc-windows-x86_64.exe"
@@ -1117,7 +1127,7 @@ jobs:
           key: ${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         run: |
-          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -1164,7 +1174,7 @@ jobs:
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         shell: bash
         run: |
-          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o frpc.zip \
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.zip \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           echo "${FRP_SHA256_WINDOWS_AMD64}  frpc.zip" | sha256sum -c -
           unzip -o frpc.zip
@@ -1235,7 +1245,7 @@ jobs:
         run: cargo install tauri-cli --locked --version "2.12.4"
       - name: frpc sidecar
         run: |
-          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -1296,7 +1306,7 @@ jobs:
           key: ${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         run: |
-          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -1417,7 +1427,7 @@ jobs:
           want=$(grep -m1 'ExeSHA256 *=' apps/agent/internal/frpc/frpcpin.go | grep -o '[0-9a-f]\{64\}')
           test -n "$want" || { echo "::error::no ExeSHA256 in apps/agent/internal/frpc/frpcpin.go"; exit 1; }
           tmp=$(mktemp -d)
-          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o "$tmp/frpc.zip" \
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o "$tmp/frpc.zip" \
             "https://github.com/fatedier/frp/releases/download/v${ver}/frp_${ver}_windows_amd64.zip"
           echo "${zsha}  $tmp/frpc.zip" | sha256sum -c -
           unzip -p "$tmp/frpc.zip" "frp_${ver}_windows_amd64/frpc.exe" > "$tmp/frpc.exe"
@@ -1472,7 +1482,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
-          curl -sSfL --retry 5 --retry-delay 5 --connect-timeout 30 -o "$RUNNER_TEMP/oasdiff.tar.gz" "$url"
+          curl -sSfL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o "$RUNNER_TEMP/oasdiff.tar.gz" "$url"
           echo "${OASDIFF_SHA256_LINUX_AMD64}  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum -c -
           tar xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP/bin" oasdiff
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"

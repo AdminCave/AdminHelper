@@ -217,11 +217,13 @@ def test_the_pin_job_runs_read_only_and_without_secrets():
     job = jobs["image-pins"]
     assert job["permissions"] == {"contents": "read"}
     assert "secrets." not in yaml.safe_dump(job), job
-    # Polls as late as before the split: after the builds the release job waits for.
-    assert job["needs"] == [n for n in jobs["release"]["needs"] if n != "image-pins"]
+    # Polls as late as before the split: after the builds the release job waits for. The
+    # pkg tool is no image build: the release job waits for it, the pin job does not.
+    others = ("image-pins", "freebsd-pkg-tool")
+    assert job["needs"] == [n for n in jobs["release"]["needs"] if n not in others]
     assert job["if"] == jobs["release"]["if"].replace(
         " && needs.image-pins.result == 'success'", ""
-    )
+    ).replace(" && needs.freebsd-pkg-tool.result == 'success'", "")
     checkout = job["steps"][0]
     assert checkout["uses"].startswith("actions/checkout@")
     assert checkout["with"]["persist-credentials"] is False

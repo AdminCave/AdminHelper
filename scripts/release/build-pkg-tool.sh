@@ -9,12 +9,15 @@
 #
 #   bash scripts/release/build-pkg-tool.sh <prefix>     build and install below <prefix>
 #   bash scripts/release/build-pkg-tool.sh --deps       print the Ubuntu packages the build needs
+#   bash scripts/release/build-pkg-tool.sh --bundle-libs <prefix>
+#                                                       copy pkg's libraries (not glibc's) to <prefix>/lib
 #
 # The tag and its commit are both pinned: the clone is checked against the commit, so a moved tag
 # stops the build instead of building other sources. A prefix that already holds this pin
 # (<prefix>/.pkg-pin) is reused, which is what the CI cache keys on, but only if its pkg still
 # runs and reports the pinned version: a cached binary may not load on a newer runner image.
-# PKG_TOOL_CLANG_BINDIR overrides where clang-18 is looked for (the tests point it nowhere).
+# PKG_TOOL_CLANG_BINDIR overrides where clang-18 is looked for (the tests point it nowhere);
+# PKG_TOOL_LDD overrides ldd (the tests stub a missing library).
 #
 # The build follows freebsd/pkg's own CI (.github/workflows/build.yaml at the tag: Ubuntu 24.04,
 # clang-18, configure --with-libarchive.pc --with-openssl.pc), without its tests.
@@ -31,6 +34,37 @@ CLANG_BINDIR="${PKG_TOOL_CLANG_BINDIR:-/usr/lib/llvm-18/bin}"
 
 if [ "${1:-}" = "--deps" ]; then
     echo $PKG_BUILD_DEPS
+    exit 0
+fi
+if [ "${1:-}" = "--bundle-libs" ]; then
+    # The release signs in a job that installs nothing (R-1787): the libraries pkg loads, except
+    # glibc's, go to <prefix>/lib, and that job runs pkg with LD_LIBRARY_PATH on it.
+    [ $# -eq 2 ] && [ -x "$2/sbin/pkg" ] || {
+        echo "usage: $0 --bundle-libs <prefix with sbin/pkg>" >&2
+        exit 2
+    }
+    LIBDIR="$(cd "$2" && pwd)/lib"
+    mkdir -p "$LIBDIR"
+    deps="$("${PKG_TOOL_LDD:-ldd}" "$2/sbin/pkg")" || { echo "ERROR: ldd $2/sbin/pkg failed" >&2; exit 1; }
+    if grep -q 'not found' <<<"$deps"; then
+        echo "ERROR: pkg needs libraries this runner lacks:" >&2
+        grep 'not found' <<<"$deps" >&2
+        exit 1
+    fi
+    n=0
+    while read -r name _ path _; do
+        case "$name" in
+            libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | libresolv.so.* | libutil.so.*) continue ;;
+        esac
+        case "$path" in
+            "$LIBDIR"/*) continue ;;
+            /*) ;;
+            *) continue ;;
+        esac
+        cp -L -- "$path" "$LIBDIR/$name"
+        n=$((n + 1))
+    done < <(grep ' => ' <<<"$deps")
+    echo "bundled $n libraries of pkg in $LIBDIR"
     exit 0
 fi
 if [ $# -ne 1 ] || [ -z "$1" ]; then
