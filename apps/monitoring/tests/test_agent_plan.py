@@ -240,6 +240,20 @@ def test_a_stored_config_that_no_longer_holds_never_reaches_the_agent(client_db,
     assert "Probe check chk-bad left out of the plan" in caplog.text
 
 
+def test_a_stored_config_with_two_rules_alike_stays_in_the_plan(client_db, caplog):
+    # Stored before rules had keys (R-1638): two rules on one field and level are one key,
+    # which the catalog refuses, but a stored config keeps running.
+    client, factory = client_db
+    twice = {"field": "status_code", "op": "eq", "value": 500, "level": "critical"}
+    _add_check(factory, "chk-old", {**_PROBE, "rules": [*_PROBE["rules"], twice]})
+
+    with caplog.at_level(logging.WARNING, logger="app.module_plan"):
+        probes = _plan(client)["probes"]
+
+    assert [p["id"] for p in probes] == ["chk-old"]
+    assert "left out of the plan" not in caplog.text
+
+
 def test_plan_only_for_the_servers_own_agent_key(client_db):
     from app.main import app
 

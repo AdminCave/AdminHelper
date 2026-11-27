@@ -13,6 +13,7 @@ is only a hint; the agent asks the port the process really listens on.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -139,6 +140,62 @@ class RuleUnless(_Model):
     value: _Scalar
 
 
+COMPARE_OPS = ("lt", "le", "gt", "ge")
+LEVELS = ("info", "warning", "critical")
+# A sibling's result may be up to a week old before a condition on it counts as unknown.
+CONDITION_MAX_AGE = 7 * 86400
+
+
+def _is_number(v: object) -> bool:
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def _value_fits(op: str, v: object, what: str) -> None:
+    if op == "in":
+        if not isinstance(v, list) or not 1 <= len(v) <= MAX_FIELDS:
+            raise ValueError(f"{what}op 'in' needs a list of 1 to {MAX_FIELDS} values")
+    elif isinstance(v, list):
+        raise ValueError(f"{what}op '{op}' needs a single value")
+    elif op in (*COMPARE_OPS, "delta_gt") and not _is_number(v):
+        raise ValueError(f"{what}op '{op}' needs a number")
+
+
+def clear_fits(op: str, value: object, clear: object) -> bool:
+    """Whether `clear` lies strictly on the good side of the limit: below it for gt/ge, above
+    it for lt/le. Only a compare operator with a number has a side."""
+    if op not in COMPARE_OPS or not _is_number(value) or not _is_number(clear):
+        return False
+    return clear < value if op in ("gt", "ge") else clear > value
+
+
+class Condition(_Model):
+    """What a rule waits for (R-1638, ADR 0004 §6.4): a field of the same result, or with
+    `check` of another probe check of the module at the same instance."""
+
+    field: str
+    op: Literal["eq", "ne", "in", "lt", "le", "gt", "ge"]
+    value: _Scalar | list[_Scalar]
+    check: str | None = Field(None, pattern=_KEY)
+    # Seconds; an older result of the other check counts as unknown.
+    max_age: int | None = Field(None, ge=1, le=CONDITION_MAX_AGE, strict=True)
+
+    @model_serializer(mode="wrap")
+    def _options_only_when_set(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        for key in ("check", "max_age"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
+
+    @model_validator(mode="after")
+    def _value_fits_op(self) -> Condition:
+        _value_fits(self.op, self.value, "when: ")
+        if self.max_age is not None and self.check is None:
+            # The own result is always the one being rated, so it is never too old.
+            raise ValueError("when: max_age needs a check")
+        return self
+
+
 class Rule(_Model):
     field: str
     # delta_gt: rose by more than value since the run before; drop_pct_gt: fell by more than
@@ -146,39 +203,70 @@ class Rule(_Model):
     op: Literal["eq", "ne", "lt", "le", "gt", "ge", "in", "max_age", "delta_gt", "drop_pct_gt"]
     value: _Scalar | list[_Scalar]
     # info: a hint without an alarm (R-1280): the check shows it, nothing notifies.
-    level: Literal["info", "warning", "critical"]
+    level: Literal[LEVELS]
     # Kevin 2026-11-16 (R-1475): the agent leaves a field out when there is nothing to rate
     # (no replication link, no certificate, no license pack); that is ok, not unknown.
     if_absent: Literal["ok"] | None = None
     # The rule does not apply while another field of the same result has this value
     # (R-1480: Defender's real-time protection in passive mode).
     unless: RuleUnless | None = None
+    # The rule's name in the admin's overrides and in a catalog merge (R-1638); without one
+    # it is <field>.<level> (rule_key). One with a dot is such a name of the rule's own field:
+    # the key a rule keeps when the admin changes its level (rule_layer.effective).
+    key: str | None = Field(None, min_length=1)
+    # Hysteresis: once the rule fires it holds until the value passes clear.
+    clear: StrictInt | StrictFloat | None = None
+    # The rule rates only while the condition holds or cannot be told.
+    when: Condition | None = None
 
     @model_serializer(mode="wrap")
     def _options_only_when_set(self, handler: Any) -> dict[str, Any]:
         # Left out when unset, so the modules that do not use them keep their hash.
         data = handler(self)
-        for key in ("if_absent", "unless"):
+        for key in ("if_absent", "unless", "key", "clear", "when"):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
 
     @model_validator(mode="after")
     def _value_fits_op(self) -> Rule:
+        if (
+            self.key is not None
+            and re.fullmatch(_KEY, self.key) is None
+            and self.key not in {f"{self.field}.{level}" for level in LEVELS}
+        ):
+            raise ValueError(
+                f"rule key {self.key!r} is neither a name nor {self.field!r} with a level"
+            )
         v = self.value
-        is_number = isinstance(v, int | float) and not isinstance(v, bool)
-        if self.op == "in":
-            if not isinstance(v, list) or not 1 <= len(v) <= MAX_FIELDS:
-                raise ValueError(f"op 'in' needs a list of 1 to {MAX_FIELDS} values")
-        elif isinstance(v, list):
-            raise ValueError(f"op '{self.op}' needs a single value")
-        elif self.op in ("lt", "le", "gt", "ge", "delta_gt") and not is_number:
-            raise ValueError(f"op '{self.op}' needs a number")
-        elif self.op == "drop_pct_gt" and not (is_number and 0 < v < 100):
+        _value_fits(self.op, v, "")
+        if self.op == "drop_pct_gt" and not (_is_number(v) and 0 < v < 100):
             raise ValueError("op 'drop_pct_gt' needs a percentage between 0 and 100")
-        elif self.op == "max_age" and not (is_number and v > 0):
+        if self.op == "max_age" and not (_is_number(v) and v > 0):
             raise ValueError("op 'max_age' needs a positive number of seconds")
+        if self.clear is not None:
+            if self.op not in COMPARE_OPS:
+                raise ValueError(f"clear needs op lt, le, gt or ge, not {self.op!r}")
+            if not clear_fits(self.op, v, self.clear):
+                side = "below" if self.op in ("gt", "ge") else "above"
+                raise ValueError(f"clear must lie {side} the limit {v}")
         return self
+
+
+def rule_key(rule: Rule) -> str:
+    return rule.key or f"{rule.field}.{rule.level}"
+
+
+def rule_problems(rules: list[Rule]) -> list[str]:
+    """Why the rules of one check do not hold as a set; each rule checks itself."""
+    problems: list[str] = []
+    seen: set[str] = set()
+    for rule in rules:
+        key = rule_key(rule)
+        if key in seen:
+            problems.append(f"rule key {key!r} is given twice")
+        seen.add(key)
+    return problems
 
 
 class Credential(_Model):
@@ -359,7 +447,32 @@ class Check(_Model):
                 raise ValueError(
                     f"unless field {rule.unless.field!r} is not among the check's fields"
                 )
+            when = rule.when
+            if when is not None and when.check is None and when.field not in self.fields:
+                raise ValueError(f"when field {when.field!r} is not among the check's fields")
+        keys = [rule_key(rule) for rule in self.rules]
+        for rule, key in zip(self.rules, keys, strict=True):
+            # The hysteresis is kept by key: two rules under one key would hold each other.
+            # A stored config from before keys may name two rules alike, but none has clear.
+            if rule.clear is not None and keys.count(key) > 1:
+                raise ValueError(
+                    f"rule key {key!r} is given twice; a rule with clear needs its own"
+                )
         return self
+
+
+def _sibling_fits(check: Check, rule: Rule, by_key: dict[str, Check]) -> None:
+    # The server reads the other check's result at the same instance only (R-1638).
+    when = rule.when
+    where = f"check {check.key!r}, rule {rule_key(rule)!r}"
+    other = by_key.get(when.check)
+    if other is None or other is check:
+        raise ValueError(f"{where}: when.check {when.check!r} names no other check of the module")
+    if when.field not in other.fields:
+        raise ValueError(f"{where}: when field {when.field!r} is not among {other.key!r}'s fields")
+    if other.instance is not None and other.instance != check.instance:
+        # The other check is bound at one instance only; at the rest it would never report.
+        raise ValueError(f"{where}: {other.key!r} is bound only at instance {other.instance!r}")
 
 
 class CardItem(_Model):
@@ -440,6 +553,14 @@ class Module(_Model):
                 raise ValueError(
                     f"check {check.key!r}: target.service needs instance 'compose_project'"
                 )
+            # Here and not in Check: a stored probe config is checked as a Check too, and one
+            # stored before keys existed may name two rules alike (R-1638).
+            problems = rule_problems(list(check.rules))
+            if problems:
+                raise ValueError(f"check {check.key!r}: {problems[0]}")
+            for rule in check.rules:
+                if rule.when is not None and rule.when.check is not None:
+                    _sibling_fits(check, rule, by_key)
         for item in self.card:
             check = by_key.get(item.check_key)
             if check is None:

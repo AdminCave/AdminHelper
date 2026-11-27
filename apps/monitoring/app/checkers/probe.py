@@ -13,7 +13,9 @@ so this checker needs no state beyond the previous details (delta rules).
 Order: the agent's own status first (a probe it did not run says why), then freshness
 (a result older than two intervals plus one agent run means the probe stopped; the agent's
 self-throttle stretches the interval by its probe factor), then the rules on the values. A
-rule describes the alerting case; the worst level that holds wins.
+rule describes the alerting case; the worst level that holds wins. A rule with `clear` that
+held in the run before holds until the value passes clear (R-1638); a rule with `when` rests
+while its condition is told and does not hold.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import json
 import operator
 import time
 from datetime import datetime
+from typing import NamedTuple
 
 from app.checkers.agent import agent_number, cap_agent_text, join_capped
 
@@ -95,6 +98,13 @@ def _report_time(report: dict) -> float:
     return time.time()
 
 
+def _stale_after(interval_s: object, factor: int) -> float:
+    """Seconds after which a probe's result counts as stopped: two intervals, stretched by the
+    agent's probe factor, plus one agent run."""
+    interval = agent_number(interval_s) or DEFAULT_INTERVAL_S
+    return 2 * interval * factor + AGENT_RUN_S
+
+
 def _probe_factor(report: dict) -> int:
     """How many times less often the agent runs its probes while its self-throttle holds
     them back: the probe phase's factor in the same report, held to 1..MAX_PROBE_FACTOR;
@@ -154,7 +164,7 @@ def _rule_holds(rule: dict, value: object, before: object, ts: float) -> bool | 
     return None
 
 
-def _rule_text(rule: dict, value: object, before: object, ts: float) -> str:
+def _rule_text(rule: dict, value: object, before: object, ts: float, clears: object = None) -> str:
     field, op, want = rule.get("field"), rule.get("op"), rule.get("value")
     if op == "max_age":
         return f"{field} is {int(ts - value)} s old ({op} {_shown(want)})"
@@ -162,24 +172,96 @@ def _rule_text(rule: dict, value: object, before: object, ts: float) -> str:
         return f"{field} rose by {value - before:g} ({op} {_shown(want)})"
     if op == "drop_pct_gt":
         return f"{field} fell by {(before - value) * 100 / before:.0f} % ({op} {_shown(want)})"
+    if clears is not None:
+        return f"{field} = {_shown(value)} ({op} {_shown(want)}, clears at {_shown(clears)})"
     return f"{field} = {_shown(value)} ({op} {_shown(want)})"
 
 
-def _rate(rules: object, values: dict, baseline: dict | None, ts: float) -> tuple[str, list[str]]:
-    """(status, problems) of the rules on a measured result."""
+def _rule_key(rule: dict) -> str:
+    # As catalog.model.rule_key, on the stored form of the rule.
+    return rule.get("key") or f"{rule.get('field')}.{rule.get('level')}"
+
+
+def _condition_holds(
+    when: dict, values: dict, siblings: dict, report_ts: float, factor: int
+) -> bool | None:
+    """Whether a rule's condition holds; None when it cannot be told: no usable value, or a
+    sibling without a result as fresh as its own probe would need (or `max_age`)."""
+    check = when.get("check")
+    source: object = values
+    if check is not None:
+        sibling = siblings.get(check)
+        if not isinstance(sibling, dict):
+            return None
+        measured = agent_number(sibling.get("measured_ts"))
+        limit = agent_number(when.get("max_age"))
+        if limit is None:
+            limit = _stale_after(sibling.get("interval_s"), factor)
+        if measured is None or report_ts - measured > limit:
+            return None
+        source = sibling.get("values")
+    if not isinstance(source, dict):
+        return None
+    condition = {"op": when.get("op"), "value": when.get("value")}
+    return _rule_holds(condition, source.get(when.get("field")), None, report_ts)
+
+
+class Rating(NamedTuple):
+    status: str
+    problems: list[str]
+    # The keys of the rules that hold, for the hysteresis of the next run.
+    firing: list[str]
+    # The rules whose condition does not hold: {"key": …, "when": …}.
+    resting: list[dict]
+
+
+def _rating(
+    rules: object,
+    values: dict,
+    baseline: dict | None,
+    ts: float,
+    *,
+    firing: frozenset[str],
+    siblings: object,
+    report_ts: float,
+    factor: int = 1,
+) -> Rating:
+    """The rules on a measured result. `firing`: the keys that held in the rated run before;
+    `siblings`: the stored results of the module's other probe checks at this instance."""
     worst = 0
     held: list[str] = []
     unrated: list[str] = []
+    now_firing: list[str] = []
+    resting: list[dict] = []
+    siblings = siblings if isinstance(siblings, dict) else {}
     for rule in rules if isinstance(rules, list) else []:
         if not isinstance(rule, dict):
             continue
+        key = _rule_key(rule)
         field = rule.get("field")
         value = values.get(field)
         unless = rule.get("unless")
         if isinstance(unless, dict) and _same(values.get(unless.get("field")), unless.get("value")):
             continue
+        when = rule.get("when")
+        if isinstance(when, dict):
+            # Only a condition that is told and fails rests the rule: missing or old data
+            # never silences it.
+            if _condition_holds(when, values, siblings, report_ts, factor) is False:
+                resting.append({"key": key, "when": when})
+                continue
         before = (baseline or {}).get(field)
         holds = _rule_holds(rule, value, before, ts)
+        clears = rule.get("clear")
+        holding = clears is not None and holds is False and key in firing
+        if holding and _rule_holds({**rule, "value": clears}, value, before, ts):
+            holds = True
+        else:
+            clears = None
+        if holds is None and key in firing:
+            # A gap does not end the hysteresis: the rule holds again once a value comes back
+            # on the wrong side of clear.
+            now_firing.append(key)
         if holds is None and rule.get("level") == "info":
             # A hint never makes a check worse than info: no value, no hint (OPNsense sends
             # update_available only after an update check).
@@ -189,16 +271,30 @@ def _rate(rules: object, values: dict, baseline: dict | None, ts: float) -> tupl
         if holds is None:
             unrated.append(f"{field}: no usable value in the probe result")
         elif holds:
-            held.append(_rule_text(rule, value, before, ts))
+            now_firing.append(key)
+            held.append(_rule_text(rule, value, before, ts, clears))
             worst = max(worst, _LEVELS.get(rule.get("level"), _LEVELS["critical"]))
+    now_firing = list(dict.fromkeys(now_firing))
     # A held info rule must not hide a rule without a value: unknown ranks above info.
     if held and worst > _LEVELS["info"]:
-        return _LEVEL_NAMES[worst], held
+        return Rating(_LEVEL_NAMES[worst], held, now_firing, resting)
     if unrated:
-        return "unknown", unrated
+        return Rating("unknown", unrated, now_firing, resting)
     if held:
-        return "info", held
-    return "ok", []
+        return Rating("info", held, now_firing, resting)
+    return Rating("ok", [], now_firing, resting)
+
+
+def _rate(rules: object, values: dict, baseline: dict | None, ts: float) -> tuple[str, list[str]]:
+    """(status, problems) of the rules on a measured result, without a run before and without
+    siblings."""
+    rating = _rating(rules, values, baseline, ts, firing=frozenset(), siblings={}, report_ts=ts)
+    return rating.status, rating.problems
+
+
+def _firing(prev_details: dict | None) -> list[str]:
+    keys = prev_details.get("firing") if isinstance(prev_details, dict) else None
+    return [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
 
 
 class ProbeChecker:
@@ -206,7 +302,8 @@ class ProbeChecker:
 
     Config: sensor, target, params, fields, rules, interval_s, timeout_s, credential,
     test_object (check_configs.ProbeConfig). The agent router adds `_check_id`, the key
-    of the result in the report's probes block.
+    of the result in the report's probes block, and `_siblings`, the stored results of the
+    module's other probe checks at the same instance that a rule's `when` names.
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
@@ -226,6 +323,7 @@ class ProbeChecker:
         ts = agent_number(result.get("ts"))
         error = cap_agent_text(result.get("error"))
         measured_ts, values, baseline = _measured(prev_details)
+        firing = _firing(prev_details)
         details = {
             "ts": ts,
             "status": status,
@@ -234,6 +332,9 @@ class ProbeChecker:
             "values": values or {},
             "baseline": baseline,
             "problems": [],
+            # A run without a rating keeps the hysteresis of the last rated one.
+            "firing": firing,
+            "resting": [],
         }
 
         def done(level: str, problems: list[str]) -> tuple[str, str, dict | None]:
@@ -248,10 +349,10 @@ class ProbeChecker:
 
         if ts is None:
             return done("unknown", ["Probe result without a time"])
-        interval = agent_number(config.get("interval_s")) or DEFAULT_INTERVAL_S
-        interval *= _probe_factor(report)
-        age = _report_time(report) - ts
-        if age > 2 * interval + AGENT_RUN_S:
+        factor = _probe_factor(report)
+        now = _report_time(report)
+        age = now - ts
+        if age > _stale_after(config.get("interval_s"), factor):
             return done(
                 "unknown",
                 [f"Last probe result is {int(age // 60)} min old; the agent no longer runs it"],
@@ -266,9 +367,19 @@ class ProbeChecker:
             # run sent again keeps its baseline, else a delta would fall to 0 one report later.
             baseline = values
         details.update(measured_ts=ts, values=current, baseline=baseline)
-        level, problems = _rate(config.get("rules"), current, baseline, ts)
-        if level != "ok":
-            return done(level, problems)
+        rating = _rating(
+            config.get("rules"),
+            current,
+            baseline,
+            ts,
+            firing=frozenset(firing),
+            siblings=config.get("_siblings"),
+            report_ts=now,
+            factor=factor,
+        )
+        details.update(firing=rating.firing, resting=rating.resting)
+        if rating.status != "ok":
+            return done(rating.status, rating.problems)
         shown = [f"{field} = {_shown(value)}" for field, value in current.items()]
         details["problems"] = []
         message = f"OK: {join_capped(shown)}" if shown else "Probe OK"

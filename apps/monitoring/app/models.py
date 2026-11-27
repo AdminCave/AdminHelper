@@ -144,6 +144,11 @@ class MonitorCheck(Base):
     # The hash of the catalog definition the module check was made from: a sync that finds
     # another offers the new definition as an update. NULL for a check from before it.
     module_check_hash = Column(String, nullable=True)
+    # The catalog rules a module's probe check is bound to and the admin's overrides over
+    # them, as JSON (app/rule_layer.py, R-1638). NULL for any other check and for a probe
+    # check whose rules the admin changed before the layer and could not be converted: they
+    # stay.
+    rule_layer = Column(Text, nullable=True)
     # Evaluated and shown, never alerted: a module check the admin took over quietly.
     silent = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, server_default=utc_now_sql())

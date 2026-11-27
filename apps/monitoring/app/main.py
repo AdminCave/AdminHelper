@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     from app.checkers.agent import hydrate_agent_liveness
     from app.core.database import SessionLocal
     from app.core.victoria import victoria
-    from app.module_sync import sync_catalog
+    from app.module_sync import record_rule_layers, sync_catalog
     from app.scheduler import (
         load_all_checks,
         schedule_agent_alert_bundle,
@@ -62,9 +62,9 @@ async def lifespan(app: FastAPI):
     # the built-in standard templates, mark once what users changed on template
     # checks before the update (before the first sync, which would overwrite it),
     # and move the unedited built-ins to the shipped version (tombstone-guarded,
-    # best-effort — a seed failure must not keep the service down), then bring
-    # adopted module instances up to the shipped catalog. All before
-    # load_all_checks, which schedules what they sync.
+    # best-effort — a seed failure must not keep the service down), give the module
+    # checks their rule layers, then bring adopted module instances up to the shipped
+    # catalog. All before load_all_checks, which schedules what they sync.
     db = SessionLocal()
     try:
         hydrate_agent_liveness(
@@ -86,6 +86,11 @@ async def lifespan(app: FastAPI):
         except Exception:
             db.rollback()
             logger.exception("Updating the standard templates failed")
+        try:
+            record_rule_layers(db)
+        except Exception:
+            db.rollback()
+            logger.exception("Recording the rule layers of the module checks failed")
         try:
             sync_catalog(db)
         except Exception:

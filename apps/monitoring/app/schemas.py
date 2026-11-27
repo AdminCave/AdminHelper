@@ -6,11 +6,22 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
+from ah_common.bounds import BIGINT_MAX
+from app.catalog.model import LEVELS
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
@@ -85,6 +96,39 @@ class CheckUpdate(RequestModel):
         if v is None:
             raise ValueError("consecutive_oks must not be null")
         return v
+
+
+# A number in a rule as catalog.model.Rule takes it; the bound only gives the published
+# schema its maximum, the rule checks the rest.
+_RuleInt = Annotated[int, Field(strict=True, ge=-BIGINT_MAX - 1, le=BIGINT_MAX)]
+_RuleScalar = StrictBool | _RuleInt | StrictFloat | StrictStr
+
+
+class RuleOverride(RequestModel):
+    """The admin's parts of one catalog rule (R-1638); a part left out is the catalog's.
+    clear null takes the catalog's clear away, the others cannot be null."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: _RuleScalar | list[_RuleScalar] | None = None
+    clear: _RuleInt | StrictFloat | None = None
+    level: Literal[LEVELS] | None = None
+    enabled: StrictBool | None = None
+
+    @field_validator("value", "level", "enabled")
+    @classmethod
+    def _not_null(cls, v: object) -> object:
+        if v is None:
+            raise ValueError("must not be null; leave the part out to keep the catalog's")
+        return v
+
+
+class CheckRulesInput(RequestModel):
+    """All of the admin's overrides of a check's catalog rules, by rule key."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    overrides: dict[str, RuleOverride]
 
 
 class AlertRuleCreate(RequestModel):
@@ -487,6 +531,28 @@ class MonitorCheckStatusOut(MonitorCheckOut):
     # alerter.muted_reasons: "silent check" | "maintenance window" | "exception" | "host down"
     # | None.
     mutedReason: str | None
+
+
+class RuleConflict(BaseModel):
+    """Where the last catalog update met an override (rule_layer.merge)."""
+
+    key: str
+    kind: Literal["both_changed", "removed", "redefined", "clear_dropped"]
+    part: Literal["value", "clear", "level"] | None
+    at: str
+
+
+class CheckRulesOut(BaseModel):
+    """A module probe's rules: the catalog state it is bound to, the admin's overrides, the
+    rules it rates with. A frozen check keeps the admin's rules from before the layer:
+    effective only, no catalog, no overrides."""
+
+    checkId: str
+    frozen: bool
+    catalog: list[dict[str, Any]]
+    overrides: dict[str, dict[str, Any]]
+    effective: list[dict[str, Any]]
+    conflicts: list[RuleConflict]
 
 
 class StatusSummaryOut(BaseModel):
