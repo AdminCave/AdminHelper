@@ -27,6 +27,7 @@ from app.core import database
 from app.core.bounds import storable
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
+from app.exception_scope import runs
 from app.models import MonitorCheck, MonitorState, MonitorStatusChange
 
 logger = logging.getLogger("monitor.engine")
@@ -403,7 +404,7 @@ def _load_context(db: Session, check: MonitorCheck, config: dict) -> CheckContex
             .filter(
                 MonitorCheck.id == pair_id,
                 MonitorCheck.check_type == "probe",
-                MonitorCheck.enabled == True,  # noqa: E712
+                runs,
                 MonitorCheck.server_id == check.server_id,
             )
             .first()
@@ -431,7 +432,7 @@ def _number(value) -> float | None:
 
 
 def _load_disk_rules(db: Session, server_id) -> DiskRules | None:
-    """The disk rules of `server_id`'s enabled agent_resources check (the lowest id, as
+    """The disk rules of `server_id`'s running agent_resources check (the lowest id, as
     history.server_thresholds picks it) and the free GB per mount from its last result.
     None without such a check: the forecast then rates every mount as before."""
     if not isinstance(server_id, str) or not server_id:
@@ -441,7 +442,7 @@ def _load_disk_rules(db: Session, server_id) -> DiskRules | None:
         .filter(
             MonitorCheck.server_id == server_id,
             MonitorCheck.check_type == "agent_resources",
-            MonitorCheck.enabled == True,  # noqa: E712
+            runs,
         )
         .order_by(MonitorCheck.id)
         .first()
@@ -519,13 +520,9 @@ class _Run(NamedTuple):
 
 
 def _load_run(db: Session, check_id: str) -> _Run | None:
-    """The enabled check with its config, checker and context; None when the scheduler
-    has nothing to run (the check is gone, disabled or push-only)."""
-    check = (
-        db.query(MonitorCheck)
-        .filter(MonitorCheck.id == check_id, MonitorCheck.enabled == True)  # noqa: E712
-        .first()
-    )
+    """The running check with its config, checker and context; None when the scheduler
+    has nothing to run (the check is gone, switched off, skipped or push-only)."""
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id, runs).first()
     if not check:
         return None
 

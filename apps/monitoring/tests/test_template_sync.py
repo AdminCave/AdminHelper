@@ -38,6 +38,8 @@ from app.template_sync import (
     sync_template,
 )
 
+from ._helpers import standing_skip
+
 # --- substitute_variables -------------------------------------------------------
 
 
@@ -426,6 +428,26 @@ def test_sync_keeps_a_check_the_user_disabled_disabled(db):
     check = db.get(MonitorCheck, cid)
     assert (check.enabled, check.severity) == (False, "warning")
     assert cid not in db.scheduled
+
+
+def test_sync_leaves_a_skipped_check_out_of_the_scheduler(db):
+    # R-1637: the column is the template's, a skip of the admin keeps the check from
+    # running; a template change schedules what runs, not what the column says.
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    db.add(standing_skip(cid))
+    db.commit()
+    db.scheduled.clear()
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "severity": "warning"}])
+    db.commit()
+    sync_template(db, tpl)
+
+    check = db.get(MonitorCheck, cid)
+    assert (check.enabled, check.severity) == (True, "warning")
+    assert cid not in db.scheduled
+    assert cid in db.removed
 
 
 def test_sync_keeps_the_type_of_a_check_whose_config_the_user_changed(db):

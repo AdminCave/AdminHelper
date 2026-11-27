@@ -88,6 +88,21 @@ def maintenance_window(*, id, server_id=None, kind="once", note=None, enabled=Tr
     )
 
 
+def standing_skip(check_id, *, id=None):
+    """A skip in force on one check, as the toggle stores it since R-1637: the check does
+    not run, its column stays on."""
+    from app.models import MonitorException
+
+    return MonitorException(
+        id=id or f"skip-{check_id}",
+        scope_kind="check",
+        check_id=check_id,
+        effect="skip",
+        duration_kind="permanent",
+        origin="api",
+    )
+
+
 class _ListQuery:
     """query(Model)-shim returning a fixed list (filter chainable)."""
 

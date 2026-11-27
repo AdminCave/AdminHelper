@@ -132,16 +132,13 @@ loaded_at: datetime | None = None
 def load_all_checks() -> None:
     """Loads and schedules all active checks at startup."""
     from app.core.database import SessionLocal
+    from app.exception_scope import runs
     from app.models import MonitorCheck
 
     global loaded_at
     db = SessionLocal()
     try:
-        checks = (
-            db.query(MonitorCheck)
-            .filter(MonitorCheck.enabled == True)  # noqa: E712
-            .all()
-        )
+        checks = db.query(MonitorCheck).filter(runs).all()
         count = 0
         skipped = 0
         for check in checks:

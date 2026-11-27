@@ -37,6 +37,7 @@ from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import escape_label_value, victoria
+from app.exception_scope import check_runs, runs
 from app.history import (
     build_series,
     compare_query,
@@ -112,9 +113,9 @@ def _serialize_status(db: Session, checks: list[MonitorCheck]) -> list[dict]:
     return rows
 
 
-def _schedule(check: MonitorCheck) -> None:
+def _schedule(db: Session, check: MonitorCheck) -> None:
     """Brings the running scheduler in line with a committed check."""
-    if check.enabled:
+    if check_runs(db, check):
         add_check(check.id, check.interval, check.check_type)
     else:
         remove_check(check.id)
@@ -393,7 +394,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(check)
 
-    _schedule(check)
+    _schedule(db, check)
 
     return check.to_dict(state=state)
 
@@ -536,7 +537,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(check)
 
-    _schedule(check)
+    _schedule(db, check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -707,7 +708,7 @@ def toggle_check(check_id: str, background_tasks: BackgroundTasks, db: Session =
         closing = (before, reserved)
     db.commit()
 
-    _schedule(check)
+    _schedule(db, check)
 
     if closing is not None:
         before, reserved = closing
@@ -749,7 +750,7 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(check)
 
-    _schedule(check)
+    _schedule(db, check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
@@ -776,7 +777,7 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
             f"Check type '{check.check_type}' is evaluated only from the agent push "
             "and cannot be triggered manually",
         )
-    if not check.enabled:
+    if not check_runs(db, check):
         raise HTTPException(status.HTTP_409_CONFLICT, "Check is disabled")
 
     from app.check_engine import execute_check
@@ -962,9 +963,9 @@ def get_status_summary(db: Session = Depends(get_db)):
     # Aggregate in SQL: a GROUP BY count avoids materializing every MonitorState row (incl. the
     # message/details JSON blobs) just to tally per status — thousands of rows with large text
     # columns per dashboard poll at scale (5.21).
-    enabled = MonitorCheck.enabled == True  # noqa: E712
-    # Only enabled checks: a disabled one keeps its last state frozen, and a critical
-    # one would stay on the dashboard for good.
+    enabled = runs
+    # Only running checks: one switched off or skipped keeps its last state frozen, and
+    # a critical one would stay on the dashboard for good.
     rows = (
         db.query(MonitorState.status, func.count())
         .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)

@@ -168,6 +168,7 @@ def health_detail(db: Session = Depends(get_db)):
     from app import scheduler
     from app.check_types import PUSH_ONLY_TYPES
     from app.core.time import utcnow_naive
+    from app.exception_scope import runs
     from app.models import MonitorAlertLog, MonitorAlertRule
 
     now = utcnow_naive()
@@ -184,7 +185,7 @@ def health_detail(db: Session = Depends(get_db)):
             func.max(MonitorCheck.updated_at),
         )
         .outerjoin(MonitorState, MonitorState.check_id == MonitorCheck.id)
-        .filter(MonitorCheck.enabled.is_(True), MonitorCheck.check_type.notin_(PUSH_ONLY_TYPES))
+        .filter(runs, MonitorCheck.check_type.notin_(PUSH_ONLY_TYPES))
         .group_by(MonitorCheck.interval)
         .all()
     )

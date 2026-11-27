@@ -15,6 +15,8 @@ from app.models import MonitorCheck
 from app.rule_layer import effective, read_layer, store_layer
 from app.template_sync import read_overrides
 
+from ._helpers import standing_skip
+
 
 def _payload(**over):
     p = {
@@ -179,6 +181,41 @@ def test_run_now_rejects_disabled_check(client_db):
     r = client.post(f"/checks/{cid}/run")
     assert r.status_code == 409
     assert "disabled" in r.json()["detail"]
+
+
+def _skip(factory, cid):
+    with factory() as db:
+        db.add(standing_skip(cid))
+        db.commit()
+
+
+def test_run_now_rejects_a_skipped_check(client_db, monkeypatch):
+    # R-1637: a skip in force stops the check as the column did; its column stays on.
+    client, factory = client_db
+    cid = _make_check(client)
+    _skip(factory, cid)
+    import app.check_engine as engine_mod
+
+    called = []
+    monkeypatch.setattr(engine_mod, "execute_check", lambda c: called.append(c))
+    r = client.post(f"/checks/{cid}/run")
+    assert r.status_code == 409
+    assert "disabled" in r.json()["detail"]
+    assert called == []
+
+
+def test_an_update_of_a_skipped_check_keeps_it_out_of_the_scheduler(client_db, monkeypatch):
+    from app.routers import checks as checks_router
+
+    client, factory = client_db
+    cid = _make_check(client)
+    _skip(factory, cid)
+    calls = []
+    monkeypatch.setattr(checks_router, "add_check", lambda c, *_: calls.append(("add", c)))
+    monkeypatch.setattr(checks_router, "remove_check", lambda c: calls.append(("remove", c)))
+    r = client.put(f"/checks/{cid}", json={"interval": "15m"})
+    assert r.status_code == 200, r.text
+    assert calls == [("remove", cid)]
 
 
 def test_run_now_executes_enabled_pull_check(client_db, monkeypatch):

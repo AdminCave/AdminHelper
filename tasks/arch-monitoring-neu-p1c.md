@@ -62,8 +62,10 @@ Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_exception_scope.py tests/test_migrations_smoke.py tests/test_alembic_builtin.py tests/test_models_timestamps.py
 Doku: → T14
 
-### T3 — „Läuft“ im Lauf-Pfad: Planer, Engine, Push, Checks-Router (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/scheduler.py, apps/monitoring/app/check_engine.py, apps/monitoring/app/routers/agent.py, apps/monitoring/app/main.py, apps/monitoring/app/template_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_scheduler.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_checks_crud.py
+### T3 — „Läuft“ im Lauf-Pfad: Planer, Engine, Push, Checks-Router (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/scheduler.py, apps/monitoring/app/check_engine.py, apps/monitoring/app/routers/agent.py, apps/monitoring/app/main.py, apps/monitoring/app/template_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_scheduler.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/app/module_sync.py, apps/monitoring/tests/_helpers.py, apps/monitoring/tests/test_check_engine_context.py, apps/monitoring/tests/test_health.py, apps/monitoring/tests/test_status_info.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b30322a58 2026-11-27T12:32:01+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T3.verdict.json)
 Abhängt von: T2
 Änderung: Die Leser fragen „läuft“ statt der Spalte:
 - `scheduler.py:142`;
@@ -74,7 +76,7 @@ Abhängt von: T2
 - in `routers/checks.py` `_schedule` (`:117`), `run_check_now` (`:779`) und die Summary (`:965`).
 
 Die Schreiber in `module_sync.py` und `template_sync.py` bleiben auf der Spalte. Vorher `grep -n "\.enabled" app/` über die übrigen Treffer; jeder bekommt eine Einordnung (Leser → „läuft“, Schreiber oder Systemvergleich → Spalte, mit Kommentar). Tests: je Leser ein Fall mit geltender `skip`-Zeile (direkt angelegt), der Check läuft nicht, wird nicht gepusht und nicht gezählt. 11 Dateien, weil die Leser des Lauf-Pfads eine Invariante teilen.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_scheduler.py tests/test_check_engine.py tests/test_agent_report.py tests/test_template_sync.py tests/test_checks_crud.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_scheduler.py tests/test_check_engine.py tests/test_check_engine_context.py tests/test_agent_report.py tests/test_health.py tests/test_template_sync.py tests/test_checks_crud.py tests/test_status_info.py tests/test_module_sync.py
 Doku: → T14
 
 ### T4 — „Läuft“ im Melde-Pfad: Alerter, Bündel, Glocke, Verlauf, Discovery, Modulplan (R-1637)  [ ]
@@ -277,3 +279,6 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27 T2: Das Downgrade löscht die Marke `migration:exceptions-p1c` aus `monitor_seed_state`, damit ein späteres Upgrade die Listen erneut übernimmt. Ein Muster auf einer exakten Liste (kein maskierter Name) geht wörtlich zurück, damit der Admin es sieht; nur Gast-IDs aus Ziffern werden wieder Zahlen.
 - Session 2026-11-27 T2: Der bestehende Migrationstest von R-1636 fragt das ORM erst nach `upgrade head` ab: das Modell ist das des Kopfs, auf `f4b6d8a0c2e4` fehlen die neuen Spalten. Der Rohzeilen-Vergleich auf `f4b6d8a0c2e4` bleibt.
 - Session 2026-11-27 T2: Die Migrationstests laufen lokal nur mit Postgres in `DATABASE_URL` (Verify überspringt sie); gegen die Test-DB des Worktrees `test_migrations_smoke.py`, `test_alembic_builtin.py`, `test_exception_scope.py`, `test_models_timestamps.py`: 91 passed, die PR-CI fährt sie mit Postgres.
+- Session 2026-11-27 T3: Die Planer-Aktion beim Übernehmen in `module_sync.py` (`_adopt`, nach `row.silent = False`) ist ein Leser und fragt „läuft“; das Verify nimmt dafür `test_module_sync.py` auf, dazu `test_check_engine_context.py`, `test_health.py` und `test_status_info.py`, wo die Fälle von Partner, Plattenregeln, Planer-Verzug und Summary schon stehen.
+- Session 2026-11-27 T3: Einordnung der übrigen `.enabled`-Treffer. `sync_catalog` (`dropped`/`changed`) fragt „beobachtet“ wie `discovery.py:682` und geht nach T4. Schreiber, die auf der Spalte bleiben: `module_sync.py` „gone“ und Tag-Wechsel (ihr `remove` ist für einen übersprungenen Check folgenlos), die Anlage neuer Zeilen, `routers/checks.py` Anlage, Update und Toggle (T5). `to_dict` geht nach T5. `alerter`, `alert_bundle`, `template_sync` (Regeln), `routers/findings.py` (`AdoptResult`) und die Wartungs-, Ausnahme- und Regel-Router meinen andere Tabellen.
+- Session 2026-11-27 T3 → T5: Der Planer-Verzug in `main.py` zählt ab `updated_at`; endet ein Skip, setzt T5 `updated_at` des Checks neu, sonst zählt der Verzug ab dem letzten Lauf vor dem Skip.

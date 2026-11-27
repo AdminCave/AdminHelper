@@ -30,6 +30,7 @@ from app.catalog.model import Alternative, Check, Module, Rule, rule_problems
 from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
 from app.core.time import iso_utc, utcnow_naive
 from app.discovery import MAX_CONTAINER_PORTS, image_matches, image_repo, image_tag
+from app.exception_scope import check_runs
 from app.models import (
     MonitorCheck,
     MonitorDiscovery,
@@ -650,7 +651,8 @@ def _adopt(
             if finding.kind == "new" and "enabled" not in read_overrides(row):
                 row.enabled = True
             row.silent = False
-            if row.enabled:
+            # The column is the system's switch; a skip of the admin keeps the check out.
+            if check_runs(db, row):
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
         have = {row.module_check_key for row in kept} | tombstoned_keys(db, finding)

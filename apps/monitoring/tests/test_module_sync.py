@@ -44,6 +44,8 @@ from app.module_sync import (
 )
 from app.server_cleanup import cleanup_server
 
+from ._helpers import standing_skip
+
 # Far from the real clock: nothing here may depend on today.
 NOW = datetime(2020, 1, 1, 12, 0)
 PAPERLESS_IMAGE = "ghcr.io/paperless-ngx/paperless-ngx"
@@ -599,6 +601,27 @@ def test_adopting_new_leaves_off_a_check_the_admin_switched_off(db, actions):
 
     assert (checks["web"].enabled, checks["broker"].enabled) == (True, False)
     assert result.enabled == [checks["web"].id]
+
+
+def test_adopting_new_leaves_a_skipped_check_out_of_the_scheduler(db, actions):
+    # R-1637: "gone" and "new" move the column, the system's switch; a skip of the admin
+    # keeps the check from running, so it is neither enabled nor scheduled.
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    checks = _checks(db, finding)
+    db.add(standing_skip(checks["broker"].id))
+    db.commit()
+    _reopen(db, finding, "gone")
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    _reopen(db, finding, "new")
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert (checks["web"].enabled, checks["broker"].enabled) == (True, True)
+    assert result.enabled == [checks["web"].id]
+    assert [a[1] for a in actions if a[0] == "add"] == [checks["web"].id]
 
 
 def test_adopting_a_module_the_catalog_lost_fails_and_changes_nothing(db, actions):

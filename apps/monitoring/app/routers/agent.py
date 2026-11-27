@@ -42,6 +42,7 @@ from app.core.database import get_db
 from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import format_line, victoria
 from app.discovery import apply_credentials, apply_discovery
+from app.exception_scope import runs
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorHostFacts, MonitorState
 from app.module_plan import build_plan
 from app.schemas import AgentPlanOut, AgentStateOut
@@ -420,7 +421,7 @@ def _push_checks(db: Session, server_id: str) -> list[MonitorCheck]:
         db.query(MonitorCheck)
         .filter(
             MonitorCheck.server_id == server_id,
-            MonitorCheck.enabled == True,  # noqa: E712
+            runs,
             # PUSH_ONLY_TYPES is exactly the push-evaluated set. agent_ping is
             # deliberately NOT in it: this endpoint calls record_agent_report()
             # first, so the staleness age would always be ~0 ("ok") — the scheduler

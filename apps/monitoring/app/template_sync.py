@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.bell_catch_up import AllClear, deleted_all_clear, send_all_clears
 from app.check_configs import validate_check_config
+from app.exception_scope import check_runs
 from app.models import (
     MonitorAlertRule,
     MonitorCheck,
@@ -501,7 +502,7 @@ def _sync_checks_for_server(
                 if field not in overridden:
                     setattr(check, field, value)
 
-            if check.enabled:
+            if check_runs(db, check):
                 actions.append(("add", check.id, check.interval, check.check_type))
             else:
                 actions.append(("remove", check.id, None, None))
@@ -512,7 +513,7 @@ def _sync_checks_for_server(
         else:
             # Create
             check = _create_check(db, template_id, server_id, def_id, resolved)
-            if check.enabled:
+            if check_runs(db, check):
                 actions.append(("add", check.id, check.interval, check.check_type))
             created += 1
 
@@ -624,7 +625,7 @@ def apply_template(
             continue
 
         check = _create_check(db, template.id, server_id, def_id, resolved)
-        if check.enabled:
+        if check_runs(db, check):
             actions.append(("add", check.id, check.interval, check.check_type))
         check_ids.append(check.id)
 

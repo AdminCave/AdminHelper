@@ -16,6 +16,8 @@ from app import scheduler as sched
 from app.alert_bundle import flush_agent_alerts
 from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck
 
+from ._helpers import standing_skip
+
 # --- _parse_trigger -----------------------------------------------------------
 
 
@@ -110,6 +112,33 @@ def test_add_check_drops_stale_job_on_switch_to_push_only():
         assert sched.scheduler.get_job("mon_t-switch") is None
     finally:
         sched.remove_check("t-switch")
+
+
+def test_load_all_checks_schedules_only_the_checks_that_run(monkeypatch, db_engine):
+    # R-1637: a skip of the admin keeps a check out of the scheduler, its column stays on.
+    factory = sessionmaker(bind=db_engine)
+    with factory() as db:
+        for id, enabled in (("plain", True), ("skipped", True), ("off", False)):
+            db.add(
+                MonitorCheck(
+                    id=id, name=id, check_type="ping", config="{}", interval="5m", enabled=enabled
+                )
+            )
+        db.flush()
+        db.add(standing_skip("skipped"))
+        db.commit()
+
+    import app.core.database as database
+
+    monkeypatch.setattr(database, "SessionLocal", factory)
+    # load_all_checks stamps its start in a module global the lag tests read.
+    monkeypatch.setattr(sched, "loaded_at", None)
+    added = []
+    monkeypatch.setattr(sched, "add_check", lambda check_id, *_: added.append(check_id))
+
+    sched.load_all_checks()
+
+    assert added == ["plain"]
 
 
 # --- alert-log cleanup ----------------------------------------------------------
