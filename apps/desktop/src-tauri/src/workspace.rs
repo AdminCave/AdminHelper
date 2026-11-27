@@ -369,6 +369,9 @@ pub(crate) struct Meta {
     /// The snippets of the terminal (R-1071); `None` until the workspace changes them.
     #[serde(default)]
     pub snippets: Option<Vec<Snippet>>,
+    /// Whether the connection list probes its hosts (R-1710); a meta written before probes.
+    #[serde(default = "crate::models::default_true")]
+    pub probe_reachability: bool,
 }
 
 impl Meta {
@@ -1259,6 +1262,7 @@ mod tests {
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
     }
 

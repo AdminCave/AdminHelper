@@ -1844,6 +1844,7 @@ mod tests {
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
         .store(&base.join("workspaces").join("w-0a1b2c3d"))
         .unwrap();
@@ -2327,6 +2328,7 @@ mod tests {
                 favorite_connections: Vec::new(),
                 open_sessions: Vec::new(),
                 snippets: None,
+                probe_reachability: true,
             }
             .store(&base.join("workspaces").join(id))
             .unwrap();
@@ -2738,6 +2740,7 @@ mod tests {
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
         .store(&base.join("workspaces").join("w-0000000d"))
         .unwrap();
@@ -2824,6 +2827,7 @@ mod tests {
                 favorite_connections: Vec::new(),
                 open_sessions: Vec::new(),
                 snippets: None,
+                probe_reachability: true,
             }
             .store(&base.join("workspaces").join(id))
             .unwrap();

@@ -312,6 +312,10 @@ pub struct Settings {
     /// empty.
     #[serde(default)]
     pub snippets: Option<Vec<Snippet>>,
+    /// Whether the connection list probes the reachability of its hosts (R-1710), kept in the
+    /// workspace (`workspace.json`); on unless turned off.
+    #[serde(default = "default_true")]
+    pub probe_reachability: bool,
 }
 
 /// A command of the snippet panel of the terminal (R-1071).
@@ -345,6 +349,7 @@ impl Default for Settings {
             restore_sessions: false,
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
     }
 }
