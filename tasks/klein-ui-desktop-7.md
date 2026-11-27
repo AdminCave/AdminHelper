@@ -5,8 +5,10 @@ Heavy: none — reine Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — MonCheckLine: Enter löst Aktionen nur einmal aus (R-0439)  [ ]
+### T1 — MonCheckLine: Enter löst Aktionen nur einmal aus (R-0439)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/MonCheckLine.svelte, apps/desktop/ui/src/components/monitoring/section/MonCheckLine.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @bf5fe1f0c 2026-11-27T12:43:02+01:00
+Review: approve (.ah-out/review/klein-ui-desktop-7/T1.verdict.json)
 Änderung: Die `onkeydown`-Handler der Aktions-Buttons entfallen (der native Klick genügt); der Zeilen-Handler reagiert auf Enter nur, wenn `e.target === e.currentTarget`. Neuer Komponententest (SPDX-Header): Enter auf Bearbeiten/Jetzt prüfen/Aktivieren ruft den Handler genau einmal und expandiert nicht, Enter auf der Zeile expandiert. Rot zuerst.
 Beweis: Roadmap R-0439 (Bauer monitoring-templates T9, 2026-10-16), Dedup-Key: BUG:desktop-ui:MonCheckLine.svelte:enter_double_fire
 Semantik: keine Stelle in docs/ — Tastaturbedienung der Prüfzeilen ist nicht dokumentiert; Absicht: eine Aktion je Tastendruck.
