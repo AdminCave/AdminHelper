@@ -41,10 +41,12 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- update_test install_test
 Doku: keine (Ablehnung wie dokumentiert: nur Zeilennummer)
 Abhängt von: T1
 
-### T4 — R-1783: init-secrets.sh erzeugt BACKUP_DB_PASSWORD  [ ]
-Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, .env.example
+### T4 — R-1783: init-secrets.sh erzeugt BACKUP_DB_PASSWORD  [x]
+Komponente: scripts · Dateien: scripts/init-secrets.sh, scripts/tests/init-secrets_test.sh, .env.example, scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh, scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @17ec6c035 2026-11-27T14:12:59+01:00
+Review: approve (.ah-out/review/ops-18/T4.verdict.json)
 Änderung: `BACKUP_DB_PASSWORD` in die Schleife der DB-Passwörter (neu und bei fehlendem Key auf Update), `.env.example` mit leerem Eintrag. Test: frische und bestehende `.env`.
-Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test
+Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test restore_guard_test diagnostics_test lib_e2e_stack_test
 Doku: → T6
 
 ### T5 — R-1783: Rolle ah_backup und pg-backup liest als sie  [ ]

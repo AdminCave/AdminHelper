@@ -100,11 +100,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 # restore.sh reads the role passwords from the environment before .env, as compose
 # does: none may leak in from the caller.
-unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD POSTGRES_PASSWORD
+unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD BACKUP_DB_PASSWORD POSTGRES_PASSWORD
 ROLE_ENV='SERVER_DB_PASSWORD=pw-server
 SCHEDULER_DB_PASSWORD=pw-scheduler
 MONITOR_DB_PASSWORD=pw-monitor
-CA_DB_PASSWORD=pw-ca'
+CA_DB_PASSWORD=pw-ca
+BACKUP_DB_PASSWORD=pw-backup'
 # The stubs of 5-7 and 23-25 answer every docker volume inspect: the database volume
 # exists there, and restore.sh then needs POSTGRES_PASSWORD (case 27d).
 PG_ENV='POSTGRES_PASSWORD=pw-pg'
@@ -1158,6 +1159,24 @@ fresh_run "$WORK/fresh/g" "$WORK/fresh/g.tar.gz"
     && [ ! -e "$WORK/fresh/g/.env" ]; } \
   && ok "a backup .env without a role password: the message names the backup" || bad "backup without a role password: rc=$rc out=[$out]"
 untouched "a backup .env without a role password"
+# (g2) a backup from before ah_backup (R-1783): its .env gets a generated BACKUP_DB_PASSWORD,
+# the rest as the backup has it; a .env here without it stops the restore
+mkdir -p "$WORK/fresh/g2/arch"; grep -v '^BACKUP_DB_PASSWORD=' "$WORK/fresh/arch/env.sanitized" > "$WORK/fresh/g2/arch/env.sanitized"
+cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/g2/arch/"
+tar czf "$WORK/fresh/g2.tar.gz" -C "$WORK/fresh/g2/arch" .
+fresh_run "$WORK/fresh/g2" "$WORK/fresh/g2.tar.gz"
+{ [ $rc -eq 0 ] && cmp -s <(grep -v '^BACKUP_DB_PASSWORD=' "$WORK/fresh/expected.env") <(head -n -1 "$WORK/fresh/g2/.env") \
+    && LC_ALL=C grep -qxE 'BACKUP_DB_PASSWORD=[0-9a-f]{64}' <(tail -n 1 "$WORK/fresh/g2/.env") \
+    && cmp -s "$WORK/fresh/g2/.env" "$WORK/fresh/g2/env.at-pg-start" && ! grep -q 'BACKUP_DB_PASSWORD=' <<<"$out"; } \
+  && ok "a backup .env without BACKUP_DB_PASSWORD: the fresh .env gets a generated one before postgres starts" \
+  || bad "backup without BACKUP_DB_PASSWORD: rc=$rc out=[$out] env=[$(sed 's/=.*//' "$WORK/fresh/g2/.env" 2>/dev/null | tr '\n' ' ')]"
+mkdir -p "$WORK/fresh/g3"; grep -v '^BACKUP_DB_PASSWORD=' "$WORK/fresh/c.env.orig" > "$WORK/fresh/g3/.env"
+fresh_run "$WORK/fresh/g3" "$WORK/fresh/with.tar.gz"
+{ [ $rc -ne 0 ] && grep -q '.env lacks BACKUP_DB_PASSWORD — run ./scripts/init-secrets.sh first' <<<"$out" \
+    && ! grep -q '^BACKUP_DB_PASSWORD=' "$WORK/fresh/g3/.env"; } \
+  && ok "a .env here without BACKUP_DB_PASSWORD: the restore stops and names init-secrets.sh" \
+  || bad "a .env without BACKUP_DB_PASSWORD: rc=$rc out=[$out]"
+untouched "a .env here without BACKUP_DB_PASSWORD"
 # (h) the .env of the backup keeps the keys of the application only: COMPOSE_* and
 # DOCKER_* go in every form compose reads (COMPOSE_PROJECT_NAME stays), and compose
 # sees the cleaned file from its first call on; the images it starts stand in the output
@@ -1257,7 +1276,7 @@ proj_run "$WORK/proj/d" AH_TEST_CONFIG_FAIL=2
 mkdir -p "$WORK/roles/forms"
 printf '%s\n' 'SERVER_DB_PASSWORD=zz9-old' 'export SERVER_DB_PASSWORD = "pw-server"' \
   "SCHEDULER_DB_PASSWORD: 'pw-scheduler'" 'MONITOR_DB_PASSWORD=zz9-old' 'MONITOR_DB_PASSWORD=pw-monitor #note  ' \
-  'CA_DB_PASSWORD=pw-ca' "$PG_ENV" > "$WORK/roles/forms/.env"
+  'CA_DB_PASSWORD=pw-ca' 'BACKUP_DB_PASSWORD=pw-backup' "$PG_ENV" > "$WORK/roles/forms/.env"
 out=$( cd "$WORK/roles/forms" && STUB_DIR="$WORK/roles/forms" PATH="$WORK/roles/bin:$PATH" \
     bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
 calls="$WORK/roles/forms/calls.log"

@@ -366,7 +366,7 @@ role_password() {
 }
 check_role_passwords() {
     local key value missing=()
-    for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
+    for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD BACKUP_DB_PASSWORD; do
         value=$(role_password "$key") || exit 1
         [ -n "$value" ] || missing+=("$key")
     done
@@ -379,6 +379,17 @@ check_role_passwords() {
         exit 1
     fi
 }
+# A backup from before the role ah_backup (R-1783) has no BACKUP_DB_PASSWORD. The .env it
+# gives a fresh host gets one, as init-secrets.sh would add it: db-init needs every role's.
+if [ -n "$NEW_ENV" ]; then
+    BACKUP_PW=$(role_password BACKUP_DB_PASSWORD) || exit 1
+    if [ -z "$BACKUP_PW" ]; then
+        BACKUP_PW=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
+        [ "${#BACKUP_PW}" = 64 ] || { echo "[restore] ERROR: could not generate BACKUP_DB_PASSWORD; nothing was changed." >&2; exit 1; }
+        printf 'BACKUP_DB_PASSWORD=%s\n' "$BACKUP_PW" >> "$NEW_ENV"
+    fi
+    unset BACKUP_PW
+fi
 check_role_passwords
 
 # Compose alone knows the project name (the volume prefix: it reads
