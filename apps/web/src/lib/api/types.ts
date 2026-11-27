@@ -113,6 +113,7 @@ export interface HookDetail extends Hook {
 
 export interface HookCreateResult extends HookDetail {
   token?: string | null;
+  trigger_port?: number | null;
 }
 
 export interface HookCreate {
@@ -142,6 +143,7 @@ export interface HookRunResult {
 
 export interface HookTokenResult {
   token: string;
+  trigger_port: number;
 }
 
 export interface FrpConfig {

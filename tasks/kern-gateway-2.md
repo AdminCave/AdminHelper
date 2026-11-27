@@ -41,11 +41,13 @@ Rotieren eines Webhooks nennen den Port; ein geänderter `ENROLL_PORT` erscheint
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py tests/test_openapi_snapshot.py
 Doku: → T5
 
-### T4 — Web: Dialog zeigt die URL auf dem Enrollment-Port (R-1687)  [ ]
-Komponente: web · Dateien: apps/web/src/modals/WebhookTokenModal.svelte, apps/web/src/modals/WebhookTokenModal.test.ts, apps/web/src/pages/Hooks.svelte, apps/web/src/lib/api/types.ts
+### T4 — Web: Dialog zeigt die URL auf dem Enrollment-Port (R-1687)  [x]
+Komponente: web · Dateien: apps/web/src/modals/WebhookTokenModal.svelte, apps/web/src/modals/WebhookTokenModal.test.ts, apps/web/src/pages/Hooks.svelte, apps/web/src/lib/api/types.ts, apps/web/src/modals/HookModal.svelte, apps/web/src/modals/HookModal.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @a3a75fc32 2026-11-27T11:44:27+01:00
+Review: approve (.ah-out/review/kern-gateway-2/T4.verdict.json)
 Änderung: Das curl-Beispiel nennt `https://<Host der Seite>:<trigger_port>/api/hooks/trigger`. Test: der Dialog zeigt
 Host und Port; ohne Port fällt er auf die Herkunft der Seite zurück. Neue Testdatei mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh web --strict -- src/modals/WebhookTokenModal.test.ts
+Verify: bash scripts/dev/verify.sh web --strict -- src/modals/WebhookTokenModal.test.ts src/modals/HookModal.test.ts
 Doku: → T5
 Abhängt von: T3
 

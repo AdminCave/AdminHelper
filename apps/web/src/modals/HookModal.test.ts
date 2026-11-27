@@ -76,6 +76,7 @@ describe('HookModal: create', () => {
       hook_type: 'webhook',
       enabled: true,
       token: 'one-time-placeholder',
+      trigger_port: 8444,
     } as never);
     const m = renderModal();
     await m.input('#hkName', '  deploy  ');
@@ -90,7 +91,7 @@ describe('HookModal: create', () => {
       hook_type: 'webhook',
       script: 'echo',
     });
-    expect(m.onClose).toHaveBeenCalledWith({ token: 'one-time-placeholder' });
+    expect(m.onClose).toHaveBeenCalledWith({ token: 'one-time-placeholder', trigger_port: 8444 });
   });
 
   it('an event hook without an event sends nothing and says why', async () => {

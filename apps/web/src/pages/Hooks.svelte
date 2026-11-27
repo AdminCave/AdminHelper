@@ -37,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let editing = $state<HookDetail | null>(null);
   let tokenOpen = $state(false);
   let tokenValue = $state('');
+  let tokenPort = $state<number | null>(null);
   let tokenTitle = $state<string | undefined>(undefined);
   let runOpen = $state(false);
   let runResult = $state<HookRunResult | null>(null);
@@ -71,11 +72,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  function handleModalClose(created?: { token?: string | null }) {
+  function handleModalClose(created?: { token?: string | null; trigger_port?: number | null }) {
     modalOpen = false;
     editing = null;
     if (created?.token) {
       tokenValue = created.token;
+      tokenPort = created.trigger_port ?? null;
       tokenTitle = $t('toast.hook.created');
       tokenOpen = true;
     }
@@ -115,6 +117,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       const result = await hookApi.rotate(h.id);
       tokenValue = result.token;
+      tokenPort = result.trigger_port;
       tokenTitle = $t('toast.hook.tokenGenerated');
       tokenOpen = true;
     } catch (err) {
@@ -241,9 +244,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   open={tokenOpen}
   title={tokenTitle}
   token={tokenValue}
+  triggerPort={tokenPort}
   onClose={() => {
     tokenOpen = false;
     tokenValue = '';
+    tokenPort = null;
     tokenTitle = undefined;
   }}
 />
