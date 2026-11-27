@@ -50,3 +50,23 @@ Komponente: scripts · Dateien: docs/developer/index.html, docs/en/developer/ind
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
+
+### T6 — R-1812: gemeinsamer Testvektor für den Renew-Nachweis (ca-issuer)  [ ]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/fixtures/renew_proof_vector.json, apps/ca-issuer/tests/test_renew_proof_vector.py
+Änderung: ein fester Vektor (selbstsigniertes P-256-Zertifikat, CSR, proof über `RENEW_PROOF_PREFIX` + CSR-DER); `_check_proof` nimmt ihn an und lehnt ihn mit verändertem Präfix ab. Go (T7) und Rust (T8) prüfen dieselbe Datei mit ihrem eigenen Präfix: weicht eine Kopie ab, wird ihr Test rot statt jeder Renew 403 (Prüfer-Nit T2).
+Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_renew_proof_vector.py
+Doku: keine (Test)
+
+### T7 — R-1812: Agent prüft den gemeinsamen Vektor  [ ]
+Komponente: agent · Dateien: apps/agent/internal/enroll/renew_test.go
+Änderung: `TestRenewProofVector` liest den Vektor aus T6 und prüft ihn mit `checkRenewProof`, also mit `RenewProofPrefix`.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/enroll/
+Doku: keine (Test)
+Abhängt von: T6
+
+### T8 — R-1812: Desktop prüft den gemeinsamen Vektor  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Änderung: ein Test liest den Vektor aus T6 (`include_str!`) und prüft ihn mit `RENEW_PROOF_PREFIX` und ring `ECDSA_P256_SHA256_ASN1`.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
+Doku: keine (Test)
+Abhängt von: T6
