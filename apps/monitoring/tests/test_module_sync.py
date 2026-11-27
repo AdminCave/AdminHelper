@@ -537,6 +537,25 @@ def test_adopting_gone_switches_off_and_deletes_nothing(db, actions):
     assert finding.status == "adopted"
 
 
+def test_adopting_gone_reports_only_the_checks_it_switches_off(db, actions):
+    # A skip of the admin already keeps the check out: "gone" moves its column, but the
+    # check is not one it switched off.
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    checks = _checks(db, finding)
+    db.add(standing_skip(checks["broker"].id))
+    db.commit()
+    _reopen(db, finding, "gone")
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert not any(row.enabled for row in checks.values())
+    assert result.disabled == [checks["web"].id]
+    assert actions == [("remove", checks["web"].id, None, None)]
+
+
 def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, monkeypatch):
     # A switched-off check whose alarm the bell shows lags: the job sends the
     # all-clear (R-1601), as for a check switched off by hand.
@@ -973,6 +992,23 @@ def test_a_move_to_another_major_changes_the_finding_and_removes_its_tag_check(d
     assert set(checks) == {"container", "web", "ready"}
     assert checks["ready"].id in result.enabled
     assert all(row.enabled for row in checks.values())
+
+
+def test_a_skipped_tag_check_a_major_move_removes_is_not_reported_switched_off(db, actions):
+    _scan(db, 0, SHIPPED, _wiki("2"))
+    finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
+    adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+    healthz = _checks(db, finding)["healthz"]
+    db.add(standing_skip(healthz.id))
+    db.commit()
+    _scan(db, 2, SHIPPED, _wiki("3"))
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+
+    assert db.get(MonitorCheck, healthz.id) is None
+    assert healthz.id not in result.disabled
+    assert ("remove", healthz.id, None, None) not in actions
 
 
 def test_a_tag_check_comes_back_with_its_tag(db, actions):

@@ -606,10 +606,11 @@ def _adopt(
     checks = instance_checks(db, finding, lock=True)
     if finding.kind == "gone":
         for row in checks:
-            if row.enabled:
-                row.enabled = False
+            # A skip of the admin already keeps a check out: not one this switches off.
+            if check_runs(db, row):
                 result.disabled.append(row.id)
                 actions.append(("remove", row.id, None, None))
+            row.enabled = False
     else:
         module = catalog.modules.get(finding.module_id)
         if module is None:
@@ -634,7 +635,7 @@ def _adopt(
                     # The image moved to a tag the check does not fit (Wiki.js 2 -> 3). Deleted
                     # without a tombstone, not switched off: a switched-off row looks like the
                     # admin's own choice, and only a missing one is created again on the way back.
-                    if row.enabled:
+                    if check_runs(db, row):
                         result.disabled.append(row.id)
                         actions.append(("remove", row.id, None, None))
                     db.delete(row)

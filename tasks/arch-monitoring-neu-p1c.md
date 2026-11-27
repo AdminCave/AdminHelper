@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1c — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1c.md (Roadmap R-1637, R-1793, R-1521)
 Heavy: linux-full — Monitoring-Migration (Alembic-Revision und Startschritt) und Monitoring-API; dazu vor dem Merge die Abnahme `run.sh integration --strict --step upgrade-path` auf einer Pool-VM (Kevin 2026-11-27, „Vor der nächsten Beta“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -304,16 +304,17 @@ Beweis: Abschlussprüfung `branch.verdict.json` @e0d3a4a1d. Probe-Test: `agent_r
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py
 Doku: keine (die Doku beschreibt das Umziehen eines Checks nicht; das Verhalten ist wieder das von vor P1c)
 
-### T16 — Nits der Abschlussprüfung: „gone“ meldet nur, was es abschaltet; Fragment nennt den Umzug (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, changelog.d/arch-monitoring-neu-p1c.md
+### T16 — Nit der Abschlussprüfung: „gone“ und Tag-Wechsel melden nur, was sie abschalten (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e4fb8b8f4 2026-11-27T17:09:12+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T16.verdict.json)
 Beweis: Nit der Abschlussprüfung `branch.verdict.json` @e0d3a4a1d (`module_sync._adopt`); Hinweis der Task-Prüfung T15 (`no_notify` blieb beim Umzug schon auf `main` am alten Server).
 Änderung:
 - `_adopt` (`module_sync.py:607`), Fall „gone“ und Tag-Wechsel: `disabled` und die `remove`-Aktion nur für einen Check, der lief (`check_runs`). So macht es schon der Weg „new“ mit `enabled`.
 - Bisher meldete „gone“ einen Check, den eine Ausnahme `skip` des Admins schon anhielt, als abgeschaltet. Die Spalte zieht weiter auf aus.
-- Test: „gone“ mit einem angehaltenen Check meldet nur den laufenden.
-- Fragment unter Fixed: Ein auf einen anderen Server umgezogener Check behält seine Ausnahmen, auch „nicht benachrichtigen“, wenn der alte Server gelöscht wird (T15).
+- Tests: „gone“ mit einem angehaltenen Check meldet nur den laufenden; ein angehaltener Tag-Check, den ein Major-Wechsel löscht, steht weder in `disabled` noch in den `remove`-Aktionen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
-Doku: changelog.d/arch-monitoring-neu-p1c.md
+Doku: keine (Meldung von `adopt`; der Umzugsfehler aus T15 traf nur unveröffentlichten Stand, siehe Entscheidungen)
 
 ## Entscheidungen
 - Kevin 2026-11-27 (Gate, R-1637): Ignorierlisten als Muster-Ausnahme. Jeder Eintrag der fünf Listen wird eine Objekt-Ausnahme mit fnmatch-Muster; exakte Werte werden maskiert, Dienst-Einträge bleiben Muster; der Desktop maskiert in `ignoreService` (R-1521).
@@ -351,3 +352,4 @@ Doku: changelog.d/arch-monitoring-neu-p1c.md
 - Session 2026-11-27 T11 (Prüfer Runde 1): `alembic/env.py` teilt nur eine `sqlalchemy.engine.Connection` aus `config.attributes["connection"]`; pytest-alembic legt unter demselben Schlüssel ein Engine ab, das den bisherigen Weg (eigene Engine, Advisory-Lock) nimmt. `tests/test_alembic_builtin.py` steht dafür im Verify. Wirft `resolve_template_check` (unlesbare Definitionen der Vorlage), bleibt der Check unverändert und die Migration läuft für die übrigen weiter, wie die Override-Baseline.
 - Session 2026-11-27 T13: Der Vergleich „Dump davor und danach gleich“ nimmt das Schema der Monitoring-DB und die Zeilen der Konfigurations-Tabellen (`monitor_checks`, Vorlagen samt Zuweisungen, Seed-Stand, Grabsteine, Alarmregeln, Wartung, `alembic_version`), nicht die Laufzeit-Tabellen, in die der laufende Dienst des Releases zwischen zwei Dumps schreibt; `upgrade_exceptions.py normalize` sortiert die Zeilen. Dass der Dump die Seeds überhaupt enthält, prüft der Schritt eigens (alle neun IDs), sonst wären zwei leere Dumps auch gleich.
 - Session 2026-11-27 T13: Backup mit dem `scripts/backup.sh` des Releases (von GitHub, sonst aus dem lokalen Clone), Rückweg mit dem `scripts/restore.sh` des Checkouts auf den Images des Releases, beide in einem eigenen Installationsverzeichnis mit den Compose-Dateien und der `.env` des Stacks und leerer Umgebung (`env -i`), wie auf einem Host: Das `restore.sh` des Releases kann über das neuere Schema nicht zurückspielen (R-1846). Der Trockenlauf läuft gegen die laufende Instanz des Releases, mit `--entrypoint python` (der Entrypoint migrierte sonst echt) und `run --no-deps`; `lock_timeout` hält ihn kurz. Der zurückgespielte Stack geht vor Schritt 4 herunter, weil `restore.sh` auch frps auf 7000/7443 startet; das Installationsverzeichnis räumt beim EXIT ein Helfer-Container des Releases (die Container schreiben dort als root). Der Helfer wiederholt nur GETs auf 502/503: Der Proxy des Servers meldet 502 auch nach einem gesendeten Request, ein wiederholter POST legte einen zweiten Check an; der Seed beginnt deshalb mit einem GET.
+- Session 2026-11-27 T16: Keine Changelog-Zeile für den Umzugsfehler aus T15. `skip` (P1c) und `no_notify` (P1b, Fragment noch in `changelog.d/`) sind beide unveröffentlicht; das Wartungsfenster aus 0.45.0 galt je Server, nicht je Check, und zog beim Umzug nichts mit.
