@@ -74,7 +74,11 @@ class HookDetailResponse(HookResponse):
 
 class HookCreatedResponse(HookDetailResponse):
     token: Optional[str] = None  # Nur bei Webhook-Typ beim Erstellen / Token-Rotation
+    # The gateway's enrollment plane takes triggers without a client certificate (R-1687);
+    # set together with the token.
+    trigger_port: Optional[int] = None
 
 
 class HookTokenOut(BaseModel):
     token: str
+    trigger_port: int

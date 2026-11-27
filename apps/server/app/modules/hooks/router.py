@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from ah_common.pagination import paginate
+from app.core import config
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.bounds import MAX_DEPTH, Offset, find_unstorable
 from app.core.database import get_db
@@ -186,6 +187,8 @@ def create_hook(
     # no direct add_job here — the web worker has no running scheduler.
     result = _to_dict(hook)
     result["token"] = raw_token
+    if raw_token:
+        result["trigger_port"] = config.ENROLL_PORT
     return result
 
 
@@ -475,7 +478,7 @@ def rotate_hook_token(
         object_id=hook.id,
         object_label=hook.name,
     )
-    return {"token": raw_token}
+    return {"token": raw_token, "trigger_port": config.ENROLL_PORT}
 
 
 @router.post("/{hook_id}/run")

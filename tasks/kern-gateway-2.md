@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_contain
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Server: trigger_port in den Token-Antworten (R-1687)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/hooks/schemas.py, apps/server/tests/test_hooks.py, apps/server/tests/test_openapi_snapshot.py
+### T3 — Server: trigger_port in den Token-Antworten (R-1687)  [x]
+Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/hooks/schemas.py, apps/server/tests/test_hooks.py, apps/server/tests/test_openapi_snapshot.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @569db7975 2026-11-27T11:40:18+01:00
+Review: approve (.ah-out/review/kern-gateway-2/T3.verdict.json)
 Änderung: `HookCreatedResponse` (mit Token) und `HookTokenOut` tragen `trigger_port = ENROLL_PORT`. Test: Anlegen und
 Rotieren eines Webhooks nennen den Port; ein geänderter `ENROLL_PORT` erscheint.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py tests/test_openapi_snapshot.py
