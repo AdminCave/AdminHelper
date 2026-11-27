@@ -1,5 +1,5 @@
 # Desktop-Zuverlaessigkeit: Sitzung, Zertifikat, Tunnel, RDP, SFTP, Ping, Feed — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-6 · Review: pro Task
 Spec: docs/features/kern-desktop-6.md (Roadmap R-1709, R-1689, R-1691, R-1707, R-1708, R-1710, R-1711)
 Heavy: linux-full — Desktop-Journeys (Login, Tunnel, Verbindungen) und Web-Client-Auth; kein Stack-, PKI-Server- oder Install-Pfad geaendert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -106,8 +106,10 @@ Review: approve (.ah-out/review/kern-desktop-6/T11.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: keine (internes Verhalten ohne Doku-Stelle)
 
-### T12 — Doku DE+EN und CHANGELOG (alle Zeilen)  [ ]
+### T12 — Doku DE+EN und CHANGELOG (alle Zeilen)  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-desktop-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d35e03093 2026-11-27T10:05:35+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Erneuerung (was die Sitzung beendet), abgelaufenes Geraete-Zertifikat und sein Ausweg, Tunnel-Zustand „kein Kontakt“, Upload ueber Teil-Datei, Schalter der Ping-Spalte; Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/… DE+EN · changelog.d/kern-desktop-6.md
