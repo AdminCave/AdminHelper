@@ -222,6 +222,12 @@ DOCKER_PY="$(sed -n 's/^FROM python:\([0-9]*\.[0-9]*\)-.*/\1/p' "$ROOT"/apps/*/D
   && ok "box python $BOX_PY has the Dockerfiles' minor $DOCKER_PY" \
   || bad "box python '$BOX_PY', Dockerfiles FROM python: $(tr '\n' ' ' <<<"$DOCKER_PY")"
 
+# A fixed name under /tmp is one another user of the box can plant before the
+# bootstrap writes or runs it (R-1796): downloads go to its own mktemp -d.
+TMP_PATHS=$(grep -v '^[[:space:]]*#' "$BOOT" | grep -c '/tmp/' || true)
+[ "$TMP_PATHS" -eq 0 ] && ok "bootstrap_linux.sh uses no fixed /tmp/ path" \
+  || bad "bootstrap_linux.sh still uses a fixed /tmp/ path ($TMP_PATHS lines)"
+
 echo "── box downloads ──"
 # A single upstream blip failed whole bakes (R-1795, R-1797); every download of
 # the bootstrap goes through dl(), which retries and bounds a stalled transfer.

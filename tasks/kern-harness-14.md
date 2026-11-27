@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-harness-14/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- ledger_test
 Doku: keine (tasks/README.md beschreibt das Feld nicht)
 
-### T2 — R-1796, R-1803: Box-Bootstrap: Temp-Dateien, pip-Pause, Kommentare  [ ]
+### T2 — R-1796, R-1803: Box-Bootstrap: Temp-Dateien, pip-Pause, Kommentare  [x]
 Komponente: scripts · Dateien: scripts/vm/bootstrap_linux.sh, scripts/vm/vm.py, scripts/tests/harness_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @725351a44 2026-11-27T20:27:17+01:00
+Review: approve (.ah-out/review/kern-harness-14/T2.verdict.json)
 Änderung: Python, oasdiff, Go und frpc laden in ein `mktemp -d` statt nach festen `/tmp`-Namen; `pip_install` schläft nicht nach dem letzten Versuch; der oasdiff-Kommentar nennt die Leases statt des Bake-Warmlaufs; der Kommentar an `WARMUP_EXCLUDE` sagt, dass die Vorlage ohne Python-Venv-Cache bleibt. harness_consistency_test verlangt: kein fester `/tmp/`-Pfad in bootstrap_linux.sh.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Kommentare und Temp-Pfade)

@@ -1893,6 +1893,8 @@ CLOUD_INIT_LIMIT = 1800  # the first-boot upgrade of a base image months behind 
 BOOTSTRAP_LIMIT = 2700
 WARMUP_LIMIT = 1800
 # run.sh step ids of the unit layer that only test: the warm-up leaves them out.
+# The python ones install the venv's packages, so the template keeps an empty
+# venv and a lease's first python step installs them.
 WARMUP_EXCLUDE = (
     "monitoring-pytest",
     "ca-issuer-pytest",

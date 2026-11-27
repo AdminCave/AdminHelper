@@ -63,6 +63,10 @@ log() { printf '\n\033[1m[bootstrap] %s\033[0m\n' "$*"; }
 # run (R-1798). A speed floor, not --max-time: a slow but moving download stays.
 # Always to a file (-o): a retry after a partial body would append the whole
 # body again behind it on a pipe, and `| bash` would run that.
+# Downloads land in a directory of our own: a fixed name under /tmp is one
+# another user of the box could plant first.
+DL="$(mktemp -d)"
+trap 'rm -rf "$DL"' EXIT
 dl() {
   curl -fsSL --retry 5 --retry-connrefused --retry-all-errors \
     --connect-timeout 30 --speed-limit 1024 --speed-time 60 "$@"
@@ -74,7 +78,7 @@ pip_install() {
   for i in 1 2 3; do
     $SUDO pip3 install --break-system-packages -q --retries 10 --timeout 60 "$@" && return 0
     log "pip3 install $* failed (attempt $i/3)"
-    sleep $((i * 10))
+    if [ "$i" -lt 3 ]; then sleep $((i * 10)); fi
   done
   return 1
 }
@@ -184,13 +188,13 @@ $SUDO update-locale LANG=en_US.UTF-8 >/dev/null
 log "python ${PY_VERSION} from python-build-standalone ${PY_PBS_RELEASE} (the Dockerfiles' Python, for run.sh's venv)"
 if [ "$(python3.14 -c 'import ensurepip, platform; print(platform.python_version())' 2>/dev/null || true)" != "$PY_VERSION" ]; then
   py_dir="/opt/ah-python/${PY_VERSION}"
-  dl -o /tmp/ah-python.tgz \
+  dl -o "$DL/python.tgz" \
     "https://github.com/astral-sh/python-build-standalone/releases/download/${PY_PBS_RELEASE}/cpython-${PY_VERSION}%2B${PY_PBS_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz"
-  echo "${PY_SHA256_LINUX_AMD64}  /tmp/ah-python.tgz" | sha256sum -c --quiet -
+  echo "${PY_SHA256_LINUX_AMD64}  $DL/python.tgz" | sha256sum -c --quiet -
   $SUDO rm -rf "$py_dir"
   $SUDO mkdir -p "$py_dir"
-  $SUDO tar -xzf /tmp/ah-python.tgz -C "$py_dir" --strip-components=1
-  rm -f /tmp/ah-python.tgz
+  $SUDO tar -xzf "$DL/python.tgz" -C "$py_dir" --strip-components=1
+  rm -f "$DL/python.tgz"
   $SUDO ln -sfn "$py_dir/bin/python3.14" /usr/local/bin/python3.14
   python3.14 -c 'import ensurepip, ssl, sqlite3, venv' \
     || { echo "python ${PY_VERSION} from ${PY_PBS_RELEASE} does not import ensurepip/ssl/sqlite3/venv" >&2; exit 1; }
@@ -206,16 +210,16 @@ pip_install "ruff==$RUFF_VERSION" \
 log "pytest $PYTEST_VERSION (used by run.sh unit's vm-pytest step)"
 pip_install "pytest==$PYTEST_VERSION" \
   || pipx install "pytest==$PYTEST_VERSION"
-# Every profile, like pytest: the bake warms each template with `run.sh unit`,
-# and that runs the scripts block. The version is read into a variable, not piped
+# Every profile, like pytest: a lease runs the scripts block, `run.sh unit` or
+# `--only scripts` (the bake's warm-up leaves it out, vm.py WARMUP_EXCLUDE). The version is read into a variable, not piped
 # into grep -q: under pipefail an early grep exit can fail the pipe.
 log "oasdiff ${OASDIFF_VERSION} (used by run.sh's scripts block)"
 if [ "$(oasdiff --version 2>/dev/null || true)" != "oasdiff version ${OASDIFF_VERSION}" ]; then
-  dl -o /tmp/oasdiff.tgz \
+  dl -o "$DL/oasdiff.tgz" \
     "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
-  echo "${OASDIFF_SHA256_LINUX_AMD64}  /tmp/oasdiff.tgz" | sha256sum -c -
-  tar -C /tmp -xzf /tmp/oasdiff.tgz oasdiff
-  $SUDO install -m 0755 /tmp/oasdiff /usr/local/bin/oasdiff
+  echo "${OASDIFF_SHA256_LINUX_AMD64}  $DL/oasdiff.tgz" | sha256sum -c -
+  tar -C "$DL" -xzf "$DL/oasdiff.tgz" oasdiff
+  $SUDO install -m 0755 "$DL/oasdiff" /usr/local/bin/oasdiff
 fi
 
 log "docker engine + compose v2 plugin"
@@ -241,9 +245,9 @@ $SUDO usermod -aG docker "${SUDO_USER:-$USER}"   # effective on next login/sessi
 
 log "Go ${GO_VERSION}"
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -q "$GO_VERSION"; then
-  dl -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
-  echo "${GO_SHA256_LINUX_AMD64}  /tmp/go.tgz" | sha256sum -c -
-  $SUDO rm -rf /usr/local/go && $SUDO tar -C /usr/local -xzf /tmp/go.tgz
+  dl -o "$DL/go.tgz" "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  echo "${GO_SHA256_LINUX_AMD64}  $DL/go.tgz" | sha256sum -c -
+  $SUDO rm -rf /usr/local/go && $SUDO tar -C /usr/local -xzf "$DL/go.tgz"
   echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | $SUDO tee /etc/profile.d/go.sh >/dev/null
 fi
 export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
@@ -290,12 +294,12 @@ else
 fi
 
 log "frpc sidecar v${FRP_VERSION} (externalBin must resolve for the Tauri build)"
-dl -o /tmp/frpc.tgz \
+dl -o "$DL/frpc.tgz" \
   "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
-echo "${FRP_SHA256_LINUX_AMD64}  /tmp/frpc.tgz" | sha256sum -c -
-tar -C /tmp -xzf /tmp/frpc.tgz
+echo "${FRP_SHA256_LINUX_AMD64}  $DL/frpc.tgz" | sha256sum -c -
+tar -C "$DL" -xzf "$DL/frpc.tgz"
 mkdir -p "$ROOT/apps/desktop/src-tauri/binaries"
-cp "/tmp/frp_${FRP_VERSION}_linux_amd64/frpc" "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
+cp "$DL/frp_${FRP_VERSION}_linux_amd64/frpc" "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 chmod +x "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 
 log "done — verify with: bash scripts/tests/run.sh lint"
