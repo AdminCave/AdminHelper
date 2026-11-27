@@ -1,5 +1,5 @@
 # Gateway: Webhook-Trigger auf :8444, Upstream-Keepalive — Task-Ledger
-Status: geplant · Branch: feature/kern-gateway-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-gateway-2 · Review: pro Task
 Spec: docs/features/kern-gateway-2.md (Roadmap R-1687, R-1717)
 Heavy: linux-full — Gateway-Konfiguration und Server-API; der Stack-Test unter enforce läuft im PR (integration-stack)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -7,6 +7,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Entscheidungen
 - Kevin 2026-11-27 (Notiz R-1687): Webhook-Route auf :8444 ohne mTLS, mit Token und Ratelimit.
+- Kevin 2026-11-27: Port im Dialog aus `trigger_port` der Token-Antworten (additives API-Feld), nicht fest 8444.
 
 ### T1 — Gateway: Connection "" an jedem Weg zum Upstream (R-1717)  [ ]
 Komponente: server · Dateien: apps/gateway/identity-headers.conf, apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
@@ -29,7 +30,7 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_contain
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Server: trigger_port in den Token-Antworten (R-1687)  [?] (trigger_port in den Token-Antworten oder fest 8444 im Web?)
+### T3 — Server: trigger_port in den Token-Antworten (R-1687)  [ ]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/hooks/schemas.py, apps/server/tests/test_hooks.py, apps/server/tests/test_openapi_snapshot.py
 Änderung: `HookCreatedResponse` (mit Token) und `HookTokenOut` tragen `trigger_port = ENROLL_PORT`. Test: Anlegen und
 Rotieren eines Webhooks nennen den Port; ein geänderter `ENROLL_PORT` erscheint.

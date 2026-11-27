@@ -67,4 +67,4 @@ API-Referenz DE+EN (Trigger auf :8444 ohne Zertifikat), Installation DE+EN (Port
 
 ## Offene Fragen
 
-- `trigger_port` in den Token-Antworten (Empfehlung) oder fest 8444 im Web? API-Vertrag, Kevins Bereich.
+- Keine. Kevin 2026-11-27: `trigger_port` aus den Token-Antworten.
