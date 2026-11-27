@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1c — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1c.md (Roadmap R-1637, R-1793, R-1521)
 Heavy: linux-full — Monitoring-Migration (Alembic-Revision und Startschritt) und Monitoring-API; dazu vor dem Merge die Abnahme `run.sh integration --strict --step upgrade-path` auf einer Pool-VM (Kevin 2026-11-27, „Vor der nächsten Beta“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -303,6 +303,17 @@ Beweis: Abschlussprüfung `branch.verdict.json` @e0d3a4a1d. Probe-Test: `agent_r
   - `/exceptions?server_id=` nennt den neuen Server.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py
 Doku: keine (die Doku beschreibt das Umziehen eines Checks nicht; das Verhalten ist wieder das von vor P1c)
+
+### T16 — Nits der Abschlussprüfung: „gone“ meldet nur, was es abschaltet; Fragment nennt den Umzug (R-1637)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, changelog.d/arch-monitoring-neu-p1c.md
+Beweis: Nit der Abschlussprüfung `branch.verdict.json` @e0d3a4a1d (`module_sync._adopt`); Hinweis der Task-Prüfung T15 (`no_notify` blieb beim Umzug schon auf `main` am alten Server).
+Änderung:
+- `_adopt` (`module_sync.py:607`), Fall „gone“ und Tag-Wechsel: `disabled` und die `remove`-Aktion nur für einen Check, der lief (`check_runs`). So macht es schon der Weg „new“ mit `enabled`.
+- Bisher meldete „gone“ einen Check, den eine Ausnahme `skip` des Admins schon anhielt, als abgeschaltet. Die Spalte zieht weiter auf aus.
+- Test: „gone“ mit einem angehaltenen Check meldet nur den laufenden.
+- Fragment unter Fixed: Ein auf einen anderen Server umgezogener Check behält seine Ausnahmen, auch „nicht benachrichtigen“, wenn der alte Server gelöscht wird (T15).
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
+Doku: changelog.d/arch-monitoring-neu-p1c.md
 
 ## Entscheidungen
 - Kevin 2026-11-27 (Gate, R-1637): Ignorierlisten als Muster-Ausnahme. Jeder Eintrag der fünf Listen wird eine Objekt-Ausnahme mit fnmatch-Muster; exakte Werte werden maskiert, Dienst-Einträge bleiben Muster; der Desktop maskiert in `ignoreService` (R-1521).
