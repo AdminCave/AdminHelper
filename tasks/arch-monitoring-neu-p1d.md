@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1d — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1d.md (Roadmap R-1638)
 Heavy: linux-full — Monitoring-Migration (`monitor_checks.rule_layer`), geänderter Push-Pfad (`routers/agent.py`) und neue Monitoring-Route; kein Server-, Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -105,8 +105,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_rule_model_
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html (DE+EN), Spec
 Abhängt von: T6, T7
 
-### T10 — Frische-Test baut den Zeitstempel zur Laufzeit (R-1638)  [ ]
+### T10 — Frische-Test baut den Zeitstempel zur Laufzeit (R-1638)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_probe_when.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @245e11c69 2026-11-27T09:34:20+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1d/T10.verdict.json)
 Änderung: Fund der PR-CI (#693, Lauf 45965468115): `test_a_sibling_counts_only_with_a_fresh_result` baut `measured_ts` in der Parametrisierung, also beim Sammeln; läuft der Fall in der Suite mehr als 60 s später, ist das Ergebnis mit `age=840` älter als die Grenze von 900 s und der Fall `ok` wird `warning`. Die Fälle tragen Fabriken, die der Test erst beim Lauf aufruft; Gegenprobe mit einer um 120 s vorgestellten Uhr nach dem Sammeln (rot vorher, grün nachher).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_when.py
 Doku: keine (nur Test)

@@ -120,22 +120,25 @@ def test_without_the_sibling_the_rule_rates(client_db):
     assert _queue_rated(client, factory) == ("warning", [])
 
 
+# Each case builds its result when it runs: built at collection, a result ages with the suite
+# before the case is reached and the fresh one crosses the bound.
 @pytest.mark.parametrize(
     ("details", "status"),
     [
-        (_mail_said(False, age=840), "ok"),
+        (lambda: _mail_said(False, age=840), "ok"),
         # Older than two of its intervals and an agent run (900 s): the sibling has stopped.
-        (_mail_said(False, age=960), "warning"),
-        (None, "warning"),
-        ("not json", "warning"),
-        (json.dumps({"values": {"ok": False}}), "warning"),
+        (lambda: _mail_said(False, age=960), "warning"),
+        (lambda: None, "warning"),
+        (lambda: "not json", "warning"),
+        (lambda: json.dumps({"values": {"ok": False}}), "warning"),
     ],
+    ids=["fresh", "stopped", "none", "not-json", "no-time"],
 )
 def test_a_sibling_counts_only_with_a_fresh_result(client_db, details, status):
     client, factory = client_db
     _add(factory, "chk-queue", _QUEUE, key="queue")
     _add(factory, "chk-mail", _MAIL, key="mail")
-    _store(factory, "chk-mail", details)
+    _store(factory, "chk-mail", details())
     assert _queue_rated(client, factory)[0] == status
 
 
