@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-ca-15 — ca-issuer: Erneuerung mit Besitznachweis, Entrypoint-Test — Task-Ledger
-Status: bereit · Branch: feature/kern-ca-15 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ca-15 · Review: pro Task
 Spec: docs/features/kern-ca-15.md (Roadmap R-1812, R-1813)
 Heavy: linux-full — apps/ca-issuer und apps/agent (Stack- und Agent-Schritte im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
