@@ -1,5 +1,5 @@
 # Gateway: Webhook-Trigger auf :8444, Upstream-Keepalive — Task-Ledger
-Status: aktiv · Branch: feature/kern-gateway-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-gateway-2 · Review: pro Task
 Spec: docs/features/kern-gateway-2.md (Roadmap R-1687, R-1717)
 Heavy: linux-full — Gateway-Konfiguration und Server-API; der Stack-Test unter enforce läuft im PR (integration-stack)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,8 +71,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/api-reference.html, docs/features/kern-gateway-2.md
 Task-Review: am Ende
 
-### T7 — Server: Form-Test der rotate-Antwort nennt trigger_port (PR-CI, R-1687)  [ ]
+### T7 — Server: Form-Test der rotate-Antwort nennt trigger_port (PR-CI, R-1687)  [x]
 Komponente: server · Dateien: apps/server/tests/test_response_shapes.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2016dce10 2026-11-27T12:14:29+01:00
+Review: approve (.ah-out/review/kern-gateway-2/T7.verdict.json)
 Änderung: `TestHookShape::test_rotate_answers_with_the_new_token` erwartet die Schlüssel `token` und `trigger_port`
 (gewollte Vertragsänderung aus T3, Kevin 2026-11-27) und prüft `trigger_port` als Zahl.
 Beweis: PR #695 CI Server shard 2/4: `assert ['token', 'trigger_port'] == ['token']`
