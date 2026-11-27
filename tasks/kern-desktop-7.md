@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-7 — Desktop: SFTP-Upload über eine Teil-Datei, Feed nach dem Abmelden — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-desktop-7 · Review: am Ende
 Spec: docs/features/kern-desktop-7.md (Roadmap R-1708, R-1830)
 Heavy: linux-full — Desktop (SFTP-Datenpfad, Benachrichtigungen); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,8 +41,10 @@ Beweis: reviewer kern-desktop-6 T11 2026-11-27 (vorbestehend), apps/desktop/ui/s
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: keine (Fehlerverhalten ohne dokumentierte Beschreibung; CHANGELOG in T3)
 
-### T3 — Doku DE+EN und Changelog  [ ]
+### T3 — Doku DE+EN und Changelog  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-desktop-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @764052404 2026-11-27T15:46:48+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der SFTP-Absatz beschreibt den Upload über die Teil-Datei, das Umbenennen und das Aufräumen. Der Changelog-Eintrag nennt beide Fixes.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
