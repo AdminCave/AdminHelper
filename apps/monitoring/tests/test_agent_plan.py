@@ -23,6 +23,8 @@ from app.models import (
     MonitorServiceInventory,
 )
 
+from ._helpers import standing_skip
+
 _PROBE = {
     "sensor": "http",
     "target": {"kind": "container", "name": "paperless-web-1", "port_hint": 8000, "scheme": "http"},
@@ -69,6 +71,10 @@ def test_plan_lists_the_servers_enabled_probe_checks(client_db):
     client, factory = client_db
     _add_check(factory, "chk-a", _PROBE)
     _add_check(factory, "chk-off", _PROBE, enabled=False)
+    _add_check(factory, "chk-skip", _PROBE)
+    with factory() as db:
+        db.add(standing_skip("chk-skip"))
+        db.commit()
     _add_check(factory, "chk-other", _PROBE, server_id="srv-2")
     _add_check(factory, "chk-res", {"cpu_warn": 80}, check_type="agent_resources")
 

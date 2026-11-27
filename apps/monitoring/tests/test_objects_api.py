@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker
+from app.core.time import iso_utc
 from app.models import MonitorCheck, MonitorException, MonitorObjectState, MonitorState
 from app.objects import NOT_COLLECTED, object_key, read_objects
 
@@ -153,6 +154,7 @@ _SETTING = {
     "id": None,
     "scopeKind": None,
     "reason": None,
+    "unstable": None,
 }
 
 
@@ -170,6 +172,7 @@ def _from_exception(ident, scope_kind, reason=None):
         "id": ident,
         "scopeKind": scope_kind,
         "reason": reason,
+        "unstable": None,
     }
 
 
@@ -398,3 +401,126 @@ def test_compose_containers_and_cluster_guests_get_host_kind_and_stable_id_keys(
     _, by_key = read_objects(guests["_objects"], "srv-1")
     assert list(by_key) == ["srv-1/guest-backup/pve-c1/100"]
     assert by_key["srv-1/guest-backup/pve-c1/100"]["stable"] is True
+
+
+# --- object exceptions and checks a skip keeps from running (R-1637) ---------------
+
+
+def _no_rating(ident, unstable, reason=None):
+    return {
+        "source": "exception",
+        "effect": "no_rating",
+        "setting": None,
+        "id": ident,
+        "scopeKind": "object",
+        "reason": reason,
+        "unstable": unstable,
+    }
+
+
+def test_an_object_a_no_rating_exception_excludes_comes_last_and_names_it(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1", check_type="smart_health")
+        _check(db, "c2", check_type="agent_resources")
+        db.flush()
+        _object(db, "c1", "sda", NOT_COLLECTED, excluded="exc-disk")
+        _object(db, "c1", "sdb", "critical")
+        _object(db, "c2", "srv-data", NOT_COLLECTED, kind="mount", excluded="exc-mount")
+        rule = {"scope_kind": "object", "effect": "no_rating", "reason": "spare"}
+        _exception(db, "exc-disk", check_id="c1", object_kind="disk", object_pattern="sda", **rule)
+        _exception(
+            db, "exc-mount", check_id="c2", object_kind="mount", object_pattern="srv-*", **rule
+        )
+        # Over c1 as well: the exception the object was excluded by names why it is out.
+        _exception(db, "e-c1", "check", check_id="c1")
+        db.commit()
+
+    assert _marks(client.get("/objects")) == [
+        ("srv-1/disk/sdb", _from_exception("e-c1", "check")),
+        ("srv-1/disk/sda", _no_rating("exc-disk", True, "spare")),
+        ("srv-1/mount/srv-data", _no_rating("exc-mount", False, "spare")),
+    ]
+
+
+def test_an_object_names_the_exception_it_was_excluded_by_until_its_check_runs_again(client_db):
+    # Ending an exception starts no run: the stored state is the one of the last run.
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1", check_type="docker_health")
+        db.flush()
+        _object(db, "c1", "web", NOT_COLLECTED, kind="container", excluded="exc-ended")
+        # Ended rows are purged after a retention: the mark alone is left.
+        _object(db, "c1", "db", NOT_COLLECTED, kind="container", excluded="exc-purged")
+        _exception(
+            db,
+            "exc-ended",
+            "object",
+            effect="no_rating",
+            check_id="c1",
+            object_kind="container",
+            object_pattern="web",
+            ended_at=T0,
+        )
+        db.commit()
+
+    assert _marks(client.get("/objects")) == [
+        ("srv-1/container/db", _no_rating("exc-purged", True)),
+        ("srv-1/container/web", _no_rating("exc-ended", True)),
+    ]
+
+
+def test_the_objects_of_a_check_a_skip_keeps_from_running_show_not_collected_last(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        _check(db, "c2")
+        db.flush()
+        _object(db, "c1", "a-ok")
+        _object(db, "c1", "b-critical", "critical", bad_since=T0)
+        _object(db, "c1", "c-excluded", NOT_COLLECTED, excluded="ignore_devices")
+        _object(db, "c2", "z-ok", since=T0 + 20 * MIN)
+        skip_at = T0 + 10 * MIN
+        _exception(db, "e-skip", "check", effect="skip", check_id="c1", created_at=skip_at)
+        # A no_notify over the same check: the skip says more.
+        _exception(db, "e-c1", "check", check_id="c1", reason="swap")
+        db.commit()
+
+    skip = {**_from_exception("e-skip", "check"), "effect": "skip"}
+    entries = client.get("/objects").json()
+    assert [
+        (e["key"], e["status"], e["reason"], e["since"], e["badSince"], e["exception"])
+        for e in entries
+    ] == [
+        ("srv-1/disk/z-ok", "ok", "ok reason", iso_utc(T0 + 20 * MIN), None, None),
+        *[
+            (
+                f"srv-1/disk/{name}",
+                NOT_COLLECTED,
+                "Not checked by exception",
+                iso_utc(skip_at),
+                None,
+                skip,
+            )
+            for name in ("a-ok", "b-critical", "c-excluded")
+        ],
+    ]
+
+
+def test_a_skip_not_in_force_leaves_the_objects_their_state(client_db):
+    client, factory = client_db
+    with factory() as db:
+        _check(db, "c1")
+        _check(db, "c2")
+        db.flush()
+        _object(db, "c1", "sda", "critical")
+        _object(db, "c2", "sdb", "warning")
+        _exception(db, "e-ended", "check", effect="skip", check_id="c1", ended_at=T0)
+        _exception(db, "e-off", "check", effect="skip", check_id="c2", enabled=False)
+        db.commit()
+
+    entries = client.get("/objects").json()
+    assert [(e["key"], e["status"], e["reason"], e["exception"]) for e in entries] == [
+        ("srv-1/disk/sda", "critical", "critical reason", None),
+        ("srv-1/disk/sdb", "warning", "warning reason", None),
+    ]

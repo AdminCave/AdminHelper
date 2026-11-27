@@ -44,6 +44,8 @@ from app.module_sync import (
 )
 from app.server_cleanup import cleanup_server
 
+from ._helpers import standing_skip
+
 # Far from the real clock: nothing here may depend on today.
 NOW = datetime(2020, 1, 1, 12, 0)
 PAPERLESS_IMAGE = "ghcr.io/paperless-ngx/paperless-ngx"
@@ -535,12 +537,32 @@ def test_adopting_gone_switches_off_and_deletes_nothing(db, actions):
     assert finding.status == "adopted"
 
 
+def test_adopting_gone_reports_only_the_checks_it_switches_off(db, actions):
+    # A skip of the admin already keeps the check out: "gone" moves its column, but the
+    # check is not one it switched off.
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    checks = _checks(db, finding)
+    db.add(standing_skip(checks["broker"].id))
+    db.commit()
+    _reopen(db, finding, "gone")
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert not any(row.enabled for row in checks.values())
+    assert result.disabled == [checks["web"].id]
+    assert actions == [("remove", checks["web"].id, None, None)]
+
+
 def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, monkeypatch):
     # A switched-off check whose alarm the bell shows lags: the job sends the
     # all-clear (R-1601), as for a check switched off by hand.
     import app.core.database as database_mod
     from app import alerter
     from app.bell_catch_up import catch_up_bell, lag_target
+    from app.exception_scope import check_runs
     from app.models import MonitorState
 
     posts = []
@@ -564,7 +586,7 @@ def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, mo
     adopt(db, finding.id, catalog=V1, now=NOW)
 
     assert not web.enabled
-    assert lag_target(web, db.get(MonitorState, web.id)) == "ok"
+    assert lag_target(web, db.get(MonitorState, web.id), check_runs(db, web)) == "ok"
     catch_up_bell()
     assert posts == ["ok"]
 
@@ -599,6 +621,27 @@ def test_adopting_new_leaves_off_a_check_the_admin_switched_off(db, actions):
 
     assert (checks["web"].enabled, checks["broker"].enabled) == (True, False)
     assert result.enabled == [checks["web"].id]
+
+
+def test_adopting_new_leaves_a_skipped_check_out_of_the_scheduler(db, actions):
+    # R-1637: "gone" and "new" move the column, the system's switch; a skip of the admin
+    # keeps the check from running, so it is neither enabled nor scheduled.
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    checks = _checks(db, finding)
+    db.add(standing_skip(checks["broker"].id))
+    db.commit()
+    _reopen(db, finding, "gone")
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    _reopen(db, finding, "new")
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert (checks["web"].enabled, checks["broker"].enabled) == (True, True)
+    assert result.enabled == [checks["web"].id]
+    assert [a[1] for a in actions if a[0] == "add"] == [checks["web"].id]
 
 
 def test_adopting_a_module_the_catalog_lost_fails_and_changes_nothing(db, actions):
@@ -696,10 +739,19 @@ def test_a_dropped_check_stays_and_reopens(db, actions):
     assert broker.id not in result.enabled
 
 
-def test_a_dropped_check_the_admin_switched_off_does_not_reopen(db, actions):
-    finding = _adopted(db, actions)
-    _checks(db, finding)["broker"].enabled = False
+def _switch_off(db, check, off):
+    """Take the check out: by its column or by a skip in force."""
+    if off == "skipped":
+        db.add(standing_skip(check.id))
+    else:
+        check.enabled = False
     db.commit()
+
+
+@pytest.mark.parametrize("off", ["switched off", "skipped"])
+def test_a_dropped_check_the_admin_switched_off_does_not_reopen(db, actions, off):
+    finding = _adopted(db, actions)
+    _switch_off(db, _checks(db, finding)["broker"], off)
 
     assert sync_catalog(db, catalog=WITHOUT_BROKER) == 0
     assert (finding.status, finding.catalog_version) == ("adopted", WITHOUT_BROKER.version)
@@ -940,6 +992,23 @@ def test_a_move_to_another_major_changes_the_finding_and_removes_its_tag_check(d
     assert set(checks) == {"container", "web", "ready"}
     assert checks["ready"].id in result.enabled
     assert all(row.enabled for row in checks.values())
+
+
+def test_a_skipped_tag_check_a_major_move_removes_is_not_reported_switched_off(db, actions):
+    _scan(db, 0, SHIPPED, _wiki("2"))
+    finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
+    adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+    healthz = _checks(db, finding)["healthz"]
+    db.add(standing_skip(healthz.id))
+    db.commit()
+    _scan(db, 2, SHIPPED, _wiki("3"))
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+
+    assert db.get(MonitorCheck, healthz.id) is None
+    assert healthz.id not in result.disabled
+    assert ("remove", healthz.id, None, None) not in actions
 
 
 def test_a_tag_check_comes_back_with_its_tag(db, actions):
@@ -1227,11 +1296,10 @@ def test_an_admin_edit_is_no_catalog_update(db, actions):
     assert (finding.status, finding.kind) == ("adopted", "new")
 
 
-def test_a_changed_definition_of_a_switched_off_check_does_not_reopen(db, actions):
+@pytest.mark.parametrize("off", ["switched off", "skipped"])
+def test_a_changed_definition_of_a_switched_off_check_does_not_reopen(db, actions, off):
     finding = _adopted(db, actions)
-    web = _checks(db, finding)["web"]
-    web.enabled = False
-    db.commit()
+    _switch_off(db, _checks(db, finding)["web"], off)
 
     assert sync_catalog(db, catalog=WEB_CHANGED) == 0
     assert (finding.status, finding.catalog_version) == ("adopted", WEB_CHANGED.version)
@@ -1640,12 +1708,40 @@ def test_the_api_marks_the_admins_switch_and_rules_on_a_module_check(client_db, 
         web = _checks(db, finding)["web"]
         web_id, config = web.id, json.loads(web.config)
 
-    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == ["enabled"]
-    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == []
+    # R-1637: the admin's switch is a skip, the column the system's: it marks nothing.
+    r = client.post(f"/checks/{web_id}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, [])
+    r = client.post(f"/checks/{web_id}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
     r = client.put(f"/checks/{web_id}", json={"config": {**config, "interval_s": 900}})
     assert r.json()["overriddenFields"] == []
     r = client.put(f"/checks/{web_id}", json={"config": {**config, "rules": []}, "enabled": False})
-    assert r.json()["overriddenFields"] == ["config", "enabled"]
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, ["config"])
+
+
+def test_the_admins_switch_on_a_module_check_outlives_gone_and_back(client_db, actions):
+    # R-1637: off through the API is a skip; "gone" and "new" move only the column, so the
+    # check stays off until the admin switches it on again, and nothing is marked.
+    from app.exception_scope import check_runs
+
+    client, factory = client_db
+    with factory() as db:
+        _inventory(db)
+        finding = _finding(db)
+        adopt(db, finding.id, catalog=V1, now=NOW)
+        finding_id, web_id = finding.id, _checks(db, finding)["web"].id
+
+    assert client.post(f"/checks/{web_id}/toggle").json()["enabled"] is False
+    for kind, column in (("gone", False), ("new", True)):
+        with factory() as db:
+            _reopen(db, db.get(MonitorFinding, finding_id), kind)
+            adopt(db, finding_id, catalog=V1, now=NOW)
+            web = db.get(MonitorCheck, web_id)
+            assert (web.enabled, check_runs(db, web)) == (column, False), kind
+    assert client.get(f"/checks/{web_id}").json()["enabled"] is False
+
+    r = client.post(f"/checks/{web_id}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
 
 
 # --- a check of one instance, ports chosen at the host (R-1528) ---------------------

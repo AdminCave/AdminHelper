@@ -28,6 +28,8 @@ from app.checkers.probe import ProbeChecker
 from app.core.time import utcnow_naive
 from app.models import MonitorAlertRule, MonitorCheck, MonitorState
 
+from ._helpers import standing_skip
+
 T0 = int(datetime(2020, 1, 1, 12, 0, tzinfo=UTC).timestamp())
 STAMP = "2020-01-01T12:00:00Z"
 
@@ -199,10 +201,14 @@ def test_the_summary_counts_info_apart(client_db):
 
 def test_the_summary_counts_only_enabled_checks(client_db):
     # A disabled check keeps its last state frozen; it must not stay on the dashboard as red.
+    # A skip in force stops one the same way, its column on (R-1637).
     client, factory = client_db
     with factory() as db:
         _check_with_state(db, "on", "ok")
         _check_with_state(db, "off", "critical", enabled=False)
+        _check_with_state(db, "skipped", "critical")
+        db.flush()
+        db.add(standing_skip("skipped"))
         db.commit()
     body = client.get("/status/summary").json()
     assert (body["total"], body["ok"], body["critical"]) == (1, 1, 0)

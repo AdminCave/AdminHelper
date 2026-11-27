@@ -26,6 +26,7 @@ from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
 from app.core.time import utcnow_naive
+from app.exception_scope import OBJECT_KINDS
 
 # The recovery hold where nobody sets one: the default of the schemas below and,
 # for a stored template definition without the key, of template_sync. Has to match
@@ -365,21 +366,28 @@ class MaintenanceInput(RequestModel):
 
 
 # What an exception can be today (ADR 0004 §7, R-1636): any other scope or effect is a
-# 422, not a row that does nothing (Kevin 2026-11-25). skip and no_rating follow with
-# P1c (R-1637), the scopes object, rule, tag and cluster later.
-EXCEPTION_SCOPES = ("check", "check_type", "server", "all")
-EXCEPTION_EFFECTS = ("no_notify",)
+# 422, not a row that does nothing (Kevin 2026-11-25). The scopes rule, tag and cluster
+# follow later.
+EXCEPTION_SCOPES = ("check", "check_type", "server", "all", "object")
+EXCEPTION_EFFECTS = ("no_notify", "skip", "no_rating")
 EXCEPTION_DURATIONS = ("permanent", "once", "weekly")
+# The effects that stand until they are ended (R-1637), each with its one scope: a skip
+# keeps a check from running, a no_rating keeps objects of a check from being rated.
+STANDING_EFFECTS = {"skip": "check", "no_rating": "object"}
 
 
 class ExceptionInput(RequestModel):
     """Create/full-update payload of an exception: where it applies (scope_kind with
-    scope_value: the check id, the check type or the server id; none for all), what it
-    does, for how long. The time fields follow MaintenanceInput, except that a once
-    without starts_at starts now; permanent takes none."""
+    scope_value: the check id, the check type or the server id; none for all; the check
+    id for object, whose objects of object_kind matching object_pattern it names, fnmatch
+    and case-sensitive), what it does, for how long. The time fields follow
+    MaintenanceInput, except that a once without starts_at starts now; permanent takes
+    none."""
 
     scope_kind: str
     scope_value: str | None = None
+    object_kind: str | None = None
+    object_pattern: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     effect: str
     duration_kind: str
     starts_at: datetime | None = None
@@ -403,6 +411,13 @@ class ExceptionInput(RequestModel):
     def _effect_valid(cls, v: str) -> str:
         if v not in EXCEPTION_EFFECTS:
             raise ValueError(f"effect must be one of {', '.join(EXCEPTION_EFFECTS)}")
+        return v
+
+    @field_validator("object_kind")
+    @classmethod
+    def _object_kind_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in OBJECT_KINDS:
+            raise ValueError(f"object_kind must be one of {', '.join(OBJECT_KINDS)}")
         return v
 
     @field_validator("duration_kind")
@@ -437,7 +452,21 @@ class ExceptionInput(RequestModel):
             raise ValueError(f"scope {self.scope_kind} needs a scope_value")
         elif self.scope_kind == "check_type" and self.scope_value not in VALID_CHECK_TYPES:
             raise ValueError("Unknown check type")
-        # Whether a check of that id exists is the router's question (it needs the database).
+        # Whether a check of that id exists and has objects of that kind is the router's
+        # question (it needs the database).
+        if self.scope_kind == "object":
+            if self.object_kind is None or self.object_pattern is None:
+                raise ValueError("scope object needs object_kind and object_pattern")
+        elif self.object_kind is not None or self.object_pattern is not None:
+            raise ValueError("object_kind and object_pattern only with scope object")
+        standing = STANDING_EFFECTS.get(self.effect)
+        if standing is not None and (
+            self.scope_kind != standing or self.duration_kind != "permanent"
+        ):
+            raise ValueError(f"effect {self.effect} only with scope {standing}, permanent")
+        if self.scope_kind == "object" and self.effect != "no_rating":
+            # The engine knows no other effect on an object: it would be a row that does nothing.
+            raise ValueError("scope object only with effect no_rating")
         if self.duration_kind == "once":
             if self.starts_at is None:
                 self.starts_at = utcnow_naive()
@@ -471,10 +500,13 @@ class MonitorStateOut(BaseModel):
 
 
 class ObjectExceptionOut(BaseModel):
-    """What keeps an object out (R-1636): a setting of its check (source setting, effect
-    skip, the setting's name) or the narrowest exception in force over its check (source
+    """What keeps an object out: a skip in force on its check, which then does not run
+    (R-1637); else what its check excluded it by at its last run, a setting (source
+    setting, effect skip, the setting's name, R-1636) or a no_rating exception (scope kind
+    object, R-1637); else the narrowest exception in force over its check (source
     exception, its id, scope kind, effect and reason). The fields of the other source are
-    null."""
+    null. unstable only for an object exception: its pattern names disks or containers by
+    a name another one can take (ADR 0004 §4)."""
 
     source: str
     effect: str
@@ -482,6 +514,7 @@ class ObjectExceptionOut(BaseModel):
     id: str | None
     scopeKind: str | None
     reason: str | None
+    unstable: bool | None
 
 
 class MonitorObjectOut(BaseModel):
@@ -699,6 +732,9 @@ class ExceptionOut(BaseModel):
     scopeKind: str
     scopeValue: str | None
     serverId: str | None
+    objectKind: str | None
+    objectPattern: str | None
+    unstable: bool
     effect: str
     durationKind: str
     startsAt: str | None

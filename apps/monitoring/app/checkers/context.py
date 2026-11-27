@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from fnmatch import fnmatchcase
 
 
 @dataclass(frozen=True)
@@ -33,14 +34,19 @@ class PartnerState:
 class DiskRules:
     """The disk rules of the host's enabled agent_resources check, for disk_forecast.
 
-    `min_free_gb` is per mount (its disk_overrides entry, else disk_min_free_gb); `free_gb`
-    is per mount from that check's last result, empty for an agent that sends none.
+    `ignore_mounts` are fnmatch patterns: the check's ignore_mounts masked, and its no_rating
+    exceptions (R-1637). `min_free_gb` is per mount (its disk_overrides entry, else
+    disk_min_free_gb); `free_gb` is per mount from that check's last result, empty for an
+    agent that sends none.
     """
 
     ignore_mounts: frozenset[str]
     min_free_gb: dict[str, float]
     default_min_free_gb: float
     free_gb: dict[str, float]
+
+    def ignores(self, mount: str) -> bool:
+        return any(fnmatchcase(mount, pattern) for pattern in self.ignore_mounts)
 
     def min_free_for(self, mount: str) -> float:
         return self.min_free_gb.get(mount, self.default_min_free_gb)

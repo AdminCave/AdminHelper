@@ -61,7 +61,10 @@ def _filled(cls):
 
 
 # Facts a to_dict takes from its caller instead of computing them.
-_TO_DICT_KWARGS = {"MonitorTemplate": {"builtin_edited": False, "builtin_update_available": False}}
+_TO_DICT_KWARGS = {
+    "MonitorCheck": {"running": True},
+    "MonitorTemplate": {"builtin_edited": False, "builtin_update_available": False},
+}
 
 
 def _dict(cls) -> dict:

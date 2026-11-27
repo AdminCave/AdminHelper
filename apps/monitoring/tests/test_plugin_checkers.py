@@ -12,7 +12,9 @@ import time
 import pytest
 
 from app.check_engine import NOT_COLLECTED
+from app.checkers.agent import NO_RATING
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
+from app.exception_scope import mask
 from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
@@ -1887,3 +1889,65 @@ def test_zfs_scrub_age_follows_the_config(monkeypatch, days_ago, want, limit):
     assert status == want
     if limit is not None:
         assert msg == f"tank: last scrub {int(days_ago)} days ago (>={limit})"
+
+
+def _marks(metrics: dict) -> list[tuple[str, str, str | None]]:
+    return [(i["id"], i["status"], i.get("excluded")) for i in _object_result(metrics)[1]]
+
+
+def _no_backup(vmid):
+    return {"vmid": vmid, "name": f"g{vmid}", "status": "running", "last_backup_ts": None}
+
+
+def test_proxmox_exclude_vmids_matches_the_whole_vmid_and_an_exception_its_pattern():
+    # 100 is not 1000, the masked 30 not 300; a string in the list names no guest (R-1637).
+    vms = [_no_backup(v) for v in (100, 1000, 200, 201, 300)]
+    config = {"exclude_vmids": [100, "300"], NO_RATING: [("20*", "exc-1"), (mask("30"), "exc-2")]}
+    status, msg, metrics = ProxmoxBackupChecker().evaluate(config, _proxmox(*vms))
+    assert (status, msg) == ("critical", "No backup: VM 1000 (g1000), VM 300 (g300)")
+    assert _marks(metrics) == [
+        ("100", NOT_COLLECTED, "exclude_vmids"),
+        ("1000", "critical", None),
+        ("200", NOT_COLLECTED, "exc-1"),
+        ("201", NOT_COLLECTED, "exc-1"),
+        ("300", "critical", None),
+    ]
+    reasons = [i["reason"] for i in _object_result(metrics)[1] if i["status"] == NOT_COLLECTED]
+    assert reasons == ["Excluded by setting exclude_vmids"] + ["Excluded by exception"] * 2
+
+
+def test_proxmox_a_guest_without_vmid_is_excluded_by_no_pattern():
+    report = _proxmox(_no_backup("100"), {"vmid": 101, "status": "running", "last_backup_ts": 1})
+    status, _, metrics = ProxmoxBackupChecker().evaluate({NO_RATING: [("*", "exc-1")]}, report)
+    # Rated as before, and without a key it names no object; the guest with a VMID is excluded.
+    assert status == "critical"
+    assert _object_result(metrics) == (
+        False,
+        [
+            {
+                **_guest_object(101, "VM 101 (?)", NOT_COLLECTED, "Excluded by exception"),
+                "excluded": "exc-1",
+            }
+        ],
+    )
+
+
+def test_docker_ignore_containers_takes_a_name_with_a_wildcard_exactly():
+    # "web*" in the list is the name, not a glob; the exception's glob hides by pattern (R-1637).
+    names = ("web*", "web1", "db1", "db2", "cache")
+    containers = [_ctr(id=f"id-{n}", name=n, state="exited", exit_code=1) for n in names]
+    config = {"ignore_containers": ["web*", "db1"], NO_RATING: [("db*", "exc-1")]}
+    status, _, metrics = DockerHealthChecker().evaluate(config, _docker(*containers))
+    assert status != "ok"
+    marks = [
+        (i["name"], i["status"] == NOT_COLLECTED, i.get("excluded"))
+        for i in _object_result(metrics)[1]
+    ]
+    assert marks == [
+        ("web*", True, "ignore_containers"),
+        ("web1", False, None),
+        ("db1", True, "ignore_containers"),
+        ("db2", True, "exc-1"),
+        ("cache", False, None),
+    ]
+    assert [row["name"] for row in _rows(metrics)] == ["web1", "cache"]

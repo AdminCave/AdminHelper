@@ -17,11 +17,14 @@ from sqlalchemy.orm import sessionmaker
 
 from app import template_sync
 from app.builtin_templates import BUILTIN_TEMPLATES, seed_builtin_templates
+from app.core.actor import Actor
+from app.exception_scope import check_runs
 from app.models import (
     MonitorAgentKey,
     MonitorAlertRule,
     MonitorCheck,
     MonitorCheckTombstone,
+    MonitorException,
     MonitorSeedState,
     MonitorState,
     MonitorTemplate,
@@ -37,6 +40,8 @@ from app.template_sync import (
     sync_assignment,
     sync_template,
 )
+
+from ._helpers import standing_skip
 
 # --- substitute_variables -------------------------------------------------------
 
@@ -398,7 +403,7 @@ def test_sync_keeps_an_overridden_field_and_updates_the_others(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(interval="15m"), db)
+    checks_router.update_check(cid, CheckUpdate(interval="15m"), BackgroundTasks(), db, Actor())
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "interval": "1m", "severity": "warning"}])
     db.commit()
@@ -416,7 +421,27 @@ def test_sync_keeps_a_check_the_user_disabled_disabled(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.toggle_check(cid, BackgroundTasks(), db)
+    checks_router.toggle_check(cid, BackgroundTasks(), db, Actor())
+    db.scheduled.clear()
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "severity": "warning"}])
+    db.commit()
+    sync_template(db, tpl)
+
+    # R-1637: the admin's off is a skip the sync does not touch; the column is the template's.
+    check = db.get(MonitorCheck, cid)
+    assert (check.enabled, check_runs(db, check), check.severity) == (True, False, "warning")
+    assert cid not in db.scheduled
+
+
+def test_sync_leaves_a_skipped_check_out_of_the_scheduler(db):
+    # R-1637: the column is the template's, a skip of the admin keeps the check from
+    # running; a template change schedules what runs, not what the column says.
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    db.add(standing_skip(cid))
+    db.commit()
     db.scheduled.clear()
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "severity": "warning"}])
@@ -424,8 +449,9 @@ def test_sync_keeps_a_check_the_user_disabled_disabled(db):
     sync_template(db, tpl)
 
     check = db.get(MonitorCheck, cid)
-    assert (check.enabled, check.severity) == (False, "warning")
+    assert (check.enabled, check.severity) == (True, "warning")
     assert cid not in db.scheduled
+    assert cid in db.removed
 
 
 def test_sync_keeps_the_type_of_a_check_whose_config_the_user_changed(db):
@@ -434,7 +460,9 @@ def test_sync_keeps_the_type_of_a_check_whose_config_the_user_changed(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(config={"target": "192.0.2.10"}), db)
+    checks_router.update_check(
+        cid, CheckUpdate(config={"target": "192.0.2.10"}), BackgroundTasks(), db, Actor()
+    )
 
     tpl.check_definitions = json.dumps(
         [
@@ -510,7 +538,7 @@ def test_overridden_check_is_deleted_when_its_definition_leaves_the_template(db)
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(interval="15m"), db)
+    checks_router.update_check(cid, CheckUpdate(interval="15m"), BackgroundTasks(), db, Actor())
 
     tpl.check_definitions = json.dumps([])
     db.commit()
@@ -585,7 +613,7 @@ def test_sync_keeps_a_consecutive_oks_the_user_changed(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(consecutive_oks=5), db)
+    checks_router.update_check(cid, CheckUpdate(consecutive_oks=5), BackgroundTasks(), db, Actor())
     assert json.loads(db.get(MonitorCheck, cid).overridden_fields) == ["consecutive_oks"]
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "consecutive_oks": 1, "severity": "warning"}])
@@ -728,3 +756,86 @@ def test_a_probe_def_that_holds_is_created_with_the_server_values(db):
     apply_template(db, tpl, "srv-1", "web01.example", "web01")
 
     assert json.loads(_probe_check(db).config)["target"]["name"] == "web01"
+
+
+# --- the lists over the exceptions (R-1637) ------------------------------------------
+# An entry the template gives stays in the config, an own one is an exception: the config
+# stays the template's, so the sync goes on bringing its thresholds.
+
+RES_LIST_DEF = {**AGENT_RES_DEF, "config": {"ignore_mounts": ["/boot/efi"], "cpu_warn": 90}}
+
+
+def _no_rating(db, cid):
+    return sorted(
+        (x.object_pattern, x.ended_at is not None, x.ended_by)
+        for x in db.query(MonitorException).filter_by(check_id=cid, effect="no_rating")
+    )
+
+
+def _list_check(db, check_def):
+    tpl = _template(db, [check_def])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    return tpl, db.query(MonitorCheck).one().id
+
+
+def _put_config(db, cid, config):
+    return checks_router.update_check(
+        cid, CheckUpdate(config=config), BackgroundTasks(), db, Actor()
+    )
+
+
+def test_an_own_entry_is_no_override_and_the_sync_still_brings_thresholds(db):
+    tpl, cid = _list_check(db, RES_LIST_DEF)
+
+    out = _put_config(db, cid, {"ignore_mounts": ["/srv/data", "/boot/efi"], "cpu_warn": 90})
+
+    assert out["config"] == {"ignore_mounts": ["/boot/efi", "/srv/data"], "cpu_warn": 90}
+    check = db.get(MonitorCheck, cid)
+    assert (json.loads(check.config), json.loads(check.overridden_fields)) == (
+        RES_LIST_DEF["config"],
+        [],
+    )
+    assert _no_rating(db, cid) == [("/srv/data", False, None)]
+
+    tpl.check_definitions = json.dumps(
+        [{**RES_LIST_DEF, "config": {"ignore_mounts": ["/boot/efi"], "cpu_warn": 80}}]
+    )
+    db.commit()
+    sync_template(db, tpl)
+
+    shown = checks_router.get_check(cid, db)["config"]
+    assert shown == {"ignore_mounts": ["/boot/efi", "/srv/data"], "cpu_warn": 80}
+
+
+def test_an_own_entry_on_a_template_without_the_list_leaves_the_config_the_templates(db):
+    _, cid = _list_check(db, AGENT_RES_DEF)
+
+    out = _put_config(db, cid, {"ignore_mounts": ["/srv/data"]})
+
+    assert out["config"] == {"ignore_mounts": ["/srv/data"]}
+    check = db.get(MonitorCheck, cid)
+    assert (json.loads(check.config), json.loads(check.overridden_fields)) == ({}, [])
+
+
+def test_leaving_out_an_entry_the_template_gives_is_an_override(db):
+    _, cid = _list_check(db, RES_LIST_DEF)
+
+    _put_config(db, cid, {"ignore_mounts": [], "cpu_warn": 90})
+
+    check = db.get(MonitorCheck, cid)
+    assert (json.loads(check.config), json.loads(check.overridden_fields)) == (
+        {"ignore_mounts": [], "cpu_warn": 90},
+        ["config"],
+    )
+    assert _no_rating(db, cid) == []
+
+
+def test_reset_ends_the_own_entries_with_the_actor(db):
+    _, cid = _list_check(db, RES_LIST_DEF)
+    _put_config(db, cid, {"ignore_mounts": ["/boot/efi", "/srv/data"], "cpu_warn": 95})
+    assert json.loads(db.get(MonitorCheck, cid).overridden_fields) == ["config"]
+
+    out = checks_router.reset_check(cid, db, Actor(id="u-1", name="alice"))
+
+    assert out["config"] == RES_LIST_DEF["config"]
+    assert _no_rating(db, cid) == [("/srv/data", True, "alice")]

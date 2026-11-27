@@ -44,7 +44,7 @@ from app.core.config import (
     SMTP_USER,
 )
 from app.core.time import utcnow_naive
-from app.exception_scope import is_maintenance_shaped, load_no_notify, narrowest
+from app.exception_scope import is_maintenance_shaped, load_no_notify, narrowest, runs
 from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
@@ -410,7 +410,7 @@ HOST_PING_DEF_ID = "host-ping"
 
 
 def _host_is_down(db: Session, check: MonitorCheck) -> bool:
-    """True when an enabled check of the same server that signals host-down
+    """True when a running check of the same server that signals host-down
     stands critical (Alertmanager inhibition pattern), by rank:
 
     - the Host Ping (ping check with template_def_id HOST_PING_DEF_ID): never;
@@ -442,7 +442,7 @@ def _host_is_down(db: Session, check: MonitorCheck) -> bool:
         .filter(
             MonitorCheck.server_id == check.server_id,
             signal,
-            MonitorCheck.enabled == True,  # noqa: E712
+            runs,
             MonitorState.status == "critical",
         )
         .first()
@@ -473,7 +473,7 @@ def muted_reasons(
             .filter(
                 MonitorCheck.server_id.in_(server_ids),
                 or_(MonitorCheck.check_type == "agent_ping", host_ping),
-                MonitorCheck.enabled == True,  # noqa: E712
+                runs,
                 MonitorState.status == "critical",
             )
             .distinct()

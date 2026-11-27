@@ -53,8 +53,8 @@ MAX_ROWS = 2 * MAX_OBJECTS
 OBJECT_LOG_PER_DAY = MAX_ROWS
 MAX_NAME = 200
 _KIND_MAX = 40
-# The width of monitor_object_state.excluded, the name of the setting that excludes an
-# object (R-1636).
+# The width of monitor_object_state.excluded: the name of the setting (R-1636) or the id of
+# the exception (R-1637) that excludes an object.
 _EXCLUDED_MAX = 40
 # The kind of the object a check without an object result stands for.
 FALLBACK_KIND = "check"

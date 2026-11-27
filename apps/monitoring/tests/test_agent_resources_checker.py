@@ -16,7 +16,8 @@ import pytest
 
 from app.check_configs import AgentResourcesConfig
 from app.checkers import agent
-from app.checkers.agent import AgentResourcesChecker
+from app.checkers.agent import NO_RATING, AgentResourcesChecker
+from app.exception_scope import mask
 from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
@@ -1197,3 +1198,61 @@ def test_without_resource_data_names_no_objects():
     # No resources say nothing about the host's objects: they keep their state.
     for report in ({}, {"resources": {}}, {"resources": "abc"}):
         assert CHECKER.evaluate(T, report) == ("unknown", "No resource data", None)
+
+
+def _mount_marks(metrics: dict) -> list[tuple[str, str | None]]:
+    return [
+        (i["id"], i.get("excluded")) for i in _object_result(metrics)[1] if i["kind"] == "mount"
+    ]
+
+
+# A mount whose path holds a character fnmatch reads as a wildcard, and the mount next to it
+# that the path would match as a glob (R-1637).
+@pytest.mark.parametrize(
+    ("name", "neighbour"), [("/mnt/[a]", "/mnt/a"), ("/mnt/*", "/mnt/x"), ("/mnt/?", "/mnt/b")]
+)
+def test_ignore_mounts_excludes_a_wildcard_path_itself_and_not_its_neighbour(name, neighbour):
+    report = _disks(_disk(99, 0.1, name), _disk(99, 0.1, neighbour))
+    status, message, metrics = CHECKER.evaluate({"ignore_mounts": [name]}, report)
+    assert (status, message) == ("critical", f"Disk {neighbour} 99%, 0.1 GB free (>=95%)")
+    disks = metrics["_details"]["disks"]
+    assert [(d["mount"], d["ignored"]) for d in disks] == [(name, True), (neighbour, False)]
+    assert _mount_marks(metrics) == [(name, "ignore_mounts"), (neighbour, None)]
+
+
+def test_a_no_rating_exception_excludes_the_mounts_its_pattern_matches_under_its_id():
+    mounts = ("/mnt/[a]", "/mnt/a", "/srv/x", "/srv/y", "/")
+    report = _disks(*(_disk(99, 0.1, m) for m in mounts))
+    config = {NO_RATING: [(mask("/mnt/[a]"), "exc-1"), ("/srv/*", "exc-2")]}
+    status, message, metrics = CHECKER.evaluate(config, report)
+    assert (status, message) == (
+        "critical",
+        "Disk /mnt/a 99%, 0.1 GB free (>=95%); Disk / 99%, 0.1 GB free (>=95%)",
+    )
+    assert [(d["mount"], d["ignored"]) for d in metrics["_details"]["disks"]] == [
+        ("/mnt/[a]", True),
+        ("/mnt/a", False),
+        ("/srv/x", True),
+        ("/srv/y", True),
+        ("/", False),
+    ]
+    assert _mount_marks(metrics) == [
+        ("/mnt/[a]", "exc-1"),
+        ("/mnt/a", None),
+        ("/srv/x", "exc-2"),
+        ("/srv/y", "exc-2"),
+        ("/", None),
+    ]
+    excluded = [i for i in _object_result(metrics)[1] if i.get("excluded")]
+    assert {(i["status"], i["reason"]) for i in excluded} == {
+        (agent.NOT_COLLECTED, "Excluded by exception")
+    }
+
+
+def test_a_mount_the_setting_and_an_exception_both_exclude_names_the_setting():
+    # The setting keeps it out after the exception ends.
+    config = {"ignore_mounts": ["/boot"], NO_RATING: [("/b*", "exc-1")]}
+    report = _disks(_disk(99, 0.1, "/boot"), _disk(99, 0.1, "/backup"))
+    status, _, metrics = CHECKER.evaluate(config, report)
+    assert status == "ok"
+    assert _mount_marks(metrics) == [("/boot", "ignore_mounts"), ("/backup", "exc-1")]

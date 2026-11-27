@@ -16,7 +16,7 @@ from app import alerter, bell_catch_up
 from app.bell_catch_up import CATCH_UP_MAX, catch_up_bell
 from app.check_engine import dispatch_alert_bg
 
-from ._helpers import bell_record, maintenance_window, seed_bell_check
+from ._helpers import bell_record, maintenance_window, seed_bell_check, standing_skip
 from .test_check_engine_concurrency import DB_URL, pg_sessionmaker  # noqa: F401
 
 _NOW = datetime(2026, 10, 20, 12, 0)
@@ -223,12 +223,18 @@ def test_a_muted_check_waits(bell_db, hub):
     assert bell_record(bell_db, cid) == (None, None)
 
 
-def test_a_disabled_check_gets_the_all_clear_of_its_alarm(bell_db, hub):
+@pytest.mark.parametrize("off", ["switched off", "skipped"])
+def test_a_disabled_check_gets_the_all_clear_of_its_alarm(bell_db, hub, off):
+    enabled = off == "skipped"
     cid = seed(
         bell_db, 0, status="critical", notified="ok", hub_status="critical",
-        hub_sent_at=_EARLIER, enabled=False,
+        hub_sent_at=_EARLIER, enabled=enabled,
     )  # fmt: skip
-    quiet = seed(bell_db, 1, status="critical", notified="critical", enabled=False)
+    quiet = seed(bell_db, 1, status="critical", notified="critical", enabled=enabled)
+    if off == "skipped":
+        with bell_db() as db:
+            db.add_all([standing_skip(cid), standing_skip(quiet)])
+            db.commit()
 
     catch_up_bell()
 

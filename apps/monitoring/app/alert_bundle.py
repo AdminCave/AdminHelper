@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app import alerter, check_engine
 from app.core import database
 from app.core.time import utcnow_naive
-from app.exception_scope import load_no_notify, narrowest
+from app.exception_scope import load_no_notify, narrowest, runs
 from app.models import (
     MonitorCheck,
     MonitorState,
@@ -153,7 +153,7 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
 
 
 def _candidates(db: Session, now: datetime) -> dict[str, list[_Open]]:
-    """The open heartbeats per kind (steps 1-2): enabled agent_ping checks whose
+    """The open heartbeats per kind (steps 1-2): running agent_ping checks whose
     status the alerter would report (resolve_notification "notify") and that are
     _reportable at now."""
     rows = (
@@ -161,7 +161,7 @@ def _candidates(db: Session, now: datetime) -> dict[str, list[_Open]]:
         .join(MonitorState, MonitorState.check_id == MonitorCheck.id)
         .filter(
             MonitorCheck.check_type == "agent_ping",
-            MonitorCheck.enabled == True,  # noqa: E712
+            runs,
             MonitorState.status.in_(list(_KIND_OF_STATUS)),
             MonitorState.status.is_distinct_from(MonitorState.notified_status),
         )
@@ -216,7 +216,7 @@ def _awaits_check(db: Session, check: MonitorCheck, state: MonitorState) -> bool
             MonitorCheck.server_id == check.server_id,
             MonitorCheck.check_type == "ping",
             MonitorCheck.template_def_id == alerter.HOST_PING_DEF_ID,
-            MonitorCheck.enabled == True,  # noqa: E712
+            runs,
             MonitorState.since > checked,
         )
         .first()

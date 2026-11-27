@@ -19,6 +19,8 @@ from app.core.auth import require_agent, require_internal
 from app.core.database import get_db
 from app.models import MonitorAlertRule, MonitorCheck, MonitorHostFacts, MonitorState
 
+from ._helpers import standing_skip
+
 
 @pytest.fixture()
 def client_db(monkeypatch, db_engine):
@@ -301,6 +303,32 @@ def _add_push_check(factory, check_id: str, check_type: str) -> None:
             )
         )
         db.commit()
+
+
+def test_a_skipped_push_check_is_not_evaluated(client_db, monkeypatch):
+    # R-1637: the push evaluates the checks that run; a skip in force keeps one out, its
+    # column stays on, and it writes no status.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-run", "system_state")
+    _add_push_check(factory, "chk-skip", "system_state")
+    with factory() as db:
+        db.add(standing_skip("chk-skip"))
+        db.commit()
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post(
+        "/agent/srv-1/report",
+        json={"uptime_seconds": 3600, "system_state": {"reboot_required": True}},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    assert _lines_of(writes, "chk-skip") == []
+    with factory() as db:
+        assert db.get(MonitorState, "chk-skip") is None
+        assert db.get(MonitorState, "chk-run").status == "warning"
 
 
 def _lines_of(writes: list[list[str]], check_id: str) -> list[str]:

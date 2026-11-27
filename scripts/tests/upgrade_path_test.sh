@@ -14,9 +14,15 @@
 #   1  resolve the last PUBLISHED release (anonymous GitHub API, no prereleases)
 #   2  bring the stack up from that tag's own docker-compose.yml and
 #      ghcr.io/admincave/adminhelper/*:<tag>, and seed it through the admin API
-#      (server, FRP config, tunnel)
+#      (server, FRP config, tunnel, monitoring checks with ignore lists and a
+#      template: upgrade_exceptions.py), back it up with the release's own
+#      scripts/backup.sh and dry-run the exception migration with the checkout's
+#      monitoring image: the monitoring database must not change
 #   3  swap in the images built from THIS checkout, restart, and assert the seeds
-#      are still readable AND a fresh agent report still lands  -> UPGRADE_OK
+#      are still readable, the ignore lists became exceptions AND a fresh agent
+#      report still lands; then restore the backup onto the release's images with
+#      the checkout's scripts/restore.sh: the monitoring database is the one the
+#      release had  -> UPGRADE_OK
 #   4  run scripts/update.sh --ref <tag> for real against a second, independent
 #      install directory: bundle download, minisign verification, atomic swap,
 #      healthy `docker compose ps`  -> UPDATE_SH_OK (or UPDATE_SH_SKIP when that
@@ -31,6 +37,8 @@
 # Step 4 brings a SECOND stack up from the UNCHANGED docker-compose.yml, whose
 # gateway maps host :443 (plus frps 7000/7443) — those ports must be free on the
 # box. Its compose project is per-run and comes down on EXIT with the first one.
+# restore.sh in step 3 starts every service of the release, frps included, so that
+# stack comes down before step 4.
 #
 # Step 4 exercises the RELEASE's update.sh when the checkout's differs (the
 # updater re-execs into the one it just unpacked, by design): what it proves is
@@ -91,10 +99,19 @@ upd_teardown() {
     ( cd "$UPD_DIR" && docker compose -p "$UPD_PROJECT" down -v --remove-orphans >/dev/null 2>&1 ) || true
     UPD_DIR=""
 }
+# The way back in step 3 runs restore.sh in an install directory of its own ($REL),
+# whose containers write files as root there: e2e_teardown's rm could not remove them.
+REL=""; REL_IMAGE=""
+rel_teardown() {
+    [ -n "$REL" ] && [ -n "$REL_IMAGE" ] && [ -d "$REL" ] || return 0
+    dc_rel down >/dev/null 2>&1 || true
+    docker run --rm --network none --entrypoint find -v "$REL:/dst" "$REL_IMAGE" \
+        /dst -mindepth 1 -delete >/dev/null 2>&1 || true
+}
 # The checkout's compose file no longer names the volume of PostgreSQL 17, so its
 # `down -v` leaves it: the move in step 3 keeps it as the way back.
 upgrade_teardown() {
-    upd_teardown; e2e_teardown
+    upd_teardown; rel_teardown; e2e_teardown
     [ -z "$E2E_PROJECT" ] || docker volume rm "${E2E_PROJECT}_postgres-data" >/dev/null 2>&1 || true
 }
 trap upgrade_teardown EXIT
@@ -182,6 +199,120 @@ BEFORE=$(e2e_api "$TOKEN" count-tunnels "$SERVER_ID" 2>/dev/null || echo 0)
 [ "${BEFORE:-0}" -ge 1 ] && ok "seeded on $PREV (server $SERVER_ID, $BEFORE tunnel(s), connection $CONN_ID)" \
     || { bad "seeds not readable on $PREV itself"; exit 1; }
 
+# ── monitoring: seed, backup and dry run on the release ──────────────────────
+# Checks whose ignore lists and switches the checkout turns into exceptions: one per
+# list key, a disabled one, and template checks with a value of their own.
+# upgrade_exceptions.py holds the data and every assertion on it; each of its
+# "ok"/"FAIL" lines counts here.
+HELPER="$E2E_REPO_ROOT/scripts/tests/upgrade_exceptions.py"
+py_asserts() {
+    local out rc=0 line
+    out=$(python3 "$HELPER" "$@" 2>"$E2E_WORK/helper.err") || rc=$?
+    while IFS= read -r line; do
+        if [[ $line =~ ^ok\ +(.*)$ ]]; then ok "${BASH_REMATCH[1]}"
+        elif [[ $line =~ ^FAIL\ (.*)$ ]]; then bad "${BASH_REMATCH[1]}"
+        elif [ -n "$line" ]; then echo "    $line"; fi
+    done <<<"$out"
+    # Exit 0: every assertion ran. Anything else is a step that was not checked.
+    [ "$rc" = 0 ] || { bad "upgrade_exceptions.py $1 exited $rc"; sed 's/^/    /' "$E2E_WORK/helper.err" | tail -20; }
+    return "$rc"
+}
+MON_STATE="$E2E_WORK/mon-state.json"
+CHECKS_BEFORE="$E2E_WORK/checks-before.json"
+py_asserts seed "$E2E_SERVER_URL" "$TOKEN" "$SERVER_ID" "$MON_STATE" || exit 1
+py_asserts checks "$E2E_SERVER_URL" "$TOKEN" "$SERVER_ID" "$CHECKS_BEFORE" || exit 1
+
+# An install directory of the release, as a host has one: its compose files, .env
+# and scripts/backup.sh, with the checkout's scripts/restore.sh, because the
+# release's own cannot restore over the newer schema (R-1846). Same compose project
+# as the stack: the backup reads it, the restore at the end of step 3 writes it.
+REL="$E2E_WORK/rel-host"
+mkdir -p "$REL/scripts" "$REL/data"
+cp "$RELEASE_COMPOSE" "$REL/docker-compose.yml"
+cp "$PREV_COMPOSE" "$REL/compose.prev.yml"
+{ cat "$E2E_WORK/.env"; echo "COMPOSE_PROJECT_NAME=$E2E_PROJECT"; } > "$REL/.env"
+chmod 600 "$REL/.env"
+curl -fsSL --max-time 20 -o "$REL/scripts/backup.sh" \
+        "https://raw.githubusercontent.com/AdminCave/AdminHelper/$PREV/scripts/backup.sh" 2>/dev/null \
+    || git -C "$E2E_REPO_ROOT" show "$PREV:scripts/backup.sh" > "$REL/scripts/backup.sh" 2>/dev/null \
+    || { bad "the scripts/backup.sh of $PREV is neither on GitHub nor in the local clone"; exit 1; }
+cp "$E2E_REPO_ROOT/scripts/restore.sh" "$REL/scripts/"
+chmod +x "$REL/scripts/backup.sh" "$REL/scripts/restore.sh"
+# The scripts see the environment of a host shell in that directory, not this one's.
+in_rel() {
+    (cd "$REL" && env -i PATH="$PATH" HOME="$HOME" COMPOSE_FILE=docker-compose.yml:compose.prev.yml \
+        ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} ${DOCKER_CONTEXT:+DOCKER_CONTEXT="$DOCKER_CONTEXT"} "$@")
+}
+dc_rel() { in_rel docker compose "$@"; }
+REL_IMAGE=$(dc_rel config --images postgres </dev/null 2>/dev/null)
+
+BKDIR=$(mktemp -d -p "$E2E_WORK")
+in_rel ./scripts/backup.sh --output "$BKDIR" > "$E2E_WORK/backup.log" 2>&1
+brc=$?
+mapfile -t BKS < <(find "$BKDIR" -maxdepth 1 -type f -name 'adminhelper-backup-*.tar.gz')
+if [ "$brc" = 0 ] && [ "${#BKS[@]}" = 1 ]; then
+    BK="${BKS[0]}"
+    ok "backup of the $PREV stack with its own scripts/backup.sh"
+else
+    sed 's/^/    /' "$E2E_WORK/backup.log" | tail -20
+    bad "the backup.sh of $PREV: exit $brc, ${#BKS[@]} archive(s)"; exit 1
+fi
+
+# The monitoring database as compared below: its schema and the rows of the tables
+# that hold configuration, not the run-time tables the running checks write to.
+# normalize sorts the rows and drops what differs between two dumps of the same data.
+MON_TABLES=(alembic_version monitor_checks monitor_templates monitor_template_assignments
+            monitor_template_tag_assignments monitor_seed_state monitor_check_tombstones
+            monitor_module_tombstones monitor_alert_rules monitor_maintenance)
+# $POSTGRES_PASSWORD is the container's, for its own shell to expand.
+# shellcheck disable=SC2016
+mon_snapshot() {    # <compose function> <out>
+    local tables=() t
+    for t in "${MON_TABLES[@]}"; do tables+=(-t "public.$t"); done
+    "$1" exec -T postgres sh -c \
+            'PGPASSWORD=$POSTGRES_PASSWORD pg_dump -h 127.0.0.1 -U adminhelper -d adminhelper_monitor -s -O -x' \
+            > "$2.raw" 2> "$2.err" \
+        && "$1" exec -T postgres sh -c \
+            'PGPASSWORD=$POSTGRES_PASSWORD pg_dump -h 127.0.0.1 -U adminhelper -d adminhelper_monitor --data-only --strict-names "$@"' \
+            sh "${tables[@]}" >> "$2.raw" 2>> "$2.err" \
+        && python3 "$HELPER" normalize "$2.raw" > "$2" 2>> "$2.err"
+}
+mon_diff() { diff "$1" "$2" | head -20 | sed 's/^/    /'; sed 's/^/    /' "$2.err"; }
+MON_S0="$E2E_WORK/mon-s0.sql"
+mon_snapshot dc_prev "$MON_S0" || { bad "no dump of the monitoring database on $PREV"; sed 's/^/    /' "$MON_S0.err"; exit 1; }
+# Two dumps without the seeds would compare equal as well: the seeds must be in it.
+mapfile -t SEEDED < <(python3 -c 'import json, sys; print("\n".join(json.load(open(sys.argv[1])).values()))' "$MON_STATE")
+unseen=0
+for id in "${SEEDED[@]}"; do grep -qF -- "$id" "$MON_S0" || unseen=$((unseen + 1)); done
+[ "${#SEEDED[@]}" -eq 9 ] && [ "$unseen" = 0 ] \
+    && ok "the dump of the monitoring database holds all ${#SEEDED[@]} seeded checks and the template" \
+    || { bad "the dump lacks $unseen of ${#SEEDED[@]} seeded ids (want 9)"; exit 1; }
+
+# The dry run a user is told to make before the update: the checkout's monitoring
+# image against the release's live database, migrations and all, in a transaction
+# that is rolled back. The image is built here; `up --build` below reuses it.
+e2e_dc build monitoring > "$E2E_WORK/build-monitoring.log" 2>&1 \
+    || { tail -30 "$E2E_WORK/build-monitoring.log"; bad "the checkout's monitoring image did not build"; exit 1; }
+DRYRUN_OVR="$E2E_WORK/compose.dryrun.yml"
+# `config --images monitoring` names the images of its dependencies too: read the one.
+DRYRUN_IMAGE=$(e2e_dc config --format json 2>/dev/null \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["monitoring"]["image"])' 2>/dev/null)
+[ -n "$DRYRUN_IMAGE" ] || { bad "no image name for the checkout's monitoring service"; exit 1; }
+printf 'services:\n  monitoring:\n    image: %s\n' "$DRYRUN_IMAGE" > "$DRYRUN_OVR"
+# The image's entrypoint starts the service: the module needs python itself.
+dc_prev -f "$DRYRUN_OVR" run --rm --no-deps -T --entrypoint python monitoring \
+        -m app.exception_migration --dry-run --json > "$E2E_WORK/dryrun.json" 2> "$E2E_WORK/dryrun.err"
+drc=$?
+if [ "$drc" = 0 ]; then
+    ok "dry run of the exception migration with the checkout's image against $PREV"
+    py_asserts dry-run "$MON_STATE" "$E2E_WORK/dryrun.json"
+else
+    sed 's/^/    /' "$E2E_WORK/dryrun.err" | tail -20; bad "the dry run exited $drc"
+fi
+mon_snapshot dc_prev "$E2E_WORK/mon-s1.sql" && cmp -s "$MON_S0" "$E2E_WORK/mon-s1.sql" \
+    && ok "the dry run left the monitoring database as it was" \
+    || { bad "the monitoring database differs after the dry run"; mon_diff "$MON_S0" "$E2E_WORK/mon-s1.sql"; }
+
 # ── 3. swap in the images from THIS checkout ─────────────────────────────────
 # A release on PostgreSQL 17 first moves its data to 18 with the very block of
 # scripts/update.sh a host runs, its `docker compose` aimed at this stack. The old
@@ -236,6 +367,9 @@ CONNS_AFTER=$(e2e_api "$TOKEN" count-connections "$SERVER_ID" 2>/dev/null || ech
 [ "${CONNS_AFTER:-0}" -eq "$CONNS_BEFORE" ] \
     && ok "connections still readable and unchanged ($CONNS_BEFORE -> $CONNS_AFTER, incl. $CONN_ID)" \
     || bad "connection count changed across the upgrade ($CONNS_BEFORE -> ${CONNS_AFTER:-0})"
+# The checkout's monitoring service migrated at its start: the exceptions are there,
+# the checks read as before, the switched-off ones are still off.
+py_asserts after "$E2E_SERVER_URL" "$TOKEN" "$SERVER_ID" "$MON_STATE" "$CHECKS_BEFORE"
 
 # A migrated database must still ACCEPT writes, not merely answer reads: a real
 # agent enrolls against the upgraded stack and pushes one report.
@@ -251,6 +385,30 @@ if [ -x "$AGENT_BIN" ]; then
         && ok "a fresh agent report lands on the upgraded stack" \
         || { bad "agent report failed after the upgrade"; tail -20 "$E2E_WORK/agent.log" | sed 's/^/    /'; }
 fi
+
+# The way back: the release's backup onto the release's images, by restore.sh in the
+# install directory of the release. The monitoring database must be the one the
+# release had, schema included, not the migrated one.
+echo "[upgrade] restoring the $PREV backup with scripts/restore.sh..."
+in_rel ./scripts/restore.sh "$BK" --yes > "$E2E_WORK/restore.log" 2>&1
+rrc=$?
+if [ "$rrc" != 0 ]; then
+    sed 's/^/    /' "$E2E_WORK/restore.log" | tail -30; bad "restore.sh exited $rrc"
+else
+    ok "restore.sh put the $PREV backup back onto the $PREV images"
+    if wait_gateway && TOKEN=$(e2e_admin_token) && [ -n "$TOKEN" ]; then
+        py_asserts restored "$E2E_SERVER_URL" "$TOKEN" "$SERVER_ID" "$MON_STATE" "$CHECKS_BEFORE"
+    else
+        bad "no admin login on the restored $PREV stack"
+    fi
+    mon_snapshot dc_rel "$E2E_WORK/mon-s2.sql" && cmp -s "$MON_S0" "$E2E_WORK/mon-s2.sql" \
+        && ok "the monitoring database is the one $PREV had before the upgrade" \
+        || { bad "the monitoring database differs from $PREV's after the restore"; mon_diff "$MON_S0" "$E2E_WORK/mon-s2.sql"; }
+fi
+# restore.sh started every service of the release, frps on 7000/7443 among them,
+# which step 4's stack needs.
+dc_rel down > "$E2E_WORK/rel-down.log" 2>&1 \
+    || { bad "the restored $PREV stack did not come down"; sed 's/^/    /' "$E2E_WORK/rel-down.log"; }
 
 [ "$FAIL" -eq 0 ] && echo "UPGRADE_OK"
 

@@ -20,10 +20,14 @@ from app.checkers.agent import (
     agent_number,
     cap_agent_text,
     capped_objects,
+    exact_patterns,
+    excluded_by,
     excluded_object,
+    exclusions,
     join_capped,
     whole_list,
 )
+from app.exception_scope import mask
 
 # The codes the agent sends for a block it could not read (dockerUnavailable,
 # zfsUnavailable and proxmoxUnavailable in apps/agent/internal/monitor/plugins.go).
@@ -122,6 +126,14 @@ def _key_text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _vmid_patterns(entries: object) -> list[str]:
+    """The VMIDs of exclude_vmids as masked patterns of the decimal VMID (R-1637). Only a
+    number names a guest: a string the config accepts matched no VMID before and does not now."""
+    if not isinstance(entries, list):
+        return []
+    return [mask(str(v)) for v in entries if isinstance(v, int) and not isinstance(v, bool)]
+
+
 class ProxmoxBackupChecker:
     """Checks whether VMs/CTs have up-to-date backups.
 
@@ -167,7 +179,9 @@ class ProxmoxBackupChecker:
             )
 
         max_age_hours = config.get("max_backup_age_hours", 26)
-        exclude_vmids = set(config.get("exclude_vmids", []))
+        exclude_vmids = exclusions(
+            config, "exclude_vmids", _vmid_patterns(config.get("exclude_vmids"))
+        )
         # Only a real False includes stopped VMs: a non-bool stored before the strict
         # boundary is the default, as the check editor shows it.
         exclude_stopped = config.get("exclude_stopped", True) is not False
@@ -191,9 +205,11 @@ class ProxmoxBackupChecker:
             vm_type = cap_agent_text(vm.get("type")) or "vm"
             name = cap_agent_text(vm.get("name")) or "?"
             label = f"{vm_type.upper()} {vmid} ({name})"
-            if vmid in exclude_vmids:
+            # A guest without a VMID has no name a pattern could match, "*" included.
+            source = None if vmid is None else excluded_by(str(vmid), exclude_vmids)
+            if source is not None:
                 unrated = _guest_object(vmid, label, NOT_COLLECTED, "", cluster)
-                guests.append(excluded_object(unrated, "exclude_vmids"))
+                guests.append(excluded_object(unrated, source))
                 continue
             if exclude_stopped and vm.get("status") != "running":
                 # A rule, not an exception (ADR 0004 §10): the guest is there, its backup is
@@ -640,7 +656,9 @@ class DockerHealthChecker:
                 },
             )
 
-        ignore = set(config.get("ignore_containers", []))
+        ignore = exclusions(
+            config, "ignore_containers", exact_patterns(config.get("ignore_containers"))
+        )
         # The agent sends the 12-char short ID as a string; any other entry or ID (a list is
         # not even hashable) has no previous value instead of failing the whole evaluation.
         prev = (prev_details or {}).get("containers")
@@ -664,11 +682,12 @@ class DockerHealthChecker:
             name = c.get("name")
             if not isinstance(name, str):
                 name = cid if isinstance(cid, str) else "?"
-            if name in ignore:
+            source = excluded_by(name, ignore)
+            if source is not None:
                 unrated = _container_object(
                     cap_agent_text(name) or "?", "ok", None, "", _compose_ident(c)
                 )
-                objects.append(excluded_object(unrated, "ignore_containers"))
+                objects.append(excluded_object(unrated, source))
                 continue
 
             state = c.get("state")

@@ -29,6 +29,7 @@ from app.checkers import get_checker
 from app.checkers.agent import (
     EXCLUDED_FSTYPES,
     NO_MOUNT,
+    NO_RATING,
     agent_number,
     capped_objects,
     entry_text,
@@ -42,6 +43,7 @@ from app.core.database import get_db
 from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import format_line, victoria
 from app.discovery import apply_credentials, apply_discovery
+from app.exception_scope import OBJECT_KINDS, load_no_rating, runs
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorHostFacts, MonitorState
 from app.module_plan import build_plan
 from app.schemas import AgentPlanOut, AgentStateOut
@@ -420,7 +422,7 @@ def _push_checks(db: Session, server_id: str) -> list[MonitorCheck]:
         db.query(MonitorCheck)
         .filter(
             MonitorCheck.server_id == server_id,
-            MonitorCheck.enabled == True,  # noqa: E712
+            runs,
             # PUSH_ONLY_TYPES is exactly the push-evaluated set. agent_ping is
             # deliberately NOT in it: this endpoint calls record_agent_report()
             # first, so the staleness age would always be ~0 ("ok") — the scheduler
@@ -432,6 +434,10 @@ def _push_checks(db: Session, server_id: str) -> list[MonitorCheck]:
         .order_by(MonitorCheck.id)
         .all()
     )
+
+
+# The check types whose objects a no_rating exception excludes (R-1637).
+_OBJECT_CHECK_TYPES = frozenset(kind.check_type for kind in OBJECT_KINDS.values())
 
 
 def _in_rating_order(checks: list[MonitorCheck]) -> list[MonitorCheck]:
@@ -478,6 +484,9 @@ def _evaluate_push_check(
             siblings = _probe_siblings(db, check, config)
             if siblings is not None:
                 config["_siblings"] = siblings
+        if check.check_type in _OBJECT_CHECK_TYPES:
+            # Set for every run, so a key of that name in the stored config counts for nothing.
+            config[NO_RATING] = [(e.object_pattern, e.id) for e in load_no_rating(db, check.id)]
 
         # Reuse the checker registry instead of a hand-written if/elif that
         # duplicated the push-checker list across imports, the in_-filter and

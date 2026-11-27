@@ -17,6 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import update
 
 from app import builtin_templates
+from app.exception_scope import check_runs
 from app.models import (
     MonitorAgentKey,
     MonitorAlertLog,
@@ -76,6 +77,9 @@ def _ref_name(schema: dict) -> str:
         ("/maintenance", "get", "MaintenanceOut"),
         ("/maintenance", "post", "MaintenanceOut"),
         ("/maintenance/{maintenance_id}", "put", "MaintenanceOut"),
+        ("/exceptions", "get", "ExceptionOut"),
+        ("/exceptions", "post", "ExceptionOut"),
+        ("/exceptions/{exception_id}", "put", "ExceptionOut"),
         ("/agent-keys/{server_id}", "post", "AgentKeyOut"),
         ("/agent-keys/{server_id}", "delete", "AgentKeyDeletedOut"),
         ("/agent/{server_id}/state", "get", "AgentStateOut"),
@@ -164,7 +168,7 @@ def _produced(factory, check_id: str) -> dict:
     with factory() as db:
         check = db.get(MonitorCheck, check_id)
         state = db.get(MonitorState, check_id)
-        return jsonable_encoder(check.to_dict(state=state))
+        return jsonable_encoder(check.to_dict(state=state, running=check_runs(db, check)))
 
 
 class TestCheckShape:
@@ -173,7 +177,8 @@ class TestCheckShape:
         _seed_checks(factory)
         want = [_produced(factory, "chk-full"), _produced(factory, "chk-sparse")]
         assert "state" in want[0] and "state" not in want[1]
-        assert want[1]["enabled"] is None and want[1]["consecutiveFails"] is None
+        # enabled says whether the check runs (R-1637): a NULL column does not.
+        assert want[1]["enabled"] is False and want[1]["consecutiveFails"] is None
 
         r = client.get("/checks")
         assert r.status_code == 200, r.text
@@ -529,6 +534,113 @@ class TestMaintenanceShape:
         r = client.put(f"/maintenance/{mid}", json=once)
         assert r.status_code == 200, r.text
         assert r.json() == _maintenance(factory, mid)
+
+
+def _exception(factory, exception_id: str) -> dict:
+    with factory() as db:
+        return jsonable_encoder(db.get(MonitorException, exception_id).to_dict())
+
+
+class TestExceptionShape:
+    def _checks(self, factory):
+        with factory() as db:
+            for cid, check_type in (
+                ("c1", "ping"),
+                ("m1", "agent_resources"),
+                ("d1", "smart_health"),
+            ):
+                db.add(
+                    MonitorCheck(
+                        id=cid, server_id="srv-1", name=cid, check_type=check_type, config="{}"
+                    )
+                )
+            db.commit()
+
+    def test_list_equals_the_producer(self, client_db):
+        # e-object: a no_rating on mounts with the trail set; e-disk: one on disks, whose
+        # objects are unstable; e-sparse: an exception for all with every nullable column NULL.
+        client, factory = client_db
+        self._checks(factory)
+        with factory() as db:
+            db.add(
+                MonitorException(
+                    id="e-object",
+                    scope_kind="object",
+                    check_id="m1",
+                    server_id="srv-1",
+                    object_kind="mount",
+                    object_pattern="/data*",
+                    effect="no_rating",
+                    duration_kind="permanent",
+                    reason="nfs",
+                    origin="api",
+                    created_by="alice",
+                    created_by_id="u-1",
+                    created_at=datetime(2026, 11, 1, 12, 0, 0),
+                )
+            )
+            db.add(
+                MonitorException(
+                    id="e-disk",
+                    scope_kind="object",
+                    check_id="d1",
+                    server_id="srv-1",
+                    object_kind="disk",
+                    object_pattern="sd?",
+                    effect="no_rating",
+                    duration_kind="permanent",
+                    origin="api",
+                    created_at=datetime(2026, 11, 2, 12, 0, 0),
+                )
+            )
+            db.add(
+                MonitorException(
+                    id="e-sparse",
+                    scope_kind="all",
+                    effect="no_notify",
+                    duration_kind="permanent",
+                    origin="api",
+                    created_at=datetime(2026, 11, 3, 12, 0, 0),
+                )
+            )
+            db.commit()
+        r = client.get("/exceptions")
+        assert r.status_code == 200, r.text
+        ids = ("e-object", "e-disk", "e-sparse")
+        assert r.json() == [_exception(factory, eid) for eid in ids]
+        assert [e["unstable"] for e in r.json()] == [False, True, False]
+
+    def test_writes_answer_as_the_producer(self, client_db, monkeypatch):
+        from app.routers import exceptions as exceptions_router
+
+        monkeypatch.setattr(exceptions_router, "add_check", lambda *a: None)
+        monkeypatch.setattr(exceptions_router, "remove_check", lambda *a: None)
+        client, factory = client_db
+        self._checks(factory)
+        skip = {
+            "scope_kind": "check",
+            "scope_value": "c1",
+            "effect": "skip",
+            "duration_kind": "permanent",
+        }
+        r = client.post("/exceptions", json=skip)
+        assert r.status_code == 201, r.text
+        assert r.json() == _exception(factory, r.json()["id"])
+        r = client.put(f"/exceptions/{r.json()['id']}", json={**skip, "reason": "disk swap"})
+        assert r.status_code == 200, r.text
+        assert r.json() == _exception(factory, r.json()["id"])
+
+        no_rating = {
+            "scope_kind": "object",
+            "scope_value": "d1",
+            "object_kind": "disk",
+            "object_pattern": "sd?",
+            "effect": "no_rating",
+            "duration_kind": "permanent",
+        }
+        r = client.post("/exceptions", json=no_rating)
+        assert r.status_code == 201, r.text
+        assert r.json() == _exception(factory, r.json()["id"])
 
 
 class TestAdminShape:

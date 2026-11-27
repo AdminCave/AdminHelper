@@ -20,15 +20,17 @@ from sqlalchemy.orm import sessionmaker
 from app.checkers.agent import (
     MAX_AGENT_TEXT,
     MAX_REPORT_ENTRIES,
+    NO_RATING,
     NOT_COLLECTED,
     ServiceProcessChecker,
     cap_agent_text,
 )
 from app.core.auth import require_agent
 from app.core.database import get_db
+from app.exception_scope import mask
 from app.models import MonitorCheck, MonitorObjectState, MonitorState
 
-from ._helpers import assert_every_reader_reads
+from ._helpers import assert_every_reader_reads, no_rating
 
 
 def _full_report() -> dict:
@@ -1440,3 +1442,55 @@ def test_push_turns_a_recovered_unit_ok_while_the_check_holds_its_recovery(clien
         state = db.query(MonitorState).filter_by(check_id="chk-svc").one()
         # The object has no recovery hold (ADR 0004 P3), the check keeps its own.
         assert (state.status, state.message) == ("critical", "All services OK (recovery 1/2)")
+
+
+def test_auto_mode_an_ignore_entry_stays_a_glob_and_an_exception_names_its_id():
+    # "foo[1]" in ignore is the glob it always was: it hides foo1, not foo[1]. The masked
+    # name of an exception hides exactly the unit (R-1637, R-1521).
+    systemd = {
+        "failed": ["foo1.service", "foo[1].service", "cron.service", "snapd.service"],
+        "enabled_inactive": [],
+    }
+    config = {
+        "mode": "auto",
+        "ignore": ["foo[1]"],
+        NO_RATING: [(mask("foo[1].service"), "exc-1"), ("snap*", "exc-2")],
+    }
+    status, msg, metrics = ServiceProcessChecker().evaluate(config, {"systemd": systemd})
+    assert (status, msg) == ("critical", "Failed: cron.service")
+    by_setting, by_exception = "Excluded by setting ignore", "Excluded by exception"
+    assert metrics["_objects"]["items"] == [
+        _service("cron.service", "critical", "Failed"),
+        {**_service("foo1.service", NOT_COLLECTED, by_setting), "excluded": "ignore"},
+        {**_service("foo[1].service", NOT_COLLECTED, by_exception), "excluded": "exc-1"},
+        {**_service("snapd.service", NOT_COLLECTED, by_exception), "excluded": "exc-2"},
+    ]
+
+
+def test_push_hands_the_checker_the_no_rating_exceptions_in_force(client_db):
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-svc",
+                server_id="srv-1",
+                name="Services",
+                check_type="service_process",
+                # A key of that name in the stored config counts for nothing.
+                config=json.dumps({"mode": "auto", NO_RATING: [["cron*", "forged"]]}),
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.add(no_rating("chk-svc", "nginx*", kind="service", id="exc-1"))
+        db.add(no_rating("chk-svc", "cron*", kind="service", id="exc-2", ended=True))
+        db.commit()
+
+    report = {"systemd": {"failed": ["nginx.service", "cron.service"], "enabled_inactive": []}}
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    with factory() as db:
+        rows = db.query(MonitorObjectState).filter_by(check_id="chk-svc").all()
+        assert sorted((r.object_key, r.status, r.excluded) for r in rows) == [
+            ("srv-1/service/cron.service", "critical", None),
+            ("srv-1/service/nginx.service", NOT_COLLECTED, "exc-1"),
+        ]

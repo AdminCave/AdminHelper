@@ -19,6 +19,8 @@ from app.checkers import CheckContext, PartnerState
 from app.checkers.context import DiskRules
 from app.models import MonitorCheck, MonitorState
 
+from ._helpers import no_rating, standing_skip
+
 SEEN = datetime.datetime(2026, 11, 12, 6, 0, 0)
 
 
@@ -76,13 +78,17 @@ def _wire(monkeypatch, factory, checker):
 
 
 def _seed_pair(factory, *, partner=None, partner_state=True, own_details=None):
-    """c1 (central, paired with p1 on server s1) and the partner p1 as `partner` overrides."""
+    """c1 (central, paired with p1 on server s1) and the partner p1 as `partner` overrides;
+    `skip` puts a skip in force on p1."""
     spec = {"server_id": "s1", "check_type": "probe", "config": {"sensor": "certfile"}}
     spec.update(partner or {})
+    skip = spec.pop("skip", False)
     with factory() as db:
         _add_check(db, "c1", config={"sensor": "tls", "pair_check_id": "p1"})
         _add_state(db, "c1", details=own_details)
         _add_check(db, "p1", **spec)
+        if skip:
+            db.add(standing_skip("p1"))
         if partner_state:
             _add_state(db, "p1", status="critical", details=json.dumps({"values": {"days": 3}}))
         db.commit()
@@ -115,6 +121,28 @@ def test_previous_details_and_partner_arrive(monkeypatch, db_engine):
         assert json.loads(st.details) == {"diagnosis": "x"}
 
 
+def test_a_skipped_check_does_not_run(monkeypatch, db_engine):
+    # R-1637: a skip in force keeps the scheduler's job from running the check, the
+    # column stays on; its state stays as it was.
+    factory = _factory(db_engine)
+    with factory() as db:
+        _add_check(db, "c1")
+        _add_state(db, "c1", status="critical")
+        db.add(standing_skip("c1"))
+        db.commit()
+    checker = _ContextChecker()
+    _wire(monkeypatch, factory, checker)
+
+    ce.execute_check("c1")
+
+    assert checker.contexts == []
+    with factory() as db:
+        assert (db.get(MonitorState, "c1").status, db.get(MonitorState, "c1").last_check) == (
+            "critical",
+            SEEN,
+        )
+
+
 def test_a_partner_without_a_state_is_pending(monkeypatch, db_engine):
     factory = _factory(db_engine)
     _seed_pair(factory, partner_state=False)
@@ -134,8 +162,9 @@ def test_a_partner_without_a_state_is_pending(monkeypatch, db_engine):
         {"server_id": None},
         {"check_type": "tcp"},  # not an agent probe
         {"enabled": False},  # its state is stale
+        {"skip": True},  # does not run either (R-1637)
     ],
-    ids=["other-server", "no-server", "not-probe", "disabled"],
+    ids=["other-server", "no-server", "not-probe", "disabled", "skipped"],
 )
 def test_a_partner_that_does_not_qualify_is_none(monkeypatch, partner, db_engine):
     factory = _factory(db_engine)
@@ -415,7 +444,7 @@ def test_a_skip_before_the_first_result_leaves_no_state(monkeypatch, db_engine):
         assert db.get(MonitorState, "c1") is None
 
 
-def _seed_forecast(factory, *, resources=True, enabled=True, server="s1"):
+def _seed_forecast(factory, *, resources=True, enabled=True, server="s1", skip=False):
     with factory() as db:
         _add_check(db, "f1", check_type="disk_forecast", config={"server_id": "s1"})
         if resources:
@@ -443,6 +472,8 @@ def _seed_forecast(factory, *, resources=True, enabled=True, server="s1"):
                     }
                 ),
             )
+            if skip:
+                db.add(standing_skip("r1"))
         db.commit()
 
 
@@ -462,7 +493,9 @@ def test_disk_forecast_gets_the_disk_rules_of_its_host(monkeypatch, db_engine):
     )
 
 
-@pytest.mark.parametrize("seed", [{"resources": False}, {"enabled": False}, {"server": "s2"}])
+@pytest.mark.parametrize(
+    "seed", [{"resources": False}, {"enabled": False}, {"skip": True}, {"server": "s2"}]
+)
 def test_disk_forecast_without_an_enabled_resources_check_of_its_host_has_no_rules(
     monkeypatch, seed, db_engine
 ):
@@ -474,3 +507,25 @@ def test_disk_forecast_without_an_enabled_resources_check_of_its_host_has_no_rul
     ce.execute_check("f1")
 
     assert checker.contexts[0].disk_rules is None
+
+
+def test_disk_forecast_rules_take_the_exceptions_of_the_resources_check(monkeypatch, db_engine):
+    # Its ignore_mounts masked, its no_rating exceptions in force as they are (R-1637).
+    factory = _factory(db_engine)
+    _seed_forecast(factory)
+    with factory() as db:
+        resources = db.get(MonitorCheck, "r1")
+        config = {**json.loads(resources.config), "ignore_mounts": ["/boot/efi", "/mnt/[x]"]}
+        resources.config = json.dumps(config)
+        db.add(no_rating("r1", "/srv/*", kind="mount", id="exc-1"))
+        db.add(no_rating("r1", "/old", kind="mount", id="exc-2", ended=True))
+        db.commit()
+    checker = _ContextChecker()
+    _wire(monkeypatch, factory, checker)
+
+    ce.execute_check("f1")
+
+    rules = checker.contexts[0].disk_rules
+    assert rules.ignore_mounts == frozenset({"/boot/efi", "/mnt/[[]x]", "/srv/*"})
+    mounts = ("/boot/efi", "/mnt/[x]", "/mnt/x", "/srv/a", "/old", "/")
+    assert [m for m in mounts if rules.ignores(m)] == ["/boot/efi", "/mnt/[x]", "/srv/a"]

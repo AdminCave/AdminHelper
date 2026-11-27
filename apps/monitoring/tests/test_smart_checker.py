@@ -10,14 +10,17 @@ temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
-from app.check_engine import NOT_COLLECTED
+from app.check_engine import NOT_COLLECTED, apply_result
 from app.checkers import smart
-from app.checkers.agent import MAX_REPORT_ENTRIES
+from app.checkers.agent import MAX_REPORT_ENTRIES, NO_RATING
 from app.checkers.smart import SmartHealthChecker
+from app.exception_scope import mask
+from app.models import MonitorCheck, MonitorObjectState, MonitorState
 from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
@@ -204,10 +207,49 @@ def test_an_ignored_disk_asleep_is_no_object():
     report = _report(asleep, _disk(device="/dev/sdb"))
     _, _, metrics = CHECKER.evaluate({"ignore_devices": ["/dev/sda"]}, report)
     complete, items = _objects(metrics)
-    assert (complete, [item["id"] for item in items]) == (True, ["/dev/sdb"])
+    # Incomplete (R-1793): the excluded object it named awake must not turn gone.
+    assert (complete, [item["id"] for item in items]) == (False, ["/dev/sdb"])
     # Paired: not ignored, the sleeping disk is an object under its path.
     _, _, metrics = CHECKER.evaluate({}, report)
     assert [item["id"] for item in _objects(metrics)[1]] == ["/dev/sda", "/dev/sdb"]
+
+
+def test_an_ignored_disk_falling_asleep_keeps_its_object(db_engine):
+    """R-1793: awake the excluded disk is an object; asleep it sends no key to name it by, and
+    the next result must not mark the object gone, or it flickers with every standby."""
+    factory = sessionmaker(bind=db_engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                server_id="srv-1",
+                name="disks",
+                check_type="smart_health",
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+                consecutive_oks=1,
+            )
+        )
+        db.commit()
+    cfg = {"ignore_devices": ["/dev/sda"]}
+    sdb = _disk(device="/dev/sdb", model="Y")
+    awake = _disk(wwn="0x5000c500a1b2c3d4")
+    asleep = {"device": "/dev/sda", "standby": True}
+    start = datetime(2026, 11, 19, 4, 0, 0)
+    for minute, sda in enumerate((awake, asleep)):
+        status, message, metrics = CHECKER.evaluate(cfg, _report(sda, sdb))
+        with factory() as db:
+            check = db.get(MonitorCheck, "c1")
+            state = db.query(MonitorState).filter_by(check_id="c1").first()
+            at = start + timedelta(minutes=minute)
+            apply_result(
+                db, check, state, status, message, metrics, at, objects=metrics["_objects"]
+            )
+            db.commit()
+    with factory() as db:
+        gone = {row.name: row.gone_at for row in db.query(MonitorObjectState).all()}
+    assert gone == {"/dev/sda (X)": None, "/dev/sdb (Y)": None}
 
 
 def test_disk_list_is_capped():
@@ -711,3 +753,65 @@ def test_a_disk_entry_that_is_no_object_makes_the_result_incomplete():
     # The checker skips it, and the disk it stood for must not be marked gone.
     complete, items = _objects(CHECKER.evaluate({}, _report(_disk(), "sdb"))[2])
     assert (complete, len(items)) == (False, 1)
+
+
+# A device name of the agent (docs/developer/agent.html, smartDiskID) whose bracket fnmatch
+# reads as a class, and the name that class would match (R-1637).
+_MEGARAID = "/dev/bus/0 [megaraid_disk_00]"
+_CLASS_MATCH = "/dev/bus/0 m"
+
+
+def _marks(metrics: dict) -> list[tuple[str, str, str | None]]:
+    return [(i["id"], i["status"], i.get("excluded")) for i in _objects(metrics)[1]]
+
+
+def test_ignore_devices_excludes_a_device_name_with_brackets_itself_and_nothing_else():
+    report = _report(
+        _disk(device=_MEGARAID, smart_passed=False), _disk(device=_CLASS_MATCH, smart_passed=False)
+    )
+    status, _, metrics = CHECKER.evaluate({"ignore_devices": [_MEGARAID]}, report)
+    assert status == "critical"
+    assert _marks(metrics) == [
+        (_MEGARAID, NOT_COLLECTED, "ignore_devices"),
+        (_CLASS_MATCH, "critical", None),
+    ]
+    # No series for the excluded device, as before.
+    assert f"smart_reallocated_{smart.safe_metric_part(_MEGARAID)}" not in metrics
+    assert f"smart_reallocated_{smart.safe_metric_part(_CLASS_MATCH)}" in metrics
+
+
+def test_a_no_rating_exception_excludes_the_disks_its_pattern_matches_under_its_id():
+    devices = (_MEGARAID, _CLASS_MATCH, "/dev/sdb", "/dev/sdc")
+    report = _report(*(_disk(device=d, smart_passed=False) for d in devices))
+    config = {NO_RATING: [(mask(_MEGARAID), "exc-1"), ("/dev/sd*", "exc-2")]}
+    status, _, metrics = CHECKER.evaluate(config, report)
+    assert status == "critical"
+    assert _marks(metrics) == [
+        (_MEGARAID, NOT_COLLECTED, "exc-1"),
+        (_CLASS_MATCH, "critical", None),
+        ("/dev/sdb", NOT_COLLECTED, "exc-2"),
+        ("/dev/sdc", NOT_COLLECTED, "exc-2"),
+    ]
+    reasons = {i["reason"] for i in _objects(metrics)[1] if i.get("excluded")}
+    assert reasons == {"Excluded by exception"}
+    assert [m for m in metrics if m.startswith("smart_reallocated_")] == [
+        f"smart_reallocated_{smart.safe_metric_part(_CLASS_MATCH)}"
+    ]
+
+
+def test_a_disk_the_setting_and_an_exception_both_exclude_names_the_setting():
+    report = _report(_disk(device="/dev/sdb"), _disk(device="/dev/sdc"))
+    config = {"ignore_devices": ["/dev/sdb"], NO_RATING: [("/dev/sd*", "exc-1")]}
+    _, _, metrics = CHECKER.evaluate(config, report)
+    assert _marks(metrics) == [
+        ("/dev/sdb", NOT_COLLECTED, "ignore_devices"),
+        ("/dev/sdc", NOT_COLLECTED, "exc-1"),
+    ]
+
+
+def test_a_disk_an_exception_excludes_asleep_is_no_object_and_the_result_incomplete():
+    # As with the setting (R-1793): the object it named awake must not turn gone.
+    report = _report(_asleep("/dev/sda"), _disk(device="/dev/nvme0"))
+    _, _, metrics = CHECKER.evaluate({NO_RATING: [("/dev/sd*", "exc-1")]}, report)
+    complete, items = _objects(metrics)
+    assert (complete, [item["id"] for item in items]) == (False, ["/dev/nvme0"])

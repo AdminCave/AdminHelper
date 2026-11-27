@@ -9,6 +9,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool, text
+from sqlalchemy.engine import Connection
 
 # All tables are defined in app/models.py — a single import is enough.
 import app.models  # noqa: F401
@@ -55,6 +56,25 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # A caller that hands in its connection (config.attributes["connection"], the Alembic
+    # cookbook's "Sharing a Connection") owns the transaction: the dry run of
+    # app.exception_migration migrates inside its own and rolls it back. Neither the
+    # advisory lock below nor a commit, both of which would end that transaction;
+    # begin_transaction() adds none inside one the connection already has. Only a
+    # Connection: pytest-alembic puts an Engine under the same key, and that goes the
+    # usual way below.
+    shared = config.attributes.get("connection")
+    if isinstance(shared, Connection):
+        context.configure(
+            connection=shared,
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

@@ -40,7 +40,7 @@ from app.models import (
     MonitorTemplateAssignment,
 )
 
-from ._helpers import maintenance_window, no_env_proxy
+from ._helpers import maintenance_window, no_env_proxy, standing_skip
 
 _NOW = datetime(2026, 10, 20, 12, 0)
 _SHOWN = _NOW - timedelta(hours=1)
@@ -1093,11 +1093,15 @@ class TestFlush:
         assert bell(channels) == ["srv-01", "srv-02"]
         assert notified(db)["chk-03"] == "ok"
 
-    def test_only_enabled_heartbeats_count(self, db, channels, run_job):
+    @pytest.mark.parametrize("off", ["switched off", "skipped"])
+    def test_only_enabled_heartbeats_count(self, db, channels, run_job, off):
         add_rule(db)
         for i in (1, 2, 3):
             open_heartbeat(db, i, at(0))
-        db.query(MonitorCheck).filter_by(id="chk-03").update({"enabled": False})
+        if off == "skipped":
+            db.add(standing_skip("chk-03"))
+        else:
+            db.query(MonitorCheck).filter_by(id="chk-03").update({"enabled": False})
         # An open alarm of another check type is not the job's. On a server
         # without a heartbeat nothing mutes it: only its type keeps it out of a
         # bundle with chk-01 and chk-02.
@@ -1398,18 +1402,21 @@ class TestAfterMuting:
 
     @pytest.mark.parametrize(
         "ping",
-        [{"template_def_id": None}, {"enabled": False}],
-        ids=["ping set up by hand", "host ping disabled"],
+        [{"template_def_id": None}, {"enabled": False}, None],
+        ids=["ping set up by hand", "host ping disabled", "host ping skipped"],
     )
     def test_only_an_enabled_host_ping_holds_it_back(self, db, channels, run_job, evaluate, ping):
         # As in muted_reason: a ping set up by hand, on a gateway for instance, and
-        # a Host Ping switched off mute nothing, so a change of theirs after the
-        # heartbeat's last check holds nothing back.
+        # a Host Ping switched off or skipped mute nothing, so a change of theirs
+        # after the heartbeat's last check holds nothing back.
         add_rule(db)
         open_heartbeat(db, 1, at(-5))
         evaluate("chk-01", at(-5), ("critical", _DOWN, None))
         host_ping(db, 1, "ok", at(-1))
-        db.query(MonitorCheck).filter_by(id="ping-01").update(ping)
+        if ping is None:
+            db.add(standing_skip("ping-01"))
+        else:
+            db.query(MonitorCheck).filter_by(id="ping-01").update(ping)
         db.commit()
 
         run_job(at(0))

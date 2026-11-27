@@ -1247,7 +1247,7 @@
         "type": "object"
       },
       "ExceptionInput": {
-        "description": "Create/full-update payload of an exception: where it applies (scope_kind with\nscope_value: the check id, the check type or the server id; none for all), what it\ndoes, for how long. The time fields follow MaintenanceInput, except that a once\nwithout starts_at starts now; permanent takes none.",
+        "description": "Create/full-update payload of an exception: where it applies (scope_kind with\nscope_value: the check id, the check type or the server id; none for all; the check\nid for object, whose objects of object_kind matching object_pattern it names, fnmatch\nand case-sensitive), what it does, for how long. The time fields follow\nMaintenanceInput, except that a once without starts_at starts now; permanent takes\nnone.",
         "properties": {
           "duration_kind": {
             "title": "Duration Kind",
@@ -1286,6 +1286,30 @@
               }
             ],
             "title": "Ends At"
+          },
+          "object_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Kind"
+          },
+          "object_pattern": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Pattern"
           },
           "reason": {
             "anyOf": [
@@ -1468,6 +1492,28 @@
             "title": "Id",
             "type": "string"
           },
+          "objectKind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectkind"
+          },
+          "objectPattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectpattern"
+          },
           "origin": {
             "title": "Origin",
             "type": "string"
@@ -1535,6 +1581,10 @@
             "title": "Timezone",
             "type": "string"
           },
+          "unstable": {
+            "title": "Unstable",
+            "type": "boolean"
+          },
           "updatedAt": {
             "anyOf": [
               {
@@ -1581,6 +1631,9 @@
           "scopeKind",
           "scopeValue",
           "serverId",
+          "objectKind",
+          "objectPattern",
+          "unstable",
           "effect",
           "durationKind",
           "startsAt",
@@ -2811,7 +2864,7 @@
         "type": "object"
       },
       "ObjectExceptionOut": {
-        "description": "What keeps an object out (R-1636): a setting of its check (source setting, effect\nskip, the setting's name) or the narrowest exception in force over its check (source\nexception, its id, scope kind, effect and reason). The fields of the other source are\nnull.",
+        "description": "What keeps an object out: a skip in force on its check, which then does not run\n(R-1637); else what its check excluded it by at its last run, a setting (source\nsetting, effect skip, the setting's name, R-1636) or a no_rating exception (scope kind\nobject, R-1637); else the narrowest exception in force over its check (source\nexception, its id, scope kind, effect and reason). The fields of the other source are\nnull. unstable only for an object exception: its pattern names disks or containers by\na name another one can take (ADR 0004 §4).",
         "properties": {
           "effect": {
             "title": "Effect",
@@ -2864,6 +2917,17 @@
           "source": {
             "title": "Source",
             "type": "string"
+          },
+          "unstable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unstable"
           }
         },
         "required": [
@@ -2872,7 +2936,8 @@
           "setting",
           "id",
           "scopeKind",
-          "reason"
+          "reason",
+          "unstable"
         ],
         "title": "ObjectExceptionOut",
         "type": "object"
@@ -5554,7 +5619,7 @@
         "summary": "End Exception"
       },
       "put": {
-        "description": "Full update of an exception (same payload as create); an ended one is 409.",
+        "description": "Full update of an exception (same payload as create); an ended one is 409. Its\neffect stays, and a skip or no_rating keeps its check (422).",
         "operationId": "update_exception_exceptions__exception_id__put",
         "parameters": [
           {
@@ -6000,7 +6065,7 @@
     },
     "/objects": {
       "get": {
-        "description": "The objects of the checks, worst first, then by name, the ones a setting excludes\nlast; gone ones only on request. Each names the setting or exception that keeps it out.",
+        "description": "The objects of the checks, worst first, then by name, the ones a setting or an\nexception excludes last; gone ones only on request. The objects of a check a skip keeps\nfrom running show not collected and come last. Each names the setting or exception\nthat keeps it out.",
         "operationId": "list_objects_objects_get",
         "parameters": [
           {

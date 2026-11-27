@@ -10,6 +10,8 @@ from datetime import timedelta
 from app.core.time import utcnow_naive
 from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
 
+from ._helpers import standing_skip
+
 MIN = 60
 
 
@@ -115,6 +117,9 @@ def test_pushed_and_disabled_checks_say_nothing_about_the_scheduler(client_db):
         # The agent's report updates a probe; the scheduler never runs one.
         _check(db, "pushed", check_type="probe", interval="1h", ran_ago=timedelta(hours=3))
         _check(db, "off", interval="1h", enabled=False, ran_ago=timedelta(hours=3))
+        # Nor one a skip keeps out, its column on (R-1637).
+        _check(db, "skipped", interval="1h", ran_ago=timedelta(hours=3))
+        db.add(standing_skip("skipped"))
         _check(db, "pulled", ran_ago=timedelta(minutes=1))
 
     assert _detail(client_db, seed)["scheduler_lag_s"] == 0

@@ -24,7 +24,10 @@ from app.checkers.agent import (
     capped_objects,
     entry_number,
     entry_text,
+    exact_patterns,
+    excluded_by,
     excluded_object,
+    exclusions,
     join_capped,
     whole_list,
 )
@@ -152,12 +155,12 @@ def _check_common(
     return category, crit, warn
 
 
-def _disk_metrics(smart: list[dict], ignore: set) -> dict:
+def _disk_metrics(smart: list[dict], ignore: list[tuple[str, str]]) -> dict:
     metrics = {}
     for disk in smart:
         device = entry_text(disk, "device", "?")
         # A sleeping disk sent no values: no series rather than zeros.
-        if device in ignore or disk.get("standby") is True:
+        if excluded_by(device, ignore) is not None or disk.get("standby") is True:
             continue
         safe_dev = safe_metric_part(device)
         temp_c = entry_number(disk, "temp_c", 0)
@@ -286,7 +289,9 @@ class SmartHealthChecker:
         if not smart:
             return _absent_result(report)
 
-        ignore = set(config.get("ignore_devices", []))
+        # Patterns with their source (R-1637): the device paths of the list, masked, and the
+        # no_rating exceptions of the check.
+        ignore = exclusions(config, "ignore_devices", exact_patterns(config.get("ignore_devices")))
         thresholds, temp_thresholds = _smart_thresholds(config)
         prev_disks = _prev_disks(prev_details)
         read_at = iso_utc(_now())
@@ -304,12 +309,16 @@ class SmartHealthChecker:
 
         for disk in smart:
             device = entry_text(disk, "device", "?")
-            if device in ignore:
+            source = excluded_by(device, ignore)
+            if source is not None:
                 # Asleep the agent sends the device path alone (smart.go), no key of the disk:
-                # then it is no object, rather than a second one under the path.
-                if disk.get("standby") is not True:
+                # then it is no object, rather than a second one under the path, and the
+                # result is incomplete, so the object it named awake does not turn gone.
+                if disk.get("standby") is True:
+                    complete = False
+                else:
                     unrated = _disk_object(disk, device, NOT_COLLECTED, [])
-                    objects.append(excluded_object(unrated, "ignore_devices"))
+                    objects.append(excluded_object(unrated, source))
                 continue
             if disk.get("standby") is True:
                 asleep += 1

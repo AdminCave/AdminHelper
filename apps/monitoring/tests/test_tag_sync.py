@@ -14,8 +14,10 @@ import uuid
 from datetime import datetime
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import sessionmaker
 
+from app.core.actor import Actor
 from app.models import (
     MonitorAgentLiveness,
     MonitorCheck,
@@ -253,7 +255,7 @@ def test_rename_keeps_a_name_the_user_changed(db):
     tid = _template(db, defs=[PING_DEF])
     _apply(db, tid, "srv-1", "h-srv-1", "n-srv-1")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(name="My ping"), db)
+    checks_router.update_check(cid, CheckUpdate(name="My ping"), BackgroundTasks(), db, Actor())
 
     assert sync_tag_assignments(db, [_renamed("srv-1", [])])["refreshed"] == 1
 

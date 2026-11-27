@@ -30,6 +30,7 @@ from app.catalog.model import Alternative, Check, Module, Rule, rule_problems
 from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
 from app.core.time import iso_utc, utcnow_naive
 from app.discovery import MAX_CONTAINER_PORTS, image_matches, image_repo, image_tag
+from app.exception_scope import check_runs, load_skips
 from app.models import (
     MonitorCheck,
     MonitorDiscovery,
@@ -605,10 +606,11 @@ def _adopt(
     checks = instance_checks(db, finding, lock=True)
     if finding.kind == "gone":
         for row in checks:
-            if row.enabled:
-                row.enabled = False
+            # A skip of the admin already keeps a check out: not one this switches off.
+            if check_runs(db, row):
                 result.disabled.append(row.id)
                 actions.append(("remove", row.id, None, None))
+            row.enabled = False
     else:
         module = catalog.modules.get(finding.module_id)
         if module is None:
@@ -633,7 +635,7 @@ def _adopt(
                     # The image moved to a tag the check does not fit (Wiki.js 2 -> 3). Deleted
                     # without a tombstone, not switched off: a switched-off row looks like the
                     # admin's own choice, and only a missing one is created again on the way back.
-                    if row.enabled:
+                    if check_runs(db, row):
                         result.disabled.append(row.id)
                         actions.append(("remove", row.id, None, None))
                     db.delete(row)
@@ -662,7 +664,8 @@ def _adopt(
             if finding.kind == "new" and "enabled" not in read_overrides(row):
                 row.enabled = True
             row.silent = False
-            if row.enabled:
+            # The column is the system's switch; a skip of the admin keeps the check out.
+            if check_runs(db, row):
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
         have = {row.module_check_key for row in kept} | tombstoned_keys(db, finding)
@@ -860,6 +863,11 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         )
         .all()
     )
+    skips = load_skips(db)
+
+    def running(row: MonitorCheck) -> bool:
+        return row.enabled is True and row.id not in skips
+
     for finding in findings:
         module = catalog.modules.get(finding.module_id)
         if module is None:
@@ -867,8 +875,8 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         checks = instance_checks(db, finding)
         have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
         keys = {check.key for check in module.checks}
-        dropped = any(row.enabled and row.module_check_key not in keys for row in checks)
-        changed = any(row.enabled for row in updatable_checks(checks, module))
+        dropped = any(running(row) and row.module_check_key not in keys for row in checks)
+        changed = any(running(row) for row in updatable_checks(checks, module))
         summary = _summary(finding)
         containers, sockets = _scan(db, finding.server_id)
         created = False

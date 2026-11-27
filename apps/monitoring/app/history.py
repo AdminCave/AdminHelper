@@ -19,7 +19,7 @@ from sqlalchemy import and_, not_
 from sqlalchemy.orm import Session
 
 from app.core.victoria import escape_label_value
-from app.exception_scope import is_maintenance_shaped, load_no_notify
+from app.exception_scope import is_maintenance_shaped, load_no_notify, runs
 from app.maintenance import maintenance_intervals
 from app.models import MonitorCheck, MonitorStatusChange
 
@@ -190,14 +190,14 @@ def _number(value: object) -> float | None:
 
 
 def server_thresholds(db: Session, server_id: str) -> dict:
-    """warn/crit per metric from the server's agent_resources check, else the
-    checker's defaults."""
+    """warn/crit per metric from the server's running agent_resources check, else
+    the checker's defaults."""
     check = (
         db.query(MonitorCheck)
         .filter(
             MonitorCheck.server_id == server_id,
             MonitorCheck.check_type == "agent_resources",
-            MonitorCheck.enabled.is_(True),
+            runs,
         )
         .order_by(MonitorCheck.id)
         .first()

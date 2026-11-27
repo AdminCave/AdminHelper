@@ -11,9 +11,11 @@ import json
 
 import pytest
 
-from app.models import MonitorCheck
+from app.models import MonitorCheck, MonitorException, MonitorState
 from app.rule_layer import effective, read_layer, store_layer
 from app.template_sync import read_overrides
+
+from ._helpers import no_rating, standing_skip
 
 
 def _payload(**over):
@@ -181,6 +183,41 @@ def test_run_now_rejects_disabled_check(client_db):
     assert "disabled" in r.json()["detail"]
 
 
+def _skip(factory, cid):
+    with factory() as db:
+        db.add(standing_skip(cid))
+        db.commit()
+
+
+def test_run_now_rejects_a_skipped_check(client_db, monkeypatch):
+    # R-1637: a skip in force stops the check as the column did; its column stays on.
+    client, factory = client_db
+    cid = _make_check(client)
+    _skip(factory, cid)
+    import app.check_engine as engine_mod
+
+    called = []
+    monkeypatch.setattr(engine_mod, "execute_check", lambda c: called.append(c))
+    r = client.post(f"/checks/{cid}/run")
+    assert r.status_code == 409
+    assert "disabled" in r.json()["detail"]
+    assert called == []
+
+
+def test_an_update_of_a_skipped_check_keeps_it_out_of_the_scheduler(client_db, monkeypatch):
+    from app.routers import checks as checks_router
+
+    client, factory = client_db
+    cid = _make_check(client)
+    _skip(factory, cid)
+    calls = []
+    monkeypatch.setattr(checks_router, "add_check", lambda c, *_: calls.append(("add", c)))
+    monkeypatch.setattr(checks_router, "remove_check", lambda c: calls.append(("remove", c)))
+    r = client.put(f"/checks/{cid}", json={"interval": "15m"})
+    assert r.status_code == 200, r.text
+    assert calls == [("remove", cid)]
+
+
 def test_run_now_executes_enabled_pull_check(client_db, monkeypatch):
     client, _ = client_db
     cid = _make_check(client)
@@ -191,6 +228,123 @@ def test_run_now_executes_enabled_pull_check(client_db, monkeypatch):
     r = client.post(f"/checks/{cid}/run")
     assert r.status_code == 200
     assert called == [cid]
+
+
+# --- the admin's switch is a skip (R-1637) ----------------------------------------------
+# The column enabled is the system's switch (module and template sync); toggle, PUT and
+# POST switch through a skip with the actor, and enabled in the answer says whether the
+# check runs.
+
+_ALICE = {"X-AH-Actor-Id": "u-1", "X-AH-Actor-Name": "alice"}
+_BOB = {"X-AH-Actor-Id": "u-2", "X-AH-Actor-Name": "bob"}
+
+
+def _skips(factory, cid):
+    """(created by, ended by) of each skip on the check; the cases make at most one."""
+    with factory() as db:
+        return [
+            (row.created_by_id, row.created_by, row.ended_by_id, row.ended_by)
+            for row in db.query(MonitorException).filter_by(check_id=cid, effect="skip")
+        ]
+
+
+def _scheduler_calls(monkeypatch):
+    from app.routers import checks as checks_router
+
+    calls = []
+    monkeypatch.setattr(checks_router, "add_check", lambda c, *_: calls.append(("add", c)))
+    monkeypatch.setattr(checks_router, "remove_check", lambda c: calls.append(("remove", c)))
+    return calls
+
+
+def test_toggle_switches_off_with_a_skip_and_on_by_ending_it(client_db, monkeypatch):
+    client, factory = client_db
+    cid = _make_check(client)
+    with factory() as db:
+        db.query(MonitorState).filter_by(check_id=cid).update(
+            {"status": "critical", "fail_count": 4, "ok_count": 1}
+        )
+        db.commit()
+    calls = _scheduler_calls(monkeypatch)
+
+    r = client.post(f"/checks/{cid}/toggle", headers=_ALICE)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["enabled"] is False
+    assert _skips(factory, cid) == [("u-1", "alice", None, None)]
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
+    assert client.get(f"/checks/{cid}").json() == r.json()
+    assert [c["enabled"] for c in client.get("/checks").json() if c["id"] == cid] == [False]
+    assert calls == [("remove", cid)]
+
+    r = client.post(f"/checks/{cid}/toggle", headers=_BOB)
+
+    assert r.json()["enabled"] is True
+    assert _skips(factory, cid) == [("u-1", "alice", "u-2", "bob")]
+    # Back on, it starts fresh (R-1571): the old status is not reported again.
+    with factory() as db:
+        state = db.get(MonitorState, cid)
+        assert (state.status, state.fail_count, state.ok_count) == ("unknown", 0, 0)
+    assert calls == [("remove", cid), ("add", cid)]
+
+
+def test_put_enabled_switches_as_the_toggle_and_answers_as_get(client_db):
+    client, factory = client_db
+    cid = _make_check(client)
+
+    r = client.put(f"/checks/{cid}", json={"enabled": False}, headers=_ALICE)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["enabled"] is False
+    assert r.json() == client.get(f"/checks/{cid}").json()
+    # The editor sends every field back: off again is no second skip.
+    r = client.put(f"/checks/{cid}", json={"enabled": False, "interval": "15m"}, headers=_BOB)
+    assert (r.json()["enabled"], r.json()["interval"]) == (False, "15m")
+    assert _skips(factory, cid) == [("u-1", "alice", None, None)]
+
+    r = client.put(f"/checks/{cid}", json={"enabled": True}, headers=_BOB)
+
+    assert r.json()["enabled"] is True
+    assert r.json() == client.get(f"/checks/{cid}").json()
+    assert _skips(factory, cid) == [("u-1", "alice", "u-2", "bob")]
+    # An explicit null leaves the switch as it is, like a key left out.
+    assert client.put(f"/checks/{cid}", json={"enabled": None}).json()["enabled"] is True
+    assert len(_skips(factory, cid)) == 1
+
+
+def test_a_check_the_system_switched_off_is_switched_on_by_its_column(client_db):
+    # A module instance gone or a template's enabled: false turned the column off; no
+    # skip stands, so on turns the column on, as before R-1637, and off adds nothing.
+    client, factory = client_db
+    cid = _make_check(client)
+    with factory() as db:
+        db.query(MonitorCheck).filter_by(id=cid).update({"enabled": False})
+        db.commit()
+
+    assert client.put(f"/checks/{cid}", json={"enabled": False}).json()["enabled"] is False
+    assert _skips(factory, cid) == []
+
+    assert client.post(f"/checks/{cid}/toggle").json()["enabled"] is True
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
+    assert _skips(factory, cid) == []
+
+
+def test_a_check_created_off_is_skipped_from_the_start(client_db, monkeypatch):
+    client, factory = client_db
+    calls = _scheduler_calls(monkeypatch)
+
+    r = client.post("/checks", json=_payload(enabled=False), headers=_ALICE)
+
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    assert r.json()["enabled"] is False
+    assert client.get(f"/checks/{cid}").json()["enabled"] is False
+    assert _skips(factory, cid) == [("u-1", "alice", None, None)]
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
+    assert calls == [("remove", cid)]
 
 
 # --- consecutive_oks (alert-quality T3) -------------------------------------
@@ -654,3 +808,181 @@ def test_a_central_check_of_no_module_may_change_its_host(client_db):
     r = client.put(f"/checks/{cid}", json={"config": {**_CENTRAL, "host": "other.example.org"}})
 
     assert r.status_code == 200, r.text
+
+
+# --- the lists are exceptions, the API field stays (R-1637) -----------------------------
+# GET composes the list of the check type from the config and the no_rating exceptions in
+# force; PUT and POST with the list make and end exceptions with the actor.
+
+
+def _list_rows(factory, cid):
+    """(kind, pattern, origin, created by, ended by) of each no_rating exception on the
+    check, by pattern."""
+    with factory() as db:
+        return sorted(
+            (row.object_kind, row.object_pattern, row.origin, row.created_by, row.ended_by)
+            for row in db.query(MonitorException).filter_by(check_id=cid, effect="no_rating")
+        )
+
+
+def _stored_config(factory, cid):
+    with factory() as db:
+        return json.loads(db.get(MonitorCheck, cid).config)
+
+
+def _post_check(client, check_type, config, headers=None):
+    r = client.post("/checks", json=_payload(check_type=check_type, config=config), headers=headers)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_a_list_sent_becomes_exceptions_and_reads_back_sorted(client_db, monkeypatch):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    config = {"cpu_warn": 85, "ignore_mounts": ["/srv/b", "/mnt/[x]", "/boot"]}
+
+    out = _post_check(client, "agent_resources", config, _ALICE)
+
+    shown = {**config, "ignore_mounts": ["/boot", "/mnt/[x]", "/srv/b"]}
+    assert out["config"] == shown
+    cid = out["id"]
+    assert _stored_config(factory, cid) == {"cpu_warn": 85, "ignore_mounts": []}
+    # The path with a bracket is masked: the exception matches it and not /mnt/x.
+    assert _list_rows(factory, cid) == [
+        ("mount", "/boot", "api", "alice", None),
+        ("mount", "/mnt/[[]x]", "api", "alice", None),
+        ("mount", "/srv/b", "api", "alice", None),
+    ]
+    assert client.get(f"/checks/{cid}").json()["config"] == shown
+    assert [c["config"] for c in client.get("/checks").json() if c["id"] == cid] == [shown]
+
+
+def test_an_entry_left_out_ends_its_exception_and_a_list_sent_back_changes_nothing(
+    client_db, monkeypatch
+):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    out = _post_check(client, "agent_resources", {"ignore_mounts": ["/a", "/b"]}, _ALICE)
+    cid = out["id"]
+
+    r = client.put(
+        f"/checks/{cid}", json={"config": out["config"], "interval": "15m"}, headers=_BOB
+    )
+
+    assert r.status_code == 200, r.text
+    assert _list_rows(factory, cid) == [
+        ("mount", "/a", "api", "alice", None),
+        ("mount", "/b", "api", "alice", None),
+    ]
+
+    r = client.put(f"/checks/{cid}", json={"config": {"ignore_mounts": ["/b", "/c"]}}, headers=_BOB)
+
+    assert r.json()["config"] == {"ignore_mounts": ["/b", "/c"]}
+    assert _list_rows(factory, cid) == [
+        ("mount", "/a", "api", "alice", "bob"),
+        ("mount", "/b", "api", "alice", None),
+        ("mount", "/c", "api", "bob", None),
+    ]
+
+    # A config without the list leaves the exceptions as they are.
+    r = client.put(f"/checks/{cid}", json={"config": {"cpu_warn": 85}}, headers=_BOB)
+
+    assert r.json()["config"] == {"cpu_warn": 85, "ignore_mounts": ["/b", "/c"]}
+    assert [row[4] for row in _list_rows(factory, cid)] == ["bob", None, None]
+
+
+def test_a_check_moved_to_another_server_keeps_its_exceptions_when_the_old_one_goes(
+    client_db, monkeypatch
+):
+    # The exceptions of a check carry its server for listing and cleanup: left on the
+    # old server, its cleanup took them, and the moved check ran again without its list.
+    _scheduler_calls(monkeypatch)
+    client, _ = client_db
+    body = _payload(
+        check_type="agent_resources",
+        server_id="srv-a",
+        enabled=False,
+        config={"ignore_mounts": ["/a"]},
+    )
+    r = client.post("/checks", json=body)
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    # Ends the exception of /a: an ended one moves along too, its trail stays the check's.
+    r = client.put(f"/checks/{cid}", json={"config": {"ignore_mounts": ["/b"]}})
+    assert r.status_code == 200, r.text
+
+    r = client.put(f"/checks/{cid}", json={"server_id": "srv-b"})
+    assert r.status_code == 200, r.text
+    assert client.delete("/servers/srv-a/cleanup").status_code == 200
+
+    out = client.get(f"/checks/{cid}").json()
+    assert (out["enabled"], out["config"]["ignore_mounts"]) == (False, ["/b"])
+    listed = client.get("/exceptions", params={"server_id": "srv-b", "include_ended": True})
+    assert sorted(
+        (e["effect"], e["objectPattern"], e["endedAt"] is None) for e in listed.json()
+    ) == [
+        ("no_rating", "/a", False),
+        ("no_rating", "/b", True),
+        ("skip", None, True),
+    ]
+
+
+def test_a_service_list_reads_back_as_an_older_desktop_sends_it(client_db, monkeypatch):
+    # The desktop before R-1637 sends ignore as it read it plus one name. A CSV entry
+    # reads as its names, and a service entry stays the glob it was.
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    out = _post_check(client, "service_process", {"mode": "auto", "ignore": "nginx.service, cron*"})
+    assert out["config"] == {"mode": "auto", "ignore": ["cron*", "nginx.service"]}
+    cid = out["id"]
+
+    sent = {"mode": "auto", "ignore": [*out["config"]["ignore"], "foo[1].service"]}
+    r = client.put(f"/checks/{cid}", json={"config": sent})
+
+    names = ["cron*", "foo[1].service", "nginx.service"]
+    assert r.json()["config"] == {"mode": "auto", "ignore": names}
+    assert [(row[0], row[1]) for row in _list_rows(factory, cid)] == [
+        ("service", name) for name in names
+    ]
+    assert _stored_config(factory, cid) == {"mode": "auto", "ignore": []}
+
+
+def test_vmids_read_back_as_numbers_and_one_given_as_a_string_stays_in_the_config(
+    client_db, monkeypatch
+):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+
+    out = _post_check(client, "proxmox_backup", {"exclude_vmids": ["300", 101, 100]})
+
+    assert out["config"]["exclude_vmids"] == [100, 101, "300"]
+    assert _stored_config(factory, out["id"])["exclude_vmids"] == ["300"]
+    assert [(row[0], row[1]) for row in _list_rows(factory, out["id"])] == [
+        ("guest-backup", "100"),
+        ("guest-backup", "101"),
+    ]
+
+
+def test_a_glob_made_elsewhere_reads_as_it_is_and_stays_when_the_list_comes_back(
+    client_db, monkeypatch
+):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    # Longer than any pattern: no exception takes it, the config keeps it.
+    long = "/" + "x" * 300
+    cid = _post_check(client, "agent_resources", {"ignore_mounts": [long]})["id"]
+    with factory() as db:
+        db.add(no_rating(cid, "/srv/*", kind="mount", id="exc-glob"))
+        db.commit()
+    shown = client.get(f"/checks/{cid}").json()["config"]
+    assert shown == {"ignore_mounts": ["/srv/*", long]}
+
+    sent = {"ignore_mounts": [*shown["ignore_mounts"], "/mnt/a"]}
+    r = client.put(f"/checks/{cid}", json={"config": sent})
+
+    assert r.json()["config"] == {"ignore_mounts": ["/mnt/a", "/srv/*", long]}
+    assert _stored_config(factory, cid) == {"ignore_mounts": [long]}
+    assert [(row[1], row[4]) for row in _list_rows(factory, cid)] == [
+        ("/mnt/a", None),
+        ("/srv/*", None),
+    ]

@@ -34,6 +34,8 @@ from app.discovery import (
 )
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding
 
+from ._helpers import standing_skip
+
 # Far from the real clock: nothing here may depend on today.
 T0 = datetime(2020, 1, 1)
 DAY = timedelta(days=1)
@@ -1133,12 +1135,16 @@ def test_an_inventory_stored_before_the_sections_counts_its_full_scan_for_each(d
     assert (_finding(db).kind, _finding(db).status) == ("gone", "open")
 
 
+@pytest.mark.parametrize("off", ["switched off", "skipped"])
 @pytest.mark.parametrize("status", ["open", "dismissed", "adopted"])
-def test_vanished_instance_nothing_watches_drops_its_finding(db, status):
+def test_vanished_instance_nothing_watches_drops_its_finding(db, status, off):
     _scan(db, T0, **_paperless("web"))
     if status != "open":
         _decide(db, status)
-    _watch(db, enabled=False)
+    _watch(db, enabled=off == "skipped")
+    if off == "skipped":
+        db.add(standing_skip("c1"))
+        db.commit()
 
     _scan(db, T0 + DAY)
     assert _finding(db) is not None
