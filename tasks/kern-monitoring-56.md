@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 # kern-monitoring-56 — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-56 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-56 · Review: pro Task
 Spec: docs/features/kern-monitoring-56.md (Roadmap R-1690, R-1696, R-1792, R-1827, R-1828)
 Heavy: none — nur Monitoring-Logik und Schemas, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
