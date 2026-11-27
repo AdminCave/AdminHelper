@@ -33,8 +33,8 @@ Migration (R-1792, Stil) bleibt, eine ausgerollte Migration ändert der Zug nich
   Periode. Zentrale Checks ohne bekannten Lauf behalten die zufällige Phase (R-1224).
 
 ## Datenmodell / API / Migrationen
-Keine Migration. API: `server_id`/`match_server_id` höchstens 255 Zeichen, Regelwerte (Zeichenketten) höchstens
-255, Listen höchstens `MAX_FIELDS` — vorher unbegrenzt, nur Admins hinter dem Internal-Key; ein längerer Wert gibt 422.
+Keine Migration. API: `server_id`/`match_server_id` und `scope_value` einer Ausnahme höchstens 255 Zeichen, Regelwerte (Zeichenketten) höchstens
+1024, Listen höchstens `MAX_FIELDS` — vorher unbegrenzt, nur Admins hinter dem Internal-Key; ein längerer Wert gibt 422.
 
 ## Risiken & Rollback
 Scheduler: ein Fehler in der Phasenberechnung verschiebt Läufe; Tests pinnen Behalten, Ableiten und Überfälliges.

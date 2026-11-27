@@ -1334,6 +1334,7 @@
           "scope_value": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {

@@ -23,6 +23,7 @@ _SERVER_ID_FIELDS = [
     (schemas.AlertRuleUpdate, "match_server_id", {}),
     (schemas.TemplateAssign, "server_id", None),
     (schemas.MaintenanceInput, "server_id", None),
+    (schemas.ExceptionInput, "scope_value", None),
 ]
 
 
@@ -73,3 +74,10 @@ def test_a_rule_list_longer_than_max_fields_is_refused():
     schemas.RuleOverride.model_validate({"value": list(range(MAX_FIELDS))})
     with pytest.raises(ValidationError):
         schemas.RuleOverride.model_validate({"value": list(range(MAX_FIELDS + 1))})
+
+
+def test_an_exception_scope_value_longer_than_255_is_refused():
+    base = {"scope_kind": "server", "effect": "no_notify", "duration_kind": "permanent"}
+    schemas.ExceptionInput.model_validate({**base, "scope_value": "s" * 255})
+    with pytest.raises(ValidationError, match="at most 255"):
+        schemas.ExceptionInput.model_validate({**base, "scope_value": "s" * 256})

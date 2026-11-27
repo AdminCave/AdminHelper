@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 # kern-monitoring-56 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-56 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-56 · Review: pro Task
 Spec: docs/features/kern-monitoring-56.md (Roadmap R-1690, R-1696, R-1792, R-1827, R-1828)
 Heavy: none — nur Monitoring-Logik und Schemas, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -52,8 +52,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T6 — R-1792: Grenze auch für scope_value einer Ausnahme (Abschlussprüfung)  [ ]
+### T6 — R-1792: Grenze auch für scope_value einer Ausnahme (Abschlussprüfung)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/tests/test_schema_limits.py, apps/monitoring/tests/openapi.snapshot.json, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-monitoring-56.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4fb7cf524 2026-11-27T21:33:35+01:00
+Review: approve (.ah-out/review/kern-monitoring-56/T6.verdict.json)
 Änderung: `ExceptionInput.scope_value` (Check-ID, Check-Typ oder Server-ID) höchstens 255 Zeichen, Test mit Rücklesen aus dem Schema, Snapshot nachgezogen. Dazu die Nits: die Doku nennt die Streuung jedes überfälligen Checks über die erste Minute, die Spec 1024 für Regeltexte.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_schema_limits.py tests/test_openapi_snapshot.py
 Doku: diese Task

@@ -393,7 +393,8 @@ class ExceptionInput(RequestModel):
     none."""
 
     scope_kind: str
-    scope_value: str | None = None
+    # A check id, a check type or a server id: the bound of ServerId fits all three (R-1792).
+    scope_value: ServerId | None = None
     object_kind: str | None = None
     object_pattern: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     effect: str
