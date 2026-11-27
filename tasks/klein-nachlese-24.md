@@ -1,5 +1,5 @@
 # klein-nachlese-24 — Task-Ledger
-Status: geplant · Branch: feature/klein-nachlese-24 · Review: pro Task
+Status: aktiv · Branch: feature/klein-nachlese-24 · Review: pro Task
 Spec: docs/features/klein-nachlese-24.md (Roadmap R-1777, R-1778, R-1838)
 Heavy: none — Agent-Nits und Doku, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
