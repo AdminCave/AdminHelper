@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-aio-status — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-aio-status · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-aio-status · Review: pro Task
 Spec: docs/features/arch-monitoring-aio-status.md (Roadmap R-1825)
 Heavy: linux-full — geänderter Push-Pfad (`routers/agent.py`: Reihenfolge der Bewertung, Geschwister der Check-Bedingung) und neuer Katalog-Check; keine Migration, kein Server-, Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -54,8 +54,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_nex
 Doku: → T5
 Abhängt von: T1, T2, T3
 
-### T5 — Doku DE+EN, ADR-Nachtrag und CHANGELOG (R-1825)  [ ]
+### T5 — Doku DE+EN, ADR-Nachtrag und CHANGELOG (R-1825)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/adr/0004-monitoring-neuordnung.md, changelog.d/arch-monitoring-aio-status.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7ebfafa3e 2026-11-27T12:28:38+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku Monitoring: Zeile `nextcloud-aio` (Check `status`, Ruhen im Backup, Hinweis zu `consecutive_fails` unter 3, der Apache-Port 8000 muss im Scan sichtbar sein) und der Absatz zu `when` (ein Check kann als Ganzes ruhen, Meldung `Resting (…)`). Entwickler-Doku Monitoring: Zeile `probe.py` (Check-Bedingung vor `error`, `_sibling_names`, Reihenfolge im Push statt „in der Reihenfolge nach ID“) und der Absatz zu `Rule`/`Condition` (`Check.when`, `Target.container`, Dump nur wenn gesetzt). ADR 0004 §6.4: Nachtrag, dass R-1825 die Empfehlung als Check-Bedingung umsetzt, weil ein Probe-Fehler vor den Regeln steht. Changelog-Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task

@@ -269,6 +269,14 @@ die nur eine Installation kennt, drückt der Admin als Ausnahme mit Bedingung au
 das heutige `unless` verallgemeinert und deshalb im Katalog kaum Neues braucht. Kevin hat am 2026-11-18 so
 entschieden (§14, Frage 11).
 
+**Nachtrag R-1825 (2026-11-27):** Gebaut ist die Empfehlung als Bedingung am Check (`Check.when`), nicht an einer
+Regel: Im Backup ist der Apache-Container gestoppt, der Agent meldet den Lauf als Fehler, und ein Probe-Fehler
+steht in der Bewertung vor den Regeln. Der Check `status` von `nextcloud-aio` (Version 2) ruht deshalb als
+Ganzes, solange `aio.backup` meldet, dass ein Backup läuft: Er ist `ok`, und die Meldung nennt das Ruhen und
+das Ergebnis des Laufs; fehlt der Wert oder ist er veraltet, bewertet er wie sonst. Sein Ziel nennt einen festen
+Container der Installation (`Target.container`), und der Push bewertet die Checks, die ein Geschwister nennen,
+nach den übrigen, damit das Backup-Feld desselben Reports zählt.
+
 ### 6.5 Wertgebundene Ausnahme
 
 Eine Ausnahme kann an einen Wert gebunden sein („8 umgelagerte Sektoren akzeptiert“). Ändert sich der Wert, endet
