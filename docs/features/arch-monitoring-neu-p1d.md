@@ -215,17 +215,20 @@ Text mit JSON, `NULL` für Checks ohne Regelsatz (alle außer Probe-Checks) und 
 | `GET /checks/{id}/rules` | 200 `CheckRulesOut`; 404 bei unbekanntem Check oder bei einem Check ohne Regelsatz („This check has no catalog rules“) |
 | `PUT /checks/{id}/rules` | Body `CheckRulesInput {overrides: {key: RuleOverride}}`, ersetzt alle Overrides; 200 `CheckRulesOut`; 404 wie oben; 409 bei eingefrorener Zeile; 422 bei unbekanntem Schlüssel, unpassendem Wert, Entwarnung auf der falschen Seite, unbekanntem Teil |
 
-- `CheckRulesOut`: `check_id`, `frozen` (bool), `catalog`, `overrides`, `effective`, `conflicts`. Bei eingefrorener
+- `CheckRulesOut`: `checkId`, `frozen` (bool), `catalog`, `overrides`, `effective`, `conflicts`. Bei eingefrorener
   Zeile ist `effective` gleich `config.rules`, `catalog` und `overrides` sind leer.
-- `RuleOverride`: `value`, `clear` (Zahl oder `null`), `level`, `enabled`, alle optional, `extra="forbid"`.
+- `RuleOverride`: `value`, `clear` (Zahl oder `null`), `level`, `enabled`, alle optional, `extra="forbid"`; nur
+  `clear` darf `null` sein (nimmt die Entwarnung des Katalogs weg). Teile gleich dem Katalog entfallen beim Speichern.
 - `RuleConflict`: `key`, `kind` (`both_changed`, `removed`, `redefined`, `clear_dropped`), `part` (`value`, `clear`,
-  `level` oder `null`), `at`.
-- Ein `PUT` schreibt Schicht, `config.rules` und Marke in einer Transaktion. Die Zeile wird mit `FOR UPDATE` gelesen,
-  so dass ein gleichzeitiges Übernehmen sie nicht überschreibt.
+  `level` oder `null`), `at` (UTC, ISO 8601 mit `Z`).
+- Ein `PUT` schreibt Schicht, `config.rules` und Marke in einer Transaktion. Beide `PUT`-Routen lesen die Zeile mit
+  `FOR UPDATE`, und das Übernehmen (`_adopt`) sperrt die Checks einer Instanz ebenso, in fester Reihenfolge; so
+  überschreibt keiner den anderen. Die Konflikte bleiben bei jedem `PUT` stehen.
 - **`PUT /checks/{id}`:** Hat eine Probe eine Schicht und kommt `config.rules` geändert an, gilt
   `overrides_from(layer.catalog, rules)`. Ist das nicht ausdrückbar, antwortet die Route mit 422: `"This change to the
-  rules cannot be kept across catalog updates (<Grund>); change the rules with PUT /checks/{id}/rules"`. Gespeichert
-  wird `effective(...)`, nicht der gesendete Satz. Eingefrorene Zeilen und zentrale Checks verhalten sich wie heute.
+  rules cannot be kept across catalog updates (<Grund>); change them with PUT /checks/{id}/rules"`. Gespeichert
+  wird `effective(...)`, nicht der gesendete Satz. Kommen die gespeicherten Regeln unverändert zurück (ein Client, der
+  nur das Intervall ändert), bleiben die Overrides. Eingefrorene Zeilen und zentrale Checks verhalten sich wie heute.
 - Die Desktop- und Web-Typen ändern sich nicht. `sync-from-web.sh --check` bleibt unberührt.
 
 ## Externe Integrationen

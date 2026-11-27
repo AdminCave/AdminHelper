@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ah_common.pagination import paginate
 from app.alerter import bell_record, emit_to_hub, muted_reasons, release_hub_slot
 from app.bell_catch_up import closed_message
+from app.catalog.model import Rule, rule_key
 from app.check_configs import (
     CENTRAL_PAIR_SENSORS,
     CENTRAL_SENSORS,
@@ -55,12 +56,15 @@ from app.models import (
     MonitorState,
 )
 from app.module_sync import mark_module_overrides, tombstone_module_check
+from app.rule_layer import overrides_from, read_layer, store_layer
 from app.scheduler import add_check, interval_timedelta, remove_check
 from app.schemas import (
     VALID_INTERVALS,
     VALID_SEVERITIES,
     CheckCreate,
     CheckMetricsOut,
+    CheckRulesInput,
+    CheckRulesOut,
     CheckUpdate,
     MonitorCheckOut,
     MonitorCheckStatusOut,
@@ -417,7 +421,7 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
 )
 def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)):
     """Updates a check."""
-    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).with_for_update().first()
     if not check:
         raise HTTPException(404, "Check not found")
 
@@ -483,6 +487,22 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         ):
             raise HTTPException(400, refused)
 
+    # Changed rules of a module's probe check become overrides over its catalog rules, so a
+    # catalog update keeps them (R-1638); rules sent back unchanged keep the overrides.
+    layer = read_layer(check) if "config" in sent else None
+    if layer is not None:
+        rules = data.config.get("rules", [])
+        if _same_config(rules, _stored_rules(check)):
+            overrides = layer["overrides"]
+        else:
+            overrides, why = overrides_from(layer["catalog"], rules)
+            if overrides is None:
+                raise HTTPException(
+                    422,
+                    f"This change to the rules cannot be kept across catalog updates ({why}); "
+                    f"change them with PUT /checks/{check_id}/rules",
+                )
+
     old_config = check.config
     for field in [
         "server_id",
@@ -499,6 +519,8 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
             setattr(check, field, getattr(data, field))
     if "config" in sent:
         check.config = json.dumps(data.config)
+    if layer is not None:
+        store_layer(check, layer["catalog"], overrides, layer["conflicts"])
     mark_overrides(db, check, {field: getattr(data, field) for field in sent})
     mark_module_overrides(
         check,
@@ -513,6 +535,80 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
+
+
+def _stored_rules(check: MonitorCheck) -> list:
+    try:
+        config = json.loads(check.config) if check.config else {}
+    except (TypeError, ValueError):
+        return []
+    rules = config.get("rules") if isinstance(config, dict) else None
+    return rules if isinstance(rules, list) else []
+
+
+def _rules_check(db: Session, check_id: str, *, lock: bool = False) -> MonitorCheck:
+    """The module probe check whose catalog rules the request is about; with lock, held FOR
+    UPDATE like adopting holds it, so neither writes over the other's layer."""
+    query = db.query(MonitorCheck).filter(MonitorCheck.id == check_id)
+    check = (query.with_for_update() if lock else query).first()
+    if check is None:
+        raise HTTPException(404, "Check not found")
+    if check.module_id is None or check.check_type != "probe":
+        raise HTTPException(404, "This check has no catalog rules")
+    return check
+
+
+def _rules_out(check: MonitorCheck) -> dict:
+    layer = read_layer(check)
+    return {
+        "checkId": check.id,
+        "frozen": layer is None,
+        **(layer or {"catalog": [], "overrides": {}, "conflicts": []}),
+        "effective": _stored_rules(check),
+    }
+
+
+@router.get(
+    "/checks/{check_id}/rules",
+    response_model=CheckRulesOut,
+    dependencies=[Depends(require_internal)],
+)
+def get_check_rules(check_id: str, db: Session = Depends(get_db)):
+    """The catalog rules of a module's probe check, the admin's overrides over them, the
+    rules it rates with and the conflicts of the last catalog update. A check whose rules
+    the admin changed before the rule layer is frozen: its rules stay as they are and only
+    effective is filled."""
+    return _rules_out(_rules_check(db, check_id))
+
+
+@router.put(
+    "/checks/{check_id}/rules",
+    response_model=CheckRulesOut,
+    dependencies=[Depends(require_internal)],
+)
+def put_check_rules(check_id: str, data: CheckRulesInput, db: Session = Depends(get_db)):
+    """Replaces the admin's overrides over the catalog rules of a module's probe check, by
+    rule key; a part left out is the catalog's, an empty map gives the catalog's rules back.
+    The conflicts of the last catalog update stay. 409 for a frozen check."""
+    check = _rules_check(db, check_id, lock=True)
+    layer = read_layer(check)
+    if layer is None:
+        raise HTTPException(
+            409,
+            "This check's rules predate the rule layer and stay as they are; "
+            "change them with PUT /checks/{id}",
+        )
+    keys = {rule_key(Rule.model_validate(rule)) for rule in layer["catalog"]}
+    if unknown := sorted(set(data.overrides) - keys):
+        raise HTTPException(422, f"No catalog rule of this check has the key {unknown[0]!r}")
+    overrides = {key: part.model_dump(exclude_unset=True) for key, part in data.overrides.items()}
+    try:
+        store_layer(check, layer["catalog"], overrides, layer["conflicts"])
+    except ValueError as exc:
+        raise HTTPException(422, f"The overrides do not fit the catalog rules: {exc}")
+    db.commit()
+    db.refresh(check)
+    return _rules_out(check)
 
 
 @router.delete(

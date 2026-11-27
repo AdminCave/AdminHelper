@@ -1603,12 +1603,24 @@ def test_a_catalog_update_keeps_the_rules_the_admin_changed(db, actions):
 )
 def test_only_a_change_the_update_would_lose_marks_the_config(db, actions, parts, marked):
     web = _checks(db, _adopted(db, actions))["web"]
+    # A check from before the rule layer: one with a layer has the mark from store_layer.
+    web.rule_layer = None
     old = web.config
     web.config = json.dumps({**json.loads(old), **parts})
 
     mark_module_overrides(web, old_config=old)
 
     assert json.loads(web.overridden_fields) == marked
+
+
+def test_a_check_with_a_rule_layer_has_the_config_mark_from_its_overrides(db, actions):
+    web = _checks(db, _adopted(db, actions))["web"]
+    old = web.config
+    web.config = json.dumps({**json.loads(old), "rules": []})
+
+    mark_module_overrides(web, enabled=False, old_config=old)
+
+    assert json.loads(web.overridden_fields) == ["enabled"]
 
 
 def test_switching_on_again_drops_the_mark(db, actions):

@@ -879,6 +879,78 @@
         "title": "CheckMetricsOut",
         "type": "object"
       },
+      "CheckRulesInput": {
+        "additionalProperties": false,
+        "description": "All of the admin's overrides of a check's catalog rules, by rule key.",
+        "properties": {
+          "overrides": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RuleOverride"
+            },
+            "title": "Overrides",
+            "type": "object"
+          }
+        },
+        "required": [
+          "overrides"
+        ],
+        "title": "CheckRulesInput",
+        "type": "object"
+      },
+      "CheckRulesOut": {
+        "description": "A module probe's rules: the catalog state it is bound to, the admin's overrides, the\nrules it rates with. A frozen check keeps the admin's rules from before the layer:\neffective only, no catalog, no overrides.",
+        "properties": {
+          "catalog": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Catalog",
+            "type": "array"
+          },
+          "checkId": {
+            "title": "Checkid",
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/RuleConflict"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "effective": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Effective",
+            "type": "array"
+          },
+          "frozen": {
+            "title": "Frozen",
+            "type": "boolean"
+          },
+          "overrides": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Overrides",
+            "type": "object"
+          }
+        },
+        "required": [
+          "checkId",
+          "frozen",
+          "catalog",
+          "overrides",
+          "effective",
+          "conflicts"
+        ],
+        "title": "CheckRulesOut",
+        "type": "object"
+      },
       "CheckUpdate": {
         "properties": {
           "check_type": {
@@ -2987,6 +3059,147 @@
         "title": "RestoreOut",
         "type": "object"
       },
+      "RuleConflict": {
+        "description": "Where the last catalog update met an override (rule_layer.merge).",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "both_changed",
+              "removed",
+              "redefined",
+              "clear_dropped"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "part": {
+            "anyOf": [
+              {
+                "enum": [
+                  "value",
+                  "clear",
+                  "level"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part"
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "part",
+          "at"
+        ],
+        "title": "RuleConflict",
+        "type": "object"
+      },
+      "RuleOverride": {
+        "additionalProperties": false,
+        "description": "The admin's parts of one catalog rule (R-1638); a part left out is the catalog's.\nclear null takes the catalog's clear away, the others cannot be null.",
+        "properties": {
+          "clear": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": -9.223372036854776e+18,
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clear"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "info",
+                  "warning",
+                  "critical"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": -9.223372036854776e+18,
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "maximum": 9.223372036854776e+18,
+                      "minimum": -9.223372036854776e+18,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "RuleOverride",
+        "type": "object"
+      },
       "ServerAssignmentOut": {
         "description": "An assignment of a server; templateName None when its template is gone.",
         "properties": {
@@ -4944,6 +5157,94 @@
           }
         },
         "summary": "Reset Check"
+      }
+    },
+    "/checks/{check_id}/rules": {
+      "get": {
+        "description": "The catalog rules of a module's probe check, the admin's overrides over them, the\nrules it rates with and the conflicts of the last catalog update. A check whose rules\nthe admin changed before the rule layer is frozen: its rules stay as they are and only\neffective is filled.",
+        "operationId": "get_check_rules_checks__check_id__rules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckRulesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Check Rules"
+      },
+      "put": {
+        "description": "Replaces the admin's overrides over the catalog rules of a module's probe check, by\nrule key; a part left out is the catalog's, an empty map gives the catalog's rules back.\nThe conflicts of the last catalog update stay. 409 for a frozen check.",
+        "operationId": "put_check_rules_checks__check_id__rules_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRulesInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckRulesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Check Rules"
       }
     },
     "/checks/{check_id}/run": {

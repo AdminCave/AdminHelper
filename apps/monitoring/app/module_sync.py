@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.catalog.loader import Catalog, get_catalog
 from app.catalog.model import Alternative, Check, Module, Rule, rule_problems
 from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
-from app.core.time import utcnow_naive
+from app.core.time import iso_utc, utcnow_naive
 from app.discovery import MAX_CONTAINER_PORTS, image_matches, image_repo, image_tag
 from app.models import (
     MonitorCheck,
@@ -105,9 +105,13 @@ def updatable_checks(checks: list[MonitorCheck], module: Module | None) -> list[
     ]
 
 
-def instance_checks(db: Session, finding: MonitorFinding) -> list[MonitorCheck]:
-    """Every check the finding's module brought to its instance, in creation order."""
-    return (
+def instance_checks(
+    db: Session, finding: MonitorFinding, *, lock: bool = False
+) -> list[MonitorCheck]:
+    """Every check the finding's module brought to its instance, in creation order. With
+    lock, held FOR UPDATE: adopting rewrites their rule layers, which PUT /checks/{id} and
+    /rules read and write under the same lock."""
+    query = (
         db.query(MonitorCheck)
         .filter(
             MonitorCheck.server_id == finding.server_id,
@@ -115,8 +119,8 @@ def instance_checks(db: Session, finding: MonitorFinding) -> list[MonitorCheck]:
             MonitorCheck.module_instance == finding.instance_key,
         )
         .order_by(MonitorCheck.created_at, MonitorCheck.id)
-        .all()
     )
+    return (query.with_for_update() if lock else query).all()
 
 
 def tombstoned_keys(db: Session, finding: MonitorFinding) -> set[str]:
@@ -151,8 +155,9 @@ def mark_module_overrides(
     """Record in overridden_fields what the admin made their own on a module check:
     switched it off ("enabled"), so a returning instance leaves it off (R-1573), or
     changed its rules ("config"), so a catalog update does not overwrite them (R-1567).
-    Switching it on again drops the mark; changed rules stay the admin's. Template and
-    manual checks are left to mark_overrides."""
+    Switching it on again drops the mark; changed rules stay the admin's. A check with a
+    rule layer gets the mark from store_layer, which sets it while overrides stand.
+    Template and manual checks are left to mark_overrides."""
     if check.module_id is None:
         return
     fields = read_overrides(check)
@@ -161,7 +166,11 @@ def mark_module_overrides(
             fields.discard("enabled")
         else:
             fields.add("enabled")
-    if old_config is not None and _own_config(old_config) != _own_config(check.config):
+    if (
+        old_config is not None
+        and check.rule_layer is None
+        and _own_config(old_config) != _own_config(check.config)
+    ):
         fields.add("config")
     check.overridden_fields = json.dumps([f for f in TEMPLATE_CHECK_FIELDS if f in fields])
 
@@ -563,7 +572,7 @@ def _update(
     row.config = json.dumps(config)
     row.module_check_hash = definition_hash(check)
     if not check.central:
-        at = now.isoformat()
+        at = iso_utc(now)
         store_layer(row, catalog, overrides, [{**c, "at": at} for c in conflicts])
         for c in conflicts:
             logger.warning(
@@ -580,7 +589,7 @@ def _adopt(
 ) -> tuple[AdoptResult, list[SchedulerAction]]:
     result = AdoptResult(finding)
     actions: list[SchedulerAction] = []
-    checks = instance_checks(db, finding)
+    checks = instance_checks(db, finding, lock=True)
     if finding.kind == "gone":
         for row in checks:
             if row.enabled:

@@ -560,7 +560,7 @@ def test_an_update_keeps_its_conflicts_in_the_layer_and_the_log(
     assert read_layer(web) == {
         "catalog": _catalog_rules(catalog),
         "overrides": overrides,
-        "conflicts": [{"key": "duration_ms.warning", **conflict, "at": LATER.isoformat()}],
+        "conflicts": [{"key": "duration_ms.warning", **conflict, "at": "2020-01-02T12:00:00Z"}],
     }
     assert _rules(web) == effective(_catalog_rules(catalog), overrides)
     assert read_overrides(web) == ({"config"} if overrides else set())

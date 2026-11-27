@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
+from pydantic import ValidationError
+
 from app.catalog.model import Rule, clear_fits, rule_key
 from app.models import MonitorCheck
 from app.template_sync import TEMPLATE_CHECK_FIELDS, read_overrides
@@ -52,7 +54,8 @@ def _part(rule: Rule, part: str) -> object:
 def effective(catalog: list[dict], overrides: dict[str, dict]) -> list[dict]:
     """The rules a check rates with: the catalog's, in its order, each with the parts of its
     override; a rule switched off is left out. Raises ValueError when an override does not
-    fit its rule (clear on the wrong side of the limit, a value the operator cannot take)."""
+    fit its rule (clear on the wrong side of the limit, a value the operator cannot take),
+    naming the rule."""
     rules = []
     for key, rule in _by_key(catalog).items():
         override = overrides.get(key, {})
@@ -64,7 +67,11 @@ def effective(catalog: list[dict], overrides: dict[str, dict]) -> list[dict]:
             # The key is the rule's name in the overrides and the hysteresis; a new level
             # must not rename it.
             data["key"] = key
-        rules.append(Rule.model_validate(data).model_dump())
+        try:
+            rules.append(Rule.model_validate(data).model_dump())
+        except ValidationError as exc:
+            details = "; ".join(error["msg"] for error in exc.errors())
+            raise ValueError(f"the rule {key!r} does not hold: {details}") from exc
     return rules
 
 

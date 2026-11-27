@@ -12,6 +12,8 @@ import json
 import pytest
 
 from app.models import MonitorCheck
+from app.rule_layer import effective, read_layer, store_layer
+from app.template_sync import read_overrides
 
 
 def _payload(**over):
@@ -370,6 +372,133 @@ def test_a_module_probe_keeps_its_rules_interval_and_timeout_editable(client_db)
         "5m",
         False,
     )
+
+
+# --- the rules of a module probe with a rule layer (R-1638) -------------------
+
+_CONFLICT = {
+    "key": "status_code.critical",
+    "kind": "removed",
+    "part": None,
+    "at": "2020-01-02T12:00:00Z",
+}
+
+
+def _add_layered_probe(factory, overrides=None):
+    """A module probe bound to its catalog rules (_PROBE), as adopting leaves it."""
+    cid = _add_module_probe(factory)
+    with factory() as db:
+        row = db.get(MonitorCheck, cid)
+        store_layer(row, _PROBE["rules"], overrides or {}, [_CONFLICT])
+        db.commit()
+    return cid
+
+
+def _layer_and_marks(factory, cid):
+    with factory() as db:
+        row = db.get(MonitorCheck, cid)
+        return read_layer(row), sorted(read_overrides(row)), json.loads(row.config)
+
+
+def test_a_changed_threshold_of_a_layered_probe_becomes_an_override(client_db):
+    client, factory = client_db
+    cid = _add_layered_probe(factory)
+    rules = [{"field": "status_code", "op": "ne", "value": 204, "level": "critical"}]
+
+    r = client.put(f"/checks/{cid}", json={"config": {**_PROBE, "rules": rules}})
+
+    assert r.status_code == 200, r.text
+    layer, marks, config = _layer_and_marks(factory, cid)
+    assert layer["catalog"] == effective(_PROBE["rules"], {})
+    assert layer["overrides"] == {"status_code.critical": {"value": 204}}
+    assert layer["conflicts"] == [_CONFLICT]
+    assert config["rules"] == effective(_PROBE["rules"], layer["overrides"])
+    assert marks == ["config"]
+
+
+def test_rules_sent_back_unchanged_keep_the_overrides(client_db):
+    """A client that only changes the interval sends the rules it read: the overrides stay."""
+    client, factory = client_db
+    cid = _add_layered_probe(factory, {"status_code.critical": {"value": 204}})
+    config = client.get(f"/checks/{cid}").json()["config"]
+
+    r = client.put(f"/checks/{cid}", json={"config": {**config, "interval_s": 300}})
+
+    assert r.status_code == 200, r.text
+    layer, marks, stored = _layer_and_marks(factory, cid)
+    assert layer["overrides"] == {"status_code.critical": {"value": 204}}
+    assert layer["conflicts"] == [_CONFLICT]
+    assert stored["interval_s"] == 300
+    assert stored["rules"] == config["rules"]
+    assert marks == ["config"]
+
+
+def test_rules_sent_back_unchanged_keep_an_override_they_do_not_show(client_db):
+    """A rule the admin switched off with a value of their own is missing from the rules a
+    client reads; sending those back keeps the value for when it is switched on again."""
+    client, factory = client_db
+    overrides = {"status_code.critical": {"enabled": False, "value": 204}}
+    cid = _add_layered_probe(factory, overrides)
+    config = client.get(f"/checks/{cid}").json()["config"]
+    assert config["rules"] == []
+
+    r = client.put(f"/checks/{cid}", json={"config": {**config, "interval_s": 300}})
+
+    assert r.status_code == 200, r.text
+    layer, marks, stored = _layer_and_marks(factory, cid)
+    assert layer["overrides"] == overrides
+    assert (stored["interval_s"], stored["rules"]) == (300, [])
+    assert marks == ["config"]
+
+
+def test_rules_sent_back_as_the_catalog_has_them_drop_the_overrides(client_db):
+    client, factory = client_db
+    cid = _add_layered_probe(factory, {"status_code.critical": {"value": 204}})
+
+    r = client.put(f"/checks/{cid}", json={"config": _PROBE})
+
+    assert r.status_code == 200, r.text
+    layer, marks, _ = _layer_and_marks(factory, cid)
+    assert layer["overrides"] == {}
+    assert marks == []
+
+
+@pytest.mark.parametrize(
+    "rules",
+    [
+        pytest.param(
+            [{"field": "status_code", "op": "ge", "value": 500, "level": "critical"}], id="other-op"
+        ),
+        pytest.param(
+            [
+                *_PROBE["rules"],
+                {"field": "status_code", "op": "eq", "value": 503, "level": "warning"},
+            ],
+            id="new-rule",
+        ),
+    ],
+)
+def test_rules_no_override_can_give_are_refused_with_the_way_to_change_them(client_db, rules):
+    client, factory = client_db
+    cid = _add_layered_probe(factory)
+    before = _layer_and_marks(factory, cid)
+
+    r = client.put(f"/checks/{cid}", json={"config": {**_PROBE, "rules": rules}})
+
+    assert r.status_code == 422, r.text
+    assert f"PUT /checks/{cid}/rules" in r.json()["detail"]
+    assert _layer_and_marks(factory, cid) == before
+
+
+def test_a_put_without_config_leaves_the_layer_alone(client_db):
+    client, factory = client_db
+    cid = _add_layered_probe(factory, {"status_code.critical": {"value": 204}})
+    before = _layer_and_marks(factory, cid)
+
+    r = client.put(f"/checks/{cid}", json={"description": "mine"})
+
+    assert r.status_code == 200, r.text
+    assert _layer_and_marks(factory, cid) == before
 
 
 def test_a_module_probe_config_may_leave_out_the_measuring_parts_at_their_defaults(client_db):
