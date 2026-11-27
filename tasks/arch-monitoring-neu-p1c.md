@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1c — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1c · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1c.md (Roadmap R-1637, R-1793, R-1521)
 Heavy: linux-full — Monitoring-Migration (Alembic-Revision und Startschritt) und Monitoring-API; dazu vor dem Merge die Abnahme `run.sh integration --strict --step upgrade-path` auf einer Pool-VM (Kevin 2026-11-27, „Vor der nächsten Beta“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -288,8 +288,10 @@ Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/admin/monitoring.html, docs/admin/betrieb.html je DE+EN · changelog.d/arch-monitoring-neu-p1c.md
 
-### T15 — Ein umgezogener Check nimmt seine Ausnahmen mit (R-1637)  [ ]
+### T15 — Ein umgezogener Check nimmt seine Ausnahmen mit (R-1637)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_checks_crud.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @52cb13ba6 2026-11-27T17:05:13+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T15.verdict.json)
 Beweis: Abschlussprüfung `branch.verdict.json` @e0d3a4a1d. Probe-Test: `agent_resources` auf srv-a mit `ignore_mounts` und `enabled: false`, PUT `server_id` srv-b, `cleanup_server(srv-a)`, danach zeigt GET `enabled: true`, `ignore_mounts: []`.
 Änderung:
 - `update_check` (`routers/checks.py:594`) zieht einen Check über `server_id` auf einen anderen Server um.

@@ -891,6 +891,42 @@ def test_an_entry_left_out_ends_its_exception_and_a_list_sent_back_changes_nothi
     assert [row[4] for row in _list_rows(factory, cid)] == ["bob", None, None]
 
 
+def test_a_check_moved_to_another_server_keeps_its_exceptions_when_the_old_one_goes(
+    client_db, monkeypatch
+):
+    # The exceptions of a check carry its server for listing and cleanup: left on the
+    # old server, its cleanup took them, and the moved check ran again without its list.
+    _scheduler_calls(monkeypatch)
+    client, _ = client_db
+    body = _payload(
+        check_type="agent_resources",
+        server_id="srv-a",
+        enabled=False,
+        config={"ignore_mounts": ["/a"]},
+    )
+    r = client.post("/checks", json=body)
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    # Ends the exception of /a: an ended one moves along too, its trail stays the check's.
+    r = client.put(f"/checks/{cid}", json={"config": {"ignore_mounts": ["/b"]}})
+    assert r.status_code == 200, r.text
+
+    r = client.put(f"/checks/{cid}", json={"server_id": "srv-b"})
+    assert r.status_code == 200, r.text
+    assert client.delete("/servers/srv-a/cleanup").status_code == 200
+
+    out = client.get(f"/checks/{cid}").json()
+    assert (out["enabled"], out["config"]["ignore_mounts"]) == (False, ["/b"])
+    listed = client.get("/exceptions", params={"server_id": "srv-b", "include_ended": True})
+    assert sorted(
+        (e["effect"], e["objectPattern"], e["endedAt"] is None) for e in listed.json()
+    ) == [
+        ("no_rating", "/a", False),
+        ("no_rating", "/b", True),
+        ("skip", None, True),
+    ]
+
+
 def test_a_service_list_reads_back_as_an_older_desktop_sends_it(client_db, monkeypatch):
     # The desktop before R-1637 sends ignore as it read it plus one name. A CSV entry
     # reads as its names, and a service entry stays the glob it was.

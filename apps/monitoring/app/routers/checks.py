@@ -589,7 +589,7 @@ def update_check(
                     f"change them with PUT /checks/{check_id}/rules",
                 )
 
-    old_config = check.config
+    old_config, old_server = check.config, check.server_id
     for field in [
         "server_id",
         "name",
@@ -602,6 +602,12 @@ def update_check(
     ]:
         if field in sent:
             setattr(check, field, getattr(data, field))
+    if check.server_id != old_server:
+        # Its exceptions carry the check's server for listing and cleanup: left behind,
+        # the cleanup of the old server would end the moved check's skip and lists.
+        db.query(MonitorException).filter(MonitorException.check_id == check.id).update(
+            {"server_id": check.server_id}, synchronize_session=False
+        )
     config = data.config
     if "config" in sent:
         # Sent back as read, the stored config stays: its lists hold the exceptions too.
