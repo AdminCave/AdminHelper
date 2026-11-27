@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// A release build starts without a console window of its own; a debug build keeps it for the log.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod ansible;
 mod auth;
 #[cfg(test)]
@@ -344,6 +347,19 @@ mod tests {
     use std::process::Command;
 
     const CHILD: &str = "AH_TEST_KEY_LOG_CHILD";
+
+    #[test]
+    fn release_build_has_no_console() {
+        let source = include_str!("main.rs").replace("\r\n", "\n");
+        let first_attribute = source
+            .lines()
+            .find(|line| line.starts_with("#!"))
+            .expect("an inner attribute");
+        assert_eq!(
+            first_attribute,
+            r#"#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]"#
+        );
+    }
 
     /// Runs in a process of its own with `SSLKEYLOGFILE` set: the other tests of this binary run
     /// on threads that may read the environment while this one changes it.

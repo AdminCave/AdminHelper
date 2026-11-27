@@ -297,19 +297,22 @@ struct Channel {
 
 impl Channel {
     async fn open(program: &OsStr, args: &[String]) -> Result<Self, AppError> {
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| {
-                AppError::Connection(format!(
-                    "cannot start {}: {e}",
-                    Path::new(program).display()
-                ))
-            })?;
+            .kill_on_drop(true);
+        // CREATE_NO_WINDOW: the desktop has no console, so ssh would open one of its own.
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
+        let mut child = command.spawn().map_err(|e| {
+            AppError::Connection(format!(
+                "cannot start {}: {e}",
+                Path::new(program).display()
+            ))
+        })?;
         let (Some(stdin), Some(stdout), Some(stderr)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {

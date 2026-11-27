@@ -110,14 +110,29 @@ pub fn open_linux_terminal(command: &str, args: &[String]) -> Result<(), AppErro
 }
 
 pub fn open_windows_terminal(command: &str, args: &[String]) -> Result<(), AppError> {
-    if which("wt").is_some() {
-        let wt_args = wt_new_tab_args(command, args)?;
-        reap_async(Command::new("wt").args(wt_args).spawn()?);
+    let program = program_path(command, std::env::var_os("PATH").as_deref())?;
+    if let Some(wt) = which("wt") {
+        let wt_args = wt_new_tab_args(&program, args)?;
+        reap_async(Command::new(wt).args(wt_args).spawn()?);
         return Ok(());
     }
 
-    let line = cmd_console_line(command, args)?;
+    let line = cmd_console_line(&program, args)?;
     open_cmd_console(&line)
+}
+
+/// `command` by its full path, found as `which` finds it. Handed on by name, wt and cmd would look
+/// for it by their own rules, which take the working directory too.
+fn program_path(command: &str, path_var: Option<&std::ffi::OsStr>) -> Result<String, AppError> {
+    let path = path_var
+        .and_then(|path_var| which_in(command, path_var))
+        .ok_or_else(|| AppError::Connection(format!("{command} was not found in PATH")))?;
+    path.into_os_string().into_string().map_err(|path| {
+        AppError::Connection(format!(
+            "the path of {command} is not valid Unicode: {}",
+            path.to_string_lossy()
+        ))
+    })
 }
 
 /// Opens `cmd <line>` in a console of its own.
@@ -140,10 +155,10 @@ fn open_cmd_console(_line: &str) -> Result<(), AppError> {
 ///
 /// Not through `std::process::Command`: that hands the child the standard handles of this process
 /// (`STARTF_USESTDHANDLES`) whenever it has any, and Windows keeps them even for a new console
-/// (learn.microsoft.com/en-us/windows/console/getstdhandle, Remarks). The desktop is a console
-/// program (no `windows_subsystem`), so cmd and ssh would read and write its console instead of
-/// the new window. Without that flag and without handle inheritance the new console fills the
-/// standard handles itself.
+/// (learn.microsoft.com/en-us/windows/console/getstdhandle, Remarks). A debug build of the desktop
+/// is a console program (`windows_subsystem` only in release), so cmd and ssh would read and write
+/// its console instead of the new window. Without that flag and without handle inheritance the new
+/// console fills the standard handles itself.
 /// cmd comes by its full path from the system directory: with only a command line,
 /// `CreateProcessW` would search the current directory as well.
 #[cfg(windows)]
@@ -282,10 +297,11 @@ fn quote_percent_or_control(value: &str) -> Option<String> {
     None
 }
 
-/// The arguments of `cmd` for `cmd /S /V:OFF /K ""<command>" "<arg>"…"` in a new console, with
+/// The arguments of `cmd` for `cmd /D /S /V:OFF /K ""<command>" "<arg>"…"` in a new console, with
 /// which `command` gets every argument unchanged.
 ///
-/// After `/K`, cmd with `/S` takes off exactly the first and the last `"` and runs the rest
+/// `/D` skips the AutoRun commands of the registry, which would run before `command`. After `/K`,
+/// cmd with `/S` takes off exactly the first and the last `"` and runs the rest
 /// (learn.microsoft.com/en-us/windows-server/administration/windows-commands/cmd). Every value
 /// stands in its own `"…"`, inside which cmd takes `&|<>()^` and `;` literally, and `/V:OFF`
 /// turns off the `!` expansion. The C runtime of the program reads a `\` as itself unless it comes
@@ -304,7 +320,7 @@ pub fn cmd_console_line(command: &str, args: &[String]) -> Result<String, AppErr
         let trailing = value.len() - value.trim_end_matches('\\').len();
         quoted.push(format!("\"{value}{}\"", "\\".repeat(trailing)));
     }
-    Ok(format!("/S /V:OFF /K \"{}\"", quoted.join(" ")))
+    Ok(format!("/D /S /V:OFF /K \"{}\"", quoted.join(" ")))
 }
 
 /// POSIX-shell single-quote escaping for a value interpolated into a `bash -c`
@@ -347,6 +363,37 @@ mod tests {
             Some(dir.join("Cargo.toml"))
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn program_path_takes_the_program_from_absolute_path_entries_only() {
+        // cargo runs the tests in the crate folder, which holds Cargo.toml.
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-program-")
+            .expect("a private folder");
+        std::fs::write(dir.join("Cargo.toml"), b"").unwrap();
+        let path = |entries: &[&std::path::Path]| std::env::join_paths(entries).unwrap();
+        let here = std::path::Path::new(".");
+        let empty = std::path::Path::new("");
+
+        for path_var in [Some(path(&[here, empty])), None] {
+            match program_path("Cargo.toml", path_var.as_deref()) {
+                Err(AppError::Connection(msg)) => assert!(msg.contains("not found"), "{msg}"),
+                other => panic!("{path_var:?}: expected not found, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            program_path("Cargo.toml", Some(&path(&[here, &dir]))).expect("found"),
+            dir.join("Cargo.toml").to_str().expect("UTF-8 path")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn open_windows_terminal_starts_nothing_for_a_program_outside_path() {
+        match open_windows_terminal("ah-no-such-program-0867", &strings(&["x"])) {
+            Err(AppError::Connection(msg)) => assert!(msg.contains("not found"), "{msg}"),
+            other => panic!("expected not found, got {other:?}"),
+        }
     }
 
     fn strings(values: &[&str]) -> Vec<String> {
@@ -420,7 +467,7 @@ mod tests {
     fn cmd_console_line_quotes_each_value_inside_one_outer_pair() {
         assert_eq!(
             cmd_line("ssh", &["-p", "2222", "--", "u@h"]),
-            r#"/S /V:OFF /K ""ssh" "-p" "2222" "--" "u@h"""#
+            r#"/D /S /V:OFF /K ""ssh" "-p" "2222" "--" "u@h"""#
         );
     }
 
@@ -438,7 +485,7 @@ mod tests {
         ] {
             assert_eq!(
                 cmd_line("ssh", &[value]),
-                format!(r#"/S /V:OFF /K ""ssh" "{value}"""#)
+                format!(r#"/D /S /V:OFF /K ""ssh" "{value}"""#)
             );
         }
     }
@@ -447,7 +494,7 @@ mod tests {
     fn cmd_console_line_doubles_only_trailing_backslashes() {
         assert_eq!(
             cmd_line("ssh", &["C:\\dir with space\\", "C:\\a\\b", "x\\\\"]),
-            r#"/S /V:OFF /K ""ssh" "C:\dir with space\\" "C:\a\b" "x\\\\"""#
+            r#"/D /S /V:OFF /K ""ssh" "C:\dir with space\\" "C:\a\b" "x\\\\"""#
         );
     }
 
@@ -488,9 +535,9 @@ mod tests {
         let exe = std::env::current_exe().expect("test binary");
         let line = cmd_console_line(exe.to_str().expect("UTF-8 path"), args).expect("cmd line");
         let rest = line
-            .strip_prefix("/S /V:OFF /K ")
+            .strip_prefix("/D /S /V:OFF /K ")
             .expect("the line starts with the switches");
-        format!("/S /V:OFF /C {rest}")
+        format!("/D /S /V:OFF /C {rest}")
     }
 
     #[cfg(windows)]
