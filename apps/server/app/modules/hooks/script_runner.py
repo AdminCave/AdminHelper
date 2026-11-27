@@ -359,7 +359,7 @@ def failed_run_error(result: dict) -> str | None:
 def raised_run_error(exc: BaseException) -> str:
     """The bell text for a hook run that raised: the type only. The message can carry paths
     or connection details from a library; it stays in the log."""
-    return f"{type(exc).__name__} (details in the server log)"
+    return f"{type(exc).__name__} (details in the log)"
 
 
 HOOK_FAILED_EVENT = "lifecycle.hook.failed"
@@ -367,9 +367,10 @@ HOOK_FAILED_EVENT = "lifecycle.hook.failed"
 # a nightly one still rings once a night.
 _FAILURE_NOTICE_EVERY = timedelta(hours=12)
 # One lock per hook around the check for a recent notice and the write: two event runs of the
-# same hook failing at once in one process would otherwise both pass the check. A hook is either
-# scheduled (scheduler process, one run at a time) or event-driven (web worker), so only
-# WEB_CONCURRENCY > 1 leaves a rare second notice, from another worker.
+# same hook failing at once in one process would otherwise both pass the check. A hook runs
+# in the scheduler process (schedule and server.startup hooks, one run at a time) or in a web
+# worker (the other events), so only WEB_CONCURRENCY > 1 leaves a rare second notice, from
+# another worker.
 _failure_notice_locks: dict[str, threading.Lock] = {}
 _failure_notice_locks_guard = threading.Lock()
 

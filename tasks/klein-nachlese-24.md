@@ -14,8 +14,10 @@ Beweis: reviewer kern-agent-24 2026-11-25 (disks_test.go:127, disks_bounded.go:6
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: changelog.d/klein-nachlese-24.md
 
-### T2 — Hooks: Kommentar und Glockentext nennen den richtigen Prozess (R-1778)  [ ]
+### T2 — Hooks: Kommentar und Glockentext nennen den richtigen Prozess (R-1778)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_runner.py, docs/features/kern-server-15.md, apps/server/tests/test_hooks.py, changelog.d/klein-nachlese-24.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @43646e63b 2026-11-27T13:57:03+01:00
+Review: approve (.ah-out/review/klein-nachlese-24/T2.verdict.json)
 Beweis: reviewer kern-server-15 2026-11-25 (script_runner.py:371, :362)
 Änderung: Der Lock-Kommentar nennt `server.startup` als Scheduler-Hook; der Glockentext sagt "details in the log" ohne "server"; das Feature-Doc zieht den Satz nach. Ein Test in test_hooks.py haelt den neuen Text fest.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py

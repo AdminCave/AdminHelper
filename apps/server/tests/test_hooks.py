@@ -683,6 +683,14 @@ class TestFailedRunsRingTheBell:
         assert "RuntimeError" in (rows[0].body or "")
         assert "runner broke" not in (rows[0].body or "")
 
+    def test_the_bell_text_of_a_raised_run_names_the_type_and_no_service(self):
+        """Schedule and server.startup hooks log in the scheduler service, event hooks in the
+        web service: the text must not name either."""
+        from app.modules.hooks.script_runner import raised_run_error
+
+        text = raised_run_error(RuntimeError("secret path /etc/x"))
+        assert text == "RuntimeError (details in the log)"
+
     def test_a_failed_notice_does_not_raise_after_the_rollback(self, caplog):
         """The rollback expires the hook: reading its name afterwards would load it again,
         and with the database gone that raises out of a function that must never raise
