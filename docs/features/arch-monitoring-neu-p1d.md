@@ -125,11 +125,13 @@ class Rule(_Model):
   Eine feuernde Regel hält, solange `op(wert, clear)` gilt.
 - **`when`** bewertet wie heute mit `_same` und den Vergleichen von `probe.py`. `max_age` gibt es nur zusammen mit
   `check`.
-- **`rule_problems(rules) -> list[str]`:** Schlüssel doppelt, `clear` bei einem anderen Operator oder auf der falschen
-  Seite, Wert der Bedingung passt nicht zum Operator, `max_age` ohne `check`. `Check` meldet den ersten Fund als
-  Fehler, die Regel-API als 422. `Module` prüft zusätzlich, dass `when.check` einen anderen Probe-Check desselben
-  Moduls nennt, dessen `fields` `when.field` enthalten. Ohne `check` muss `when.field` zu den eigenen `fields`
-  gehören (wie `unless`, `Check._consistent`, `model.py:304`).
+- **`rule_problems(rules) -> list[str]`:** Schlüssel doppelt. `clear` bei einem anderen Operator oder auf der falschen
+  Seite, ein Wert der Bedingung, der nicht zum Operator passt, und `max_age` ohne `check` scheitern schon in `Rule`
+  und `Condition`. `Module` meldet den ersten Fund von `rule_problems` als Fehler, die Regel-API als 422; `Check`
+  nicht, weil der Agent-Plan jede gespeicherte Probe-Config als `Check` neu prüft und eine Altzeile von vor den
+  Schlüsseln zwei gleiche tragen darf (sie bleibt im Plan und wird eingefroren). `Module` prüft zusätzlich, dass
+  `when.check` einen anderen Probe-Check desselben Moduls nennt, dessen `fields` `when.field` enthalten. Ohne
+  `check` muss `when.field` zu den eigenen `fields` gehören (wie `unless`, `Check._consistent`, `model.py:304`).
 - **Hash:** Die Serializer-Schleife (`:158`) lässt auch `key`, `clear` und `when` weg, solange sie `None` sind.
 
 ### Bewertung (`probe.py`)
