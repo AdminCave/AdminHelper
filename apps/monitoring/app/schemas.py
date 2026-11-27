@@ -500,10 +500,13 @@ class MonitorStateOut(BaseModel):
 
 
 class ObjectExceptionOut(BaseModel):
-    """What keeps an object out (R-1636): a setting of its check (source setting, effect
-    skip, the setting's name) or the narrowest exception in force over its check (source
+    """What keeps an object out: a skip in force on its check, which then does not run
+    (R-1637); else what its check excluded it by at its last run, a setting (source
+    setting, effect skip, the setting's name, R-1636) or a no_rating exception (scope kind
+    object, R-1637); else the narrowest exception in force over its check (source
     exception, its id, scope kind, effect and reason). The fields of the other source are
-    null."""
+    null. unstable only for an object exception: its pattern names disks or containers by
+    a name another one can take (ADR 0004 §4)."""
 
     source: str
     effect: str
@@ -511,6 +514,7 @@ class ObjectExceptionOut(BaseModel):
     id: str | None
     scopeKind: str | None
     reason: str | None
+    unstable: bool | None
 
 
 class MonitorObjectOut(BaseModel):

@@ -53,11 +53,10 @@ _STANDING = (
 )
 _SKIP = (MonitorException.scope_kind == "check", MonitorException.effect == "skip", *_STANDING)
 
-# The SQL filter of the checks that run; check_runs answers the same for one loaded row.
-runs = and_(
-    MonitorCheck.enabled.is_(True),
-    ~exists().where(MonitorException.check_id == MonitorCheck.id, *_SKIP),
-)
+# The SQL condition of a check a skip in force keeps from running, and the filter of the
+# checks that run; check_runs answers the latter for one loaded row.
+skipped = exists().where(MonitorException.check_id == MonitorCheck.id, *_SKIP)
+runs = and_(MonitorCheck.enabled.is_(True), ~skipped)
 
 # Each character fnmatch reads as a wildcard, in the bracket that matches it alone.
 _MASKED = {"[[]": "[", "[*]": "*", "[?]": "?"}
