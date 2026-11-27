@@ -199,3 +199,77 @@ func TestSetWaitsForAHolderThatSharesNoDelete(t *testing.T) {
 		t.Fatalf("stored %v; want a and b", Refs(creds))
 	}
 }
+
+// R-1823: Set reads the file it is about to replace under its lock; a scanner that holds it just
+// then without sharing read access must not make the Set fail.
+func TestLoadWaitsForAHolderThatSharesNoRead(t *testing.T) {
+	ctx := context.Background()
+	path := storePath(t)
+	if err := Set(ctx, path, "a", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_ = windows.CloseHandle(h)
+		close(released)
+	}()
+	creds, err := Load(path)
+	<-released
+	if err != nil {
+		t.Fatalf("Load while another process holds the file: %v", err)
+	}
+	if len(creds) != 1 {
+		t.Fatalf("loaded %v; want a", Refs(creds))
+	}
+}
+
+// A file pending deletion refuses every open with ERROR_ACCESS_DENIED (the error of R-1823) until
+// its last handle closes; then it is gone, and Load finds no credentials instead of failing.
+func TestLoadWaitsForAFilePendingDeletion(t *testing.T) {
+	ctx := context.Background()
+	path := storePath(t)
+	if err := Set(ctx, path, "a", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(name, windows.DELETE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteFile := byte(1) // FILE_DISPOSITION_INFO: one BOOLEAN
+	if err := windows.SetFileInformationByHandle(h, windows.FileDispositionInfo, &deleteFile, 1); err != nil {
+		_ = windows.CloseHandle(h)
+		t.Fatal(err)
+	}
+	if _, err := openForRead(path); err != windows.ERROR_ACCESS_DENIED {
+		_ = windows.CloseHandle(h)
+		t.Fatalf("open of a file pending deletion = %v; want ERROR_ACCESS_DENIED", err)
+	}
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_ = windows.CloseHandle(h)
+		close(released)
+	}()
+	creds, err := Load(path)
+	<-released
+	if err != nil {
+		t.Fatalf("Load while the file is pending deletion: %v", err)
+	}
+	if len(creds) != 0 {
+		t.Fatalf("loaded %v; want none", Refs(creds))
+	}
+}
