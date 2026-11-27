@@ -145,8 +145,9 @@ class MonitorCheck(Base):
     # another offers the new definition as an update. NULL for a check from before it.
     module_check_hash = Column(String, nullable=True)
     # The catalog rules a module's probe check is bound to and the admin's overrides over
-    # them, as JSON (app/rule_layer.py, R-1638). NULL for a check without rules and for one
-    # whose rules the admin changed before the layer and could not be converted: they stay.
+    # them, as JSON (app/rule_layer.py, R-1638). NULL for any other check and for a probe
+    # check whose rules the admin changed before the layer and could not be converted: they
+    # stay.
     rule_layer = Column(Text, nullable=True)
     # Evaluated and shown, never alerted: a module check the admin took over quietly.
     silent = Column(Boolean, nullable=False, default=False, server_default=false())

@@ -37,7 +37,7 @@ from app.models import (
     MonitorModuleTombstone,
     MonitorState,
 )
-from app.rule_layer import convert, store_layer
+from app.rule_layer import convert, effective, merge, read_layer, store_layer
 from app.template_sync import (
     TEMPLATE_CHECK_FIELDS,
     SchedulerAction,
@@ -525,12 +525,16 @@ def _update(
     summary: dict,
     containers: list[dict],
     sockets: list[dict] | None,
+    now: datetime,
 ) -> str | None:
     """Give the row the catalog's new definition; why not, or None. The admin's interval
     and timeout stay (the only parts of a probe config besides rules the admin can edit,
     routers/checks.py), as do the row's name and switches; a central row keeps its
-    interval and the partner the admin gave it."""
-    if "config" in read_overrides(row):
+    interval and the partner the admin gave it. A probe row's rule overrides go over the
+    new catalog rules (merge), the conflicts of this merge into its layer and the log; one
+    whose rules the admin changed before the layer keeps them (R-1638)."""
+    layer = read_layer(row)
+    if layer is None and "config" in read_overrides(row):
         return "the admin changed the check's rules; they stay"
     if (row.check_type == "central") != check.central:
         return "the catalog moved the check between the agent and the monitoring service"
@@ -546,11 +550,28 @@ def _update(
             if part in old:
                 config[part] = old[part]
     try:
-        (CentralConfig if check.central else ProbeConfig).model_validate(config)
+        if check.central:
+            CentralConfig.model_validate(config)
+        else:
+            catalog = config["rules"]
+            overrides, conflicts = (
+                ({}, []) if layer is None else merge(layer["catalog"], catalog, layer["overrides"])
+            )
+            ProbeConfig.model_validate({**config, "rules": effective(catalog, overrides)})
     except ValueError:
         return "the updated check does not hold"
     row.config = json.dumps(config)
     row.module_check_hash = definition_hash(check)
+    if not check.central:
+        at = now.isoformat()
+        store_layer(row, catalog, overrides, [{**c, "at": at} for c in conflicts])
+        for c in conflicts:
+            logger.warning(
+                "Module check %s: the catalog update meets the admin's rule %s (%s)",
+                row.id,
+                c["key"],
+                c["kind"],
+            )
     return None
 
 
@@ -599,7 +620,14 @@ def _adopt(
             if row.id in updatable:
                 key = row.module_check_key
                 why = _update(
-                    row, module, by_key[key], finding.instance_key, summary, containers, sockets
+                    row,
+                    module,
+                    by_key[key],
+                    finding.instance_key,
+                    summary,
+                    containers,
+                    sockets,
+                    now,
                 )
                 if why is None:
                     result.updated.append(row.id)

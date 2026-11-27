@@ -8,9 +8,9 @@ which stay as the catalog wrote them. A catalog update is a three-way merge of t
 catalog, the new one and these overrides.
 
 The catalog here is a check's rules as `probe_config` dumps them. A probe check of a module
-keeps its layer in monitor_checks.rule_layer; NULL means a check without rules or one whose
-rules the admin changed before the layer and stay theirs alone (frozen). Nothing here reads
-the database.
+keeps its layer in monitor_checks.rule_layer, also one without rules; NULL means a check of
+another kind or one whose rules the admin changed before the layer and stay theirs alone
+(frozen). Nothing here reads the database.
 """
 
 from __future__ import annotations
@@ -204,8 +204,8 @@ def convert(catalog: list[dict], rules: list[dict]) -> tuple[dict | None, str | 
 
 
 def read_layer(row: MonitorCheck) -> dict | None:
-    """The check's layer, {"catalog", "overrides", "conflicts"}, or None: a check without
-    rules, a frozen one, or a column that does not hold a layer."""
+    """The check's layer, {"catalog", "overrides", "conflicts"}, or None: a check other
+    than a module's probe check, a frozen one, or a column that does not hold a layer."""
     try:
         layer = json.loads(row.rule_layer) if row.rule_layer else None
     except (TypeError, ValueError):

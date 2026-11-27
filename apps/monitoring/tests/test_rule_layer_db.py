@@ -11,6 +11,7 @@ as the admin built it."""
 
 import json
 import logging
+from datetime import timedelta
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -19,7 +20,7 @@ from app import module_sync
 from app.catalog.loader import load_catalog
 from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.checkers.probe import _rate
-from app.models import MonitorCheck
+from app.models import MonitorCheck, MonitorFinding
 from app.module_sync import adopt, definition_hash, record_rule_layers, sync_catalog
 from app.rule_layer import convert, effective, read_layer, store_layer
 from app.template_sync import read_overrides
@@ -52,6 +53,27 @@ RAISED = load_catalog(
 )
 WITHOUT_PAPERLESS = load_catalog([NGINX, ("port", PORT_MODULE)])
 CHANGED = [STATUS, {**SLOW, "value": 5000}]
+SLOWER = {"field": "duration_ms", "op": "gt", "value": 10000, "level": "critical"}
+
+
+def _web_rules(*rules):
+    return load_catalog(
+        [
+            _paperless({**TWO_RULES, "rules": list(rules)}, BROKER, SCHED),
+            NGINX,
+            ("port", PORT_MODULE),
+        ]
+    )
+
+
+# Catalog updates of the web check's rules.
+ADDED = _web_rules(STATUS, SLOW, SLOWER)
+TO_THE_ADMINS = _web_rules(STATUS, {**SLOW, "value": 5000})
+WITHOUT_SLOW = _web_rules(STATUS)
+REDEFINED = _web_rules(STATUS, {**SLOW, "op": "ge"})
+LOWERED = _web_rules(STATUS, {**SLOW, "value": 1000})
+UPDATES = (ADDED, TO_THE_ADMINS, WITHOUT_SLOW, REDEFINED, LOWERED)
+LATER = NOW + timedelta(days=1)
 
 # Results around every limit of the rules here, and one without a value.
 RESULTS = [
@@ -65,8 +87,9 @@ RESULTS = [
 
 
 def test_the_test_catalogs_are_valid():
-    catalogs = (CATALOG, RAISED, WITHOUT_PAPERLESS)
+    catalogs = (CATALOG, RAISED, WITHOUT_PAPERLESS, *UPDATES)
     assert [c.errors for c in catalogs] == [()] * len(catalogs)
+    assert len({c.version for c in catalogs}) == len(catalogs)
 
 
 @pytest.fixture()
@@ -452,3 +475,145 @@ def test_the_log_counts_what_the_start_did(db, actions, logs):
     counts = [r.getMessage() for r in logs.records if r.getMessage().startswith("Rule layers:")]
     # The second start has nothing left to do and says nothing.
     assert counts == ["Rule layers: 1 recorded, 1 converted, 0 frozen (the admin's rules stay)"]
+
+
+# --- a catalog update over the layer --------------------------------------------------
+
+
+def _adopted_with(db, actions, overrides):
+    """The web check adopted from CATALOG with these overrides over its rules."""
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=CATALOG, now=NOW)
+    web = _checks(db, finding)["web"]
+    store_layer(web, _catalog_rules(CATALOG), overrides)
+    db.commit()
+    actions.clear()
+    return finding, web
+
+
+def _updated(db, finding, catalog, now=LATER):
+    assert sync_catalog(db, catalog=catalog) == 1
+    return adopt(db, finding.id, catalog=catalog, now=now)
+
+
+def _warnings(logs):
+    return [r.getMessage() for r in logs.records if r.levelno == logging.WARNING]
+
+
+def test_an_update_keeps_the_admins_limit_and_takes_the_new_rule(db, actions, logs):
+    finding, web = _adopted_with(db, actions, {"duration_ms.warning": {"value": 5000}})
+
+    result = _updated(db, finding, ADDED)
+
+    assert result.updated == [web.id]
+    assert read_layer(web) == {
+        "catalog": _catalog_rules(ADDED),
+        "overrides": {"duration_ms.warning": {"value": 5000}},
+        "conflicts": [],
+    }
+    assert _rules(web) == [STATUS, {**SLOW, "value": 5000}, SLOWER]
+    assert read_overrides(web) == {"config"}
+    web_check = next(c for c in ADDED.modules["paperless"].checks if c.key == "web")
+    assert web.module_check_hash == definition_hash(web_check)
+    assert _warnings(logs) == []
+
+
+@pytest.mark.parametrize(
+    ("override", "catalog", "kept", "conflict"),
+    [
+        pytest.param(
+            {"value": 5000},
+            RAISED,
+            {"value": 5000},
+            {"kind": "both_changed", "part": "value"},
+            id="both_changed",
+        ),
+        pytest.param(
+            {"value": 5000}, WITHOUT_SLOW, None, {"kind": "removed", "part": None}, id="removed"
+        ),
+        pytest.param(
+            {"value": 5000, "level": "critical"},
+            REDEFINED,
+            {"level": "critical"},
+            {"kind": "redefined", "part": None},
+            id="redefined",
+        ),
+        pytest.param(
+            {"clear": 1500},
+            LOWERED,
+            None,
+            {"kind": "clear_dropped", "part": "clear"},
+            id="clear_dropped",
+        ),
+    ],
+)
+def test_an_update_keeps_its_conflicts_in_the_layer_and_the_log(
+    db, actions, logs, override, catalog, kept, conflict
+):
+    finding, web = _adopted_with(db, actions, {"duration_ms.warning": override})
+
+    result = _updated(db, finding, catalog)
+
+    assert result.updated == [web.id]
+    overrides = {} if kept is None else {"duration_ms.warning": kept}
+    assert read_layer(web) == {
+        "catalog": _catalog_rules(catalog),
+        "overrides": overrides,
+        "conflicts": [{"key": "duration_ms.warning", **conflict, "at": LATER.isoformat()}],
+    }
+    assert _rules(web) == effective(_catalog_rules(catalog), overrides)
+    assert read_overrides(web) == ({"config"} if overrides else set())
+    assert _warnings(logs) == [
+        f"Module check {web.id}: the catalog update meets the admin's rule "
+        f"duration_ms.warning ({conflict['kind']})"
+    ]
+
+
+def test_the_layer_keeps_the_conflicts_of_the_last_update(db, actions):
+    finding, web = _adopted_with(db, actions, {"duration_ms.warning": {"value": 5000}})
+    _updated(db, finding, RAISED)
+    assert [c["kind"] for c in read_layer(web)["conflicts"]] == ["both_changed"]
+
+    # The catalog moves to the admin's limit: the override ends, and with it the mark.
+    _updated(db, finding, TO_THE_ADMINS, now=LATER + timedelta(days=1))
+
+    assert read_layer(web) == {
+        "catalog": _catalog_rules(TO_THE_ADMINS),
+        "overrides": {},
+        "conflicts": [],
+    }
+    assert _rules(web) == [STATUS, {**SLOW, "value": 5000}]
+    assert read_overrides(web) == set()
+
+
+def test_an_update_gives_a_check_without_a_layer_its_layer(db, actions):
+    # Its rules did not hold at start-up, or the start-up has not run since the layer.
+    web = _before_the_layer(db, actions)
+    finding = db.query(MonitorFinding).one()
+
+    result = _updated(db, finding, RAISED)
+
+    assert result.updated == [web.id]
+    assert read_layer(web) == {"catalog": _catalog_rules(RAISED), "overrides": {}, "conflicts": []}
+    assert _rules(web) == _catalog_rules(RAISED)
+
+
+def test_an_update_the_admins_overrides_do_not_fit_keeps_the_old_row(db, actions):
+    finding, web = _adopted_with(db, actions, {})
+    # Only a hand-made layer gets here: the routes check what they store.
+    web.rule_layer = json.dumps(
+        {
+            "catalog": _catalog_rules(CATALOG),
+            "overrides": {"duration_ms.warning": {"value": "slow"}},
+            "conflicts": [],
+        }
+    )
+    db.commit()
+    before = (web.config, web.rule_layer, web.module_check_hash)
+
+    result = _updated(db, finding, RAISED)
+
+    assert result.updated == []
+    assert {"key": "web", "reason": "the updated check does not hold"} in result.skipped
+    assert (web.config, web.rule_layer, web.module_check_hash) == before

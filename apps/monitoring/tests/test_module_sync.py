@@ -1542,6 +1542,8 @@ def test_a_central_check_takes_a_new_definition_and_keeps_interval_and_partner(d
         "params": {"expected": ["192.0.2.10"]},
         "pair_check_id": "pair-1",
     }
+    # A central check has no catalog rules: no rule layer (R-1638).
+    assert resolves.rule_layer is None
 
 
 def test_a_check_the_catalog_moved_to_the_service_is_not_rewritten(db, actions):
@@ -1571,6 +1573,9 @@ def test_a_check_the_catalog_moved_to_the_service_is_not_rewritten(db, actions):
 def test_a_catalog_update_keeps_the_rules_the_admin_changed(db, actions):
     finding = _adopted(db, actions)
     web = _checks(db, finding)["web"]
+    # Changed before the rule layer (R-1638) and not converted: frozen. A check with a layer
+    # takes the update over the admin's overrides (test_rule_layer_db.py).
+    web.rule_layer = None
     old = web.config
     config = json.loads(old)
     config["rules"] = [{"field": "status_code", "op": "ne", "value": 204, "level": "warning"}]
