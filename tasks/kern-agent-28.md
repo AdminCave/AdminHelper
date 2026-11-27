@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-28 — Agent: Zugangsdaten unter Windows trotz kurz gesperrter Datei lesen — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-28 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-28 · Review: am Ende
 Spec: docs/features/kern-agent-28.md (Roadmap R-1823)
 Heavy: windows — Windows-only-Code, verifiziert im CI-Job agent-windows (go test ./...)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
