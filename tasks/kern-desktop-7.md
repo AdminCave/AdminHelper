@@ -32,8 +32,10 @@ Beweis: main@6895f8eaf apps/desktop/src-tauri/src/sftp.rs:432-458 (Code-Lesung) 
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T3
 
-### T2 — R-1830: Feed-Antwort nach dem Abmelden verwerfen  [ ]
+### T2 — R-1830: Feed-Antwort nach dem Abmelden verwerfen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.ts, apps/desktop/ui/src/lib/stores/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ef42976aa 2026-11-27T15:44:09+01:00
+Review: am Ende (Branch-Review)
 Änderung: `fetchFeedOnce` merkt sich `logoutGen` vor dem Abruf. Hat sich der Wert danach geändert, verwirft die Funktion die Antwort: keine Liste, kein `primed`, keine OS-Meldung. Test (zuerst rot): Das Abmelden kommt während eines offenen Abrufs. Danach bleibt die Liste leer, und der erste Abruf der neuen Sitzung löst keine OS-Meldung für den Rückstand aus.
 Beweis: reviewer kern-desktop-6 T11 2026-11-27 (vorbestehend), apps/desktop/ui/src/lib/stores/notifications.ts:94
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
