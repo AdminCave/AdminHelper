@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1d — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1d.md (Roadmap R-1638)
 Heavy: linux-full — Monitoring-Migration (`monitor_checks.rule_layer`), geänderter Push-Pfad (`routers/agent.py`) und neue Monitoring-Route; kein Server-, Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -86,8 +86,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_rules
 Doku: → T8
 Abhängt von: T6
 
-### T8 — Doku DE+EN und CHANGELOG (R-1638)  [ ]
+### T8 — Doku DE+EN und CHANGELOG (R-1638)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-neu-p1d.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @38943eb93 2026-11-27T08:49:49+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Entwickler-Doku Monitoring: Modul-Modell (`key`, `clear`, `when`, `rule_problems`), Katalog-Updates mit Regel-Schicht und Merge, `rule_layer`, `record_rule_layers`, Marke `config`, `_siblings`, `firing`/`resting` in `_details`. API-Referenz: `GET/PUT /checks/{id}/rules`, die 422 von `PUT /checks/{id}`. Admin-Doku Monitoring: `#probe-status` (Entwarnung, ruhende Regel), Fund `changed` und „Geänderte Definitionen“ (geänderte Grenzen bleiben über ein Update, Konflikte, eingefrorene Altzeilen). Changelog-Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
