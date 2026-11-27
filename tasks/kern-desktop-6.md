@@ -11,6 +11,8 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - T1: ein TLS-Fehler beim Erneuern (rustls lehnt das Zertifikat ab) gilt als Ablehnung, nicht als „ohne Urteil“: ein nicht vertrautes Zertifikat ist kein Ausfall, den ein spaeterer Versuch ueberwindet; `without_self_signed_in_the_session_the_renewal_does_not_trust_on_first_use` haelt das fest. Ein Connect-Fehler samt Connect-Timeout (10 s) behaelt die Sitzung (das Token ging nie raus), nur ein Timeout nach dem Connect beendet sie (`transport_unanswered`, Reviewer T1). T2: das Web kann beide Timeouts nicht trennen (`AbortSignal.timeout` deckt die ganze Anfrage); ein Connect-Fehler ist dort ein fetch-TypeError und behaelt die Sitzung, ein Timeout beendet sie wie geplant.
 - Plan: R-1691 liest den Login-Zustand aus den frpc-Logzeilen (frp v0.72.0 client/service.go:369-389), nicht aus `/api/status` (kein Login-Zustand dort) und nicht per Bind-Probe.
 - T5: frpc schreibt „try to connect to server“ vor jedem Versuch, auch vor dem ersten und nach jedem Fehlschlag; die Zeile setzt darum nur ein angemeldetes frpc auf „verbindet“ (Login verloren), sonst bleibt der Zustand: „kein Kontakt“ steht bis zum naechsten Erfolg (Reviewer T5, `login_after`).
+- T6: solange frpc „verbindet“, fragt der Store alle 3 s den Status (`LOGIN_POLL_MS`), damit die Anzeige nach dem Start nicht bis zum naechsten Minuten-Tick steht; bei „kein Kontakt“ kein Polling und kein Knopf, frpc versucht selbst weiter.
+- T7: die Monitore melden ueber eine Rueckruf-Funktion (`RdpWatch.report`, `RdpReport`) statt direkt an den AppHandle, damit der Test die Ereignisse eines `sh -c`-Stellvertreters zaehlen kann; der Exit-Thread joint die Leser vor seiner Entscheidung, wie `wait_interactive`.
 - Plan: R-1689 ein Code `ERR_DEVICE_CERT_INVALID` fuer beide Wege (lokal abgelaufen, nginx-495-Seite).
 
 ### T1 — Erneuerung: Transportfehler und 502/503/504 behalten die Sitzung, Desktop (R-1709)  [x]
@@ -63,8 +65,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.
 Doku: → T12
 Abhängt von: T5
 
-### T7 — xfreerdp mit Passwort: ein Ereignis je Versuch (R-1707)  [ ]
+### T7 — xfreerdp mit Passwort: ein Ereignis je Versuch (R-1707)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @3682541d6 2026-11-27T09:22:10+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T7.verdict.json)
 Änderung: der Exit-Thread wartet die Leser ab und entscheidet per `emitted.swap`, wie `wait_interactive`; die Entscheidung als testbare Funktion. Test mit einem Fake-Programm (`sh -c`), das vor der Frist ohne Fehlerzeile endet: genau ein Ereignis.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::rdp::
 Doku: keine (Fehlerverhalten ohne dokumentierte Beschreibung; CHANGELOG in T12)
@@ -76,7 +80,7 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T12
 
 ### T9 — Einstellung „Erreichbarkeit pruefen“ je Workspace, Backend (R-1710)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/commands.rs
 Änderung: `Settings.probe_reachability` (Default an) im Meta von `workspace.json` wie `favorite_connections`; alte Datei ohne Feld liest sich als an. Tests in `storage.rs`: Default, Speichern je Workspace, zwei Workspaces getrennt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage::
 Doku: → T12
