@@ -23,8 +23,10 @@ Review: approve (.ah-out/review/ops-18/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: → T6
 
-### T2 — R-1786: restore.sh prüft die Herkunft des Archivs  [ ]
+### T2 — R-1786: restore.sh prüft die Herkunft des Archivs  [x]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @92209a5e2 2026-11-27T13:34:57+01:00
+Review: approve (.ah-out/review/ops-18/T2.verdict.json)
 Änderung: Argumente in beliebiger Reihenfolge (`--yes`, `--allow-foreign`). Archiv einmal öffnen, Eigentümer (Aufrufer oder root), Modus (nicht g/o-beschreibbar) und Ordner (nicht fremd beschreibbar ohne Sticky-Bit) prüfen, danach nur die eigene Kopie unter `$STAGE` lesen. `--allow-foreign` übergeht die Herkunftsprüfung, nicht die Inhaltsprüfung. Tests je Ablehnung, Schalter und Reihenfolge der Argumente.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: → T6

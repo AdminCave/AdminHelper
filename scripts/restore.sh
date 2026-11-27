@@ -7,7 +7,12 @@
 # means existing agents stay trusted (same Root + intermediates).
 #
 # Usage (from the repository root):
-#   ./scripts/restore.sh <backup.tar.gz> [--yes]
+#   ./scripts/restore.sh [--yes] [--allow-foreign] <backup.tar.gz>
+#
+# The archive must belong to the caller (or root) and be writable by nobody else, nor
+# sit in a folder others can write to without the sticky bit: restore.sh runs as root
+# and puts the archive's CA and databases in place. --allow-foreign skips that check,
+# not the check of the archive's content.
 #
 # DESTRUCTIVE: replaces the contents of the ca-pki / monitoring-data /
 # victoria-data volumes and both databases. The script stops the stack first.
@@ -17,9 +22,19 @@
 
 set -euo pipefail
 
-ARCHIVE="${1:?Usage: restore.sh <backup.tar.gz> [--yes]}"
+usage() { echo "Usage: restore.sh [--yes] [--allow-foreign] <backup.tar.gz>" >&2; exit 1; }
+ARCHIVE=""
 ASSUME_YES=0
-[ "${2:-}" = "--yes" ] && ASSUME_YES=1
+ALLOW_FOREIGN=0
+for arg in "$@"; do
+    case "$arg" in
+        --yes) ASSUME_YES=1 ;;
+        --allow-foreign) ALLOW_FOREIGN=1 ;;
+        -*) usage ;;
+        *) [ -z "$ARCHIVE" ] || usage; ARCHIVE="$arg" ;;
+    esac
+done
+[ -n "$ARCHIVE" ] || usage
 
 if [ ! -f "$ARCHIVE" ]; then
     echo "[restore] FEHLER: Backup nicht gefunden: $ARCHIVE" >&2
@@ -27,7 +42,34 @@ if [ ! -f "$ARCHIVE" ]; then
 fi
 
 STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
+HOLD=$(mktemp -d)
+trap 'rm -rf "$STAGE" "$HOLD"' EXIT
+
+# Where the archive comes from (R-1786): opened once, the checks look at the open file
+# and every later read goes to the copy in $HOLD, so nothing swapped in between counts.
+TRUSTED_UIDS=" $(id -u) ${SUDO_UID:-} 0 "
+foreign() {
+    echo "[restore] FEHLER: $1 — abgebrochen. Ein Backup aus fremder Hand mit --allow-foreign einspielen." >&2
+    exit 1
+}
+# The folder of the file itself: a link to the archive does not stand in for it.
+DIR=$(dirname -- "$(readlink -f -- "$ARCHIVE")")
+d_stat=$(stat -L -c '%u %a' -- "$DIR")
+read -r d_uid d_mode <<< "$d_stat"
+exec 3< "$ARCHIVE"
+[ -f /dev/fd/3 ] || { echo "[restore] FEHLER: Backup ist keine Datei: $ARCHIVE" >&2; exit 1; }
+a_stat=$(stat -L -c '%u %a' /dev/fd/3)
+read -r a_uid a_mode <<< "$a_stat"
+if [ "$ALLOW_FOREIGN" != 1 ]; then
+    case "$TRUSTED_UIDS" in *" $a_uid "*) ;; *) foreign "Backup gehoert uid $a_uid, nicht dem Aufrufer" ;; esac
+    (( (8#$a_mode & 8#022) == 0 )) || foreign "Backup ist fuer andere beschreibbar (Modus $a_mode)"
+    case "$TRUSTED_UIDS" in *" $d_uid "*) ;; *) foreign "Ordner $DIR gehoert uid $d_uid, nicht dem Aufrufer" ;; esac
+    (( (8#$d_mode & 8#022) == 0 || (8#$d_mode & 8#1000) != 0 )) \
+        || foreign "Ordner $DIR ist fuer andere beschreibbar (Modus $d_mode)"
+fi
+cat <&3 > "$HOLD/backup.tar.gz"
+exec 3<&-
+ARCHIVE="$HOLD/backup.tar.gz"
 
 # A backup is operator-supplied data. Before extracting it onto the host, reject
 # a crafted archive that could escape $STAGE: absolute paths, ../ escapes, or
