@@ -5,8 +5,10 @@ Heavy: none — Doku, Kommentare und ein Quelltext-Test
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Server-Kommentare nennen .bootstrap_setup (R-1774)  [ ]
+### T1 — Server-Kommentare nennen .bootstrap_setup (R-1774)  [x]
 Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/app/main.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e4272fb8d 2026-11-27T14:32:21+01:00
+Review: approve (.ah-out/review/klein-doku-12/T1.verdict.json)
 Änderung: der Kommentar vor `ADMIN_PASSWORD` und der Docstring von `ensure_admin` sagen, dass der einmalige Setup-Token in `DATA_DIR/.bootstrap_setup` liegt (0600, Klartext); `.bootstrap_token` hält nur den Hash. Vorher an `BOOTSTRAP_TOKEN_FILE`/`BOOTSTRAP_SETUP_FILE` im Code prüfen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py
 Doku: keine (Kommentare)

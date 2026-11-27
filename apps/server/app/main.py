@@ -77,8 +77,8 @@ def _ensure_admin(db):
 
     - If users already exist: do nothing (idempotent).
     - If ADMIN_PASSWORD is empty OR 'admin': NO default user; instead a
-      bootstrap token in DATA_DIR/.bootstrap_token, used to create the admin
-      via POST /api/auth/bootstrap (similar to Vaultwarden/Gitea).
+      setup token in DATA_DIR/.bootstrap_setup (its hash in .bootstrap_token), used to
+      create the admin via POST /api/auth/bootstrap (similar to Vaultwarden/Gitea).
     - If ADMIN_PASSWORD differs: create the admin directly as before
       (for CI/test/power users with an explicitly set password).
     """
