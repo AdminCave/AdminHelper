@@ -118,8 +118,10 @@ Abhängt von: T3, T4
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_template_sync.py tests/test_module_sync.py tests/test_openapi_snapshot.py tests/test_alerter_hub.py tests/test_central_rebaseline.py tests/test_models_timestamps.py tests/test_response_shapes.py tests/test_tag_sync.py tests/test_template_overrides.py tests/test_exception_scope.py
 Doku: → T14
 
-### T6 — Ausnahme-API: Geltung object, Wirkungen skip und no_rating (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/exceptions.py, apps/monitoring/tests/test_exceptions_api.py, apps/monitoring/tests/test_openapi_snapshot.py, apps/monitoring/openapi.snapshot.json, apps/monitoring/tests/test_response_shapes.py
+### T6 — Ausnahme-API: Geltung object, Wirkungen skip und no_rating (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/exceptions.py, apps/monitoring/tests/test_exceptions_api.py, apps/monitoring/tests/test_openapi_snapshot.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/app/check_switch.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3a834254f 2026-11-27T13:29:10+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T6.verdict.json)
 Abhängt von: T5
 Änderung:
 - **Eingabe** (`ExceptionInput`, `schemas.py:375`; Konstanten `:370`–`:372`): `scope_kind = "object"` mit `object_kind` und `object_pattern` (1–255 Zeichen); Wirkungen `skip` und `no_rating`.
@@ -133,7 +135,7 @@ Abhängt von: T5
   - `skip` anlegen und beenden läuft über `check_switch` (Planer, Entwarnung, frischer Start).
   - `PUT` darf Geltung und Wirkung einer bestehenden Zeile nicht wechseln (422).
 - **Tests:** jede Kombination (erlaubt und 422), Art ↔ Typ, 409, Anlegen und Beenden einer `skip` mit Planer-Wirkung, Akteur, `to_dict` mit den Objektfeldern.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_exceptions_api.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_exceptions_api.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_checks_crud.py tests/test_alerter_hub.py
 Doku: → T14
 
 ### T7 — Engine mit Mustern: Mounts, Dienste, Prognose (R-1637)  [ ]
@@ -294,3 +296,7 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27 T5: PUT mit `enabled` schaltet nur, wenn der Wert von „läuft“ abweicht; der Editor schickt alle Felder zurück, ein zweites Aus legt keine zweite Skip an. `enabled: null` lässt den Schalter, wie ein fehlender Schlüssel (bisher schrieb es NULL in die Spalte). Eine Altzeile mit NULL in der Spalte meldet `enabled: false` (sie läuft nicht).
 - Session 2026-11-27 T5: `create_check` mit `enabled = false` legt die Spalte an und die Skip mit dem Akteur dazu; eine Entwarnung entfällt (ein neuer Check hat keinen Alarm). `reset_check` beendet die Skips: vor R-1637 brachte Zurücksetzen das `enabled` der Vorlage zurück, das sichtbare Ergebnis bleibt gleich.
 - Session 2026-11-27 T5: `end_skips` setzt `updated_at` des Checks (der Planer-Verzug aus T3 → T5). `start_check` auf einer vom System abgeschalteten Spalte (ohne Skip) schaltet sie an und markiert sie wie bisher; PUT `enabled: false` auf so einem Check legt keine Skip an, er läuft ja nicht.
+- Session 2026-11-27 T6: Skip und no_rating haben je einen Geltungsbereich (Skip: `check`, no_rating: `object`), beide nur `permanent`; `object` nur mit no_rating, weil die Engine auf Objekten nichts anderes kennt. Eine andere Kombination ist 422 wie in R-1636 (keine Zeile, die nichts tut). Ob der Check existiert und Objekte der Art hat (`OBJECT_KINDS[kind].check_type`), prüft der Router, weil er die Datenbank braucht.
+- Session 2026-11-27 T6: Eine zweite stehende Skip auf demselben Check ist 409 (eine abgeschaltete stört nicht, bis sie angeschaltet wird). Das ist eine Bedienregel, keine DB-Invariante: zwei Skips wirken wie eine, `load_skips` nimmt die kleinere id.
+- Session 2026-11-27 T6: PUT lässt den Effekt stehen, und Skip und no_rating behalten ihren Check (422); no_notify darf den Geltungsbereich weiter wechseln (R-1636, `test_a_new_scope_clears_the_old_one`). So bleibt die Spur einer Skip an einem Check, und der Router muss beim Umwidmen nicht zwei Checks schalten.
+- Session 2026-11-27 T6: `check_switch` teilt `stopped` (Entwarnung) und `started` (frischer Zustand, `updated_at` für den Planer-Verzug) aus `stop_check`/`start_check` heraus; `/exceptions` vergleicht „läuft“ vor und nach der Änderung einer Skip und ruft das passende auf, der Planer folgt nach dem Commit. `_schedule` bleibt in `routers/checks.py` (die Tests patchen dort `add_check`), `routers/exceptions.py` hat dieselben drei Zeilen in `_after_commit`.

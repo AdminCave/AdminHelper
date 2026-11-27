@@ -1247,7 +1247,7 @@
         "type": "object"
       },
       "ExceptionInput": {
-        "description": "Create/full-update payload of an exception: where it applies (scope_kind with\nscope_value: the check id, the check type or the server id; none for all), what it\ndoes, for how long. The time fields follow MaintenanceInput, except that a once\nwithout starts_at starts now; permanent takes none.",
+        "description": "Create/full-update payload of an exception: where it applies (scope_kind with\nscope_value: the check id, the check type or the server id; none for all; the check\nid for object, whose objects of object_kind matching object_pattern it names, fnmatch\nand case-sensitive), what it does, for how long. The time fields follow\nMaintenanceInput, except that a once without starts_at starts now; permanent takes\nnone.",
         "properties": {
           "duration_kind": {
             "title": "Duration Kind",
@@ -1286,6 +1286,30 @@
               }
             ],
             "title": "Ends At"
+          },
+          "object_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Kind"
+          },
+          "object_pattern": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Pattern"
           },
           "reason": {
             "anyOf": [
@@ -1468,6 +1492,28 @@
             "title": "Id",
             "type": "string"
           },
+          "objectKind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectkind"
+          },
+          "objectPattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectpattern"
+          },
           "origin": {
             "title": "Origin",
             "type": "string"
@@ -1535,6 +1581,10 @@
             "title": "Timezone",
             "type": "string"
           },
+          "unstable": {
+            "title": "Unstable",
+            "type": "boolean"
+          },
           "updatedAt": {
             "anyOf": [
               {
@@ -1581,6 +1631,9 @@
           "scopeKind",
           "scopeValue",
           "serverId",
+          "objectKind",
+          "objectPattern",
+          "unstable",
           "effect",
           "durationKind",
           "startsAt",
@@ -5554,7 +5607,7 @@
         "summary": "End Exception"
       },
       "put": {
-        "description": "Full update of an exception (same payload as create); an ended one is 409.",
+        "description": "Full update of an exception (same payload as create); an ended one is 409. Its\neffect stays, and a skip or no_rating keeps its check (422).",
         "operationId": "update_exception_exceptions__exception_id__put",
         "parameters": [
           {

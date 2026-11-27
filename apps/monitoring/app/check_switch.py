@@ -5,9 +5,11 @@
 """The admin's switch of a check (R-1637): off is a skip exception, on ends it.
 
 The column enabled stays the switch of the system (module and template sync); a check runs
-while it is on and no skip is in force (app.exception_scope). Nothing here commits or
-touches the scheduler: the route commits and then brings the scheduler in line with the
-committed check, so a failed commit leaves the job as it was."""
+while it is on and no skip is in force (app.exception_scope). stopped and started are what
+a check owes when it stops or starts running, also when a skip comes or goes through
+/exceptions. Nothing here commits or touches the scheduler: the route commits and then
+brings the scheduler in line with the committed check, so a failed commit leaves the job
+as it was."""
 
 from __future__ import annotations
 
@@ -58,6 +60,11 @@ def stop_check(db: Session, check: MonitorCheck, actor: Actor) -> AllClear | Non
             created_by_id=actor.id,
         )
     )
+    return stopped(db, check)
+
+
+def stopped(db: Session, check: MonitorCheck) -> AllClear | None:
+    """A check that no longer runs: the all-clear the bell is owed, if any."""
     state = db.get(MonitorState, check.id)
     if state is None or state.hub_status not in BELL_PROBLEMS:
         return None
@@ -95,12 +102,19 @@ def start_check(db: Session, check: MonitorCheck, actor: Actor) -> None:
         check.enabled = True
         mark_overrides(db, check, {"enabled": True})
         mark_module_overrides(check, enabled=True)
+    started(db, check)
+
+
+def started(db: Session, check: MonitorCheck) -> None:
+    """A check that runs again starts fresh: the old status is not reported again, a
+    problem the first run finds is a new one (R-1571)."""
+    now = utcnow_naive()
+    # Its change counts as a run for the scheduler's lag (main.py), like a new check's.
+    check.updated_at = now
     state = db.get(MonitorState, check.id)
     if state is not None:
-        # The check starts fresh: the old status is not reported again, a problem the
-        # first run finds is a new one (R-1571).
         state.status, state.fail_count, state.ok_count = "unknown", 0, 0
-        state.since = utcnow_naive()
+        state.since = now
 
 
 def send_all_clear(clear: AllClear) -> None:
