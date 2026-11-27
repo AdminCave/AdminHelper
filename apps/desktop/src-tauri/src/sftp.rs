@@ -437,9 +437,10 @@ impl Channel {
             return Err(Failure::App(AppError::SftpExists(name.to_string())));
         }
         // Overwriting a link writes through it, as writing onto the target did: the file it
-        // points to is the one replaced, and its mode stays (R-1708). Owner and group are the
-        // uploader's, as with any new file.
-        let (target_path, mode) = if overwrite {
+        // points to is the one replaced, and its mode stays (R-1708). Owner and group are taken
+        // over where the server lets the uploader set them (root, or a group of their own);
+        // otherwise they are the uploader's, as with any new file.
+        let (target_path, mode, owner) = if overwrite {
             let target_path = match self.session.symlink_metadata(target_path.as_str()).await {
                 Ok(meta) if meta.is_symlink() => self
                     .session
@@ -448,13 +449,13 @@ impl Channel {
                     .map_err(remote)?,
                 _ => target_path,
             };
-            let mode = match self.session.metadata(target_path.as_str()).await {
-                Ok(meta) => meta.permissions.map(|p| p & 0o7777),
-                Err(_) => None,
+            let (mode, owner) = match self.session.metadata(target_path.as_str()).await {
+                Ok(meta) => (meta.permissions.map(|p| p & 0o7777), meta.uid.zip(meta.gid)),
+                Err(_) => (None, None),
             };
-            (target_path, mode)
+            (target_path, mode, owner)
         } else {
-            (target_path, None)
+            (target_path, None, None)
         };
         // Written under a hidden name first: a broken upload leaves the file there as it was and
         // no partial file under its name (R-1708). Whatever an earlier one left under that name
@@ -487,6 +488,15 @@ impl Channel {
                 )
                 .await
                 .map_err(remote)?;
+            // Before the mode: a chown by someone other than root clears setuid and setgid.
+            if let Some((uid, gid)) = owner {
+                let owner = FileAttributes {
+                    uid: Some(uid),
+                    gid: Some(gid),
+                    ..FileAttributes::empty()
+                };
+                let _ = target.set_metadata(owner).await;
+            }
             if mode.is_some() {
                 target.set_metadata(attrs).await.map_err(remote)?;
             }
@@ -887,6 +897,36 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn an_overwritten_file_keeps_a_group_the_uploader_may_set() {
+            use std::os::unix::fs::MetadataExt;
+            let out = |arg: &str| {
+                let out = std::process::Command::new("id").arg(arg).output().unwrap();
+                String::from_utf8(out.stdout).unwrap()
+            };
+            let primary: u32 = out("-g").trim().parse().unwrap();
+            let other: u32 = out("-G")
+                .split_whitespace()
+                .map(|g| g.parse().unwrap())
+                .find(|g| *g != primary)
+                .expect("the test needs a user with a second group");
+            let scratch = Scratch::new();
+            let local = scratch.0.join("app.conf");
+            std::fs::write(&local, b"new").unwrap();
+            let remote_dir = scratch.0.join("remote");
+            std::fs::create_dir(&remote_dir).unwrap();
+            let target = remote_dir.join("app.conf");
+            std::fs::write(&target, b"old").unwrap();
+            std::os::unix::fs::chown(&target, None, Some(other)).unwrap();
+            let (program, args) = server(&scratch.0);
+
+            upload(program, &args, &local, "remote", true, &mut |_, _| {})
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(&target).unwrap(), b"new");
+            assert_eq!(std::fs::metadata(&target).unwrap().gid(), other);
+        }
+
+        #[tokio::test]
         async fn a_failed_download_leaves_the_local_file_as_it_was() {
             let scratch = Scratch::new();
             std::fs::create_dir(scratch.0.join("folder")).unwrap();
@@ -930,27 +970,43 @@ mod tests {
             std::fs::create_dir(&remote_dir).unwrap();
             std::fs::write(remote_dir.join("data.bin"), b"old").unwrap();
             let (server, _) = server(&scratch.0);
-            // The connection breaks after the first 64 KiB the server gets.
+            let pid_file = scratch.0.join("server.pid");
             let args = vec![
                 "-c".to_string(),
                 format!(
-                    "head -c 65536 | exec {} -d {}",
+                    "echo $$ > {} && exec {} -d {}",
+                    pid_file.display(),
                     server.to_str().unwrap(),
                     scratch.0.display()
                 ),
             ];
 
+            // The connection breaks once the first step of the upload has gone through.
+            let mut killed = false;
             upload(
                 OsStr::new("sh"),
                 &args,
                 &local,
                 "remote",
                 true,
-                &mut |_, _| {},
+                &mut |done, _| {
+                    if done > 0 && !killed {
+                        killed = true;
+                        let pid = std::fs::read_to_string(&pid_file).unwrap();
+                        let status = std::process::Command::new("kill")
+                            .args(["-KILL", pid.trim()])
+                            .status()
+                            .unwrap();
+                        assert!(status.success());
+                    }
+                },
             )
             .await
             .unwrap_err();
+            assert!(killed, "the upload had begun");
             assert_eq!(std::fs::read(remote_dir.join("data.bin")).unwrap(), b"old");
+            // Opened before the break, which could not take it away; the next upload does.
+            assert!(remote_part(&remote_dir, "data.bin").exists());
         }
 
         #[tokio::test]
@@ -975,7 +1031,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn a_part_file_left_on_the_server_is_emptied_not_appended_to() {
+        async fn a_part_file_left_on_the_server_is_replaced_not_appended_to() {
             let scratch = Scratch::new();
             let local = scratch.0.join("note.txt");
             std::fs::write(&local, b"new").unwrap();

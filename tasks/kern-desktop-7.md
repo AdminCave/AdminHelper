@@ -52,8 +52,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T4 — R-1708: Eigentümer best-effort, Abbruch-Test, der fällt  [ ]
+### T4 — R-1708: Eigentümer best-effort, Abbruch-Test, der fällt  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @345ec7e02 2026-11-27T16:37:17+01:00
+Review: am Ende (Branch-Review)
 Änderung: Beim Überschreiben setzt der Upload uid/gid der alten Datei auf die Teil-Datei, vor dem Modus, Fehler ignoriert. Der Abbruch-Test tötet den sftp-server nach dem ersten Fortschritt (vorher scheiterte er schon am INIT und fiel ohne den Fix nicht). Ein Test zeigt, dass eine Gruppe des Hochladenden erhalten bleibt. Ein Testname beschreibt nicht mehr das alte Abschneiden.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T6
