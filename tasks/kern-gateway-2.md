@@ -1,0 +1,53 @@
+# Gateway: Webhook-Trigger auf :8444, Upstream-Keepalive — Task-Ledger
+Status: geplant · Branch: feature/kern-gateway-2 · Review: pro Task
+Spec: docs/features/kern-gateway-2.md (Roadmap R-1687, R-1717)
+Heavy: linux-full — Gateway-Konfiguration und Server-API; der Stack-Test unter enforce läuft im PR (integration-stack)
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+## Entscheidungen
+- Kevin 2026-11-27 (Notiz R-1687): Webhook-Route auf :8444 ohne mTLS, mit Token und Ratelimit.
+
+### T1 — Gateway: Connection "" an jedem Weg zum Upstream (R-1717)  [ ]
+Komponente: server · Dateien: apps/gateway/identity-headers.conf, apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
+Änderung: `proxy_set_header Connection ""` in `identity-headers.conf` und im :8444-Server samt `activate`-Location. Test aus
+nginx.conf: jede Location mit `proxy_pass` auf `app`/`issuer` erbt oder setzt den leeren Connection-Header; im Container:
+ein Stub-Upstream unter dem Namen `server` meldet für Anfragen über :443 und :8444 kein `Connection: close`.
+Beweis: Code-Lesung main@6895f8eaf nginx.conf:50-60,114,187-188; der Container-Test ist vor dem Fix rot.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
+Doku: keine (internes Verhalten ohne Doku-Stelle)
+
+### T2 — Gateway: Webhook-Trigger auf :8444 (R-1687)  [ ]
+Komponente: server · Dateien: apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py, scripts/tests/integration_stack_test.sh
+Änderung: Zone `hooks`; auf :8444 `location = /api/hooks/trigger` und `location ~ ^/api/hooks/trigger/[^/]+$`, nur POST,
+`limit_req zone=hooks`, `client_max_body_size 1m`, Identitäts-Header geleert, `proxy_pass http://app`. Tests: aus nginx.conf
+(Zone, Locations, geleerte Header); im Container gehen beide Pfade auf :8444 an den Server, `/api/hooks` und andere
+`/api`-Pfade bleiben 404; Stack-Test unter `MTLS_ENFORCE=true`: ein Trigger mit falschem Token über :8444 ohne Zertifikat
+bekommt die Antwort des Servers (401/404), nicht die des Gateways.
+Beweis: Code-Lesung main@6895f8eaf nginx.conf:166-210, docker-entrypoint.sh:38-41; der Container-Test ist vor dem Fix rot.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
+Doku: → T5
+Abhängt von: T1
+
+### T3 — Server: trigger_port in den Token-Antworten (R-1687)  [?] (trigger_port in den Token-Antworten oder fest 8444 im Web?)
+Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/hooks/schemas.py, apps/server/tests/test_hooks.py, apps/server/tests/test_openapi_snapshot.py
+Änderung: `HookCreatedResponse` (mit Token) und `HookTokenOut` tragen `trigger_port = ENROLL_PORT`. Test: Anlegen und
+Rotieren eines Webhooks nennen den Port; ein geänderter `ENROLL_PORT` erscheint.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py tests/test_openapi_snapshot.py
+Doku: → T5
+
+### T4 — Web: Dialog zeigt die URL auf dem Enrollment-Port (R-1687)  [ ]
+Komponente: web · Dateien: apps/web/src/modals/WebhookTokenModal.svelte, apps/web/src/modals/WebhookTokenModal.test.ts, apps/web/src/pages/Hooks.svelte, apps/web/src/lib/api/types.ts
+Änderung: Das curl-Beispiel nennt `https://<Host der Seite>:<trigger_port>/api/hooks/trigger`. Test: der Dialog zeigt
+Host und Port; ohne Port fällt er auf die Herkunft der Seite zurück. Neue Testdatei mit SPDX-Header.
+Verify: bash scripts/dev/verify.sh web --strict -- src/modals/WebhookTokenModal.test.ts
+Doku: → T5
+Abhängt von: T3
+
+### T5 — Doku DE+EN und CHANGELOG (R-1687)  [ ]
+Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-gateway-2.md
+Änderung: API-Referenz: Trigger auf :8444 ohne Zertifikat, `trigger_port`. Installation: Port 8444 auch für Webhooks.
+Betrieb: Ratelimit und Body-Grenze des Triggers auf der zertifikatslosen Ebene. Fragment umlautfrei.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-gateway-2.md
+Task-Review: am Ende
