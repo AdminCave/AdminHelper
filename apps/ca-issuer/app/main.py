@@ -196,6 +196,9 @@ class EnrollRequest(BaseModel):
 
 class RenewRequest(BaseModel):
     csr: str  # PEM
+    # Base64 of an ECDSA signature by the key of the presented certificate over
+    # issuer.RENEW_PROOF_PREFIX + the CSR's DER (R-1812). Optional for one release.
+    proof: str | None = Field(default=None, max_length=128)
 
 
 class TrustGeneration(BaseModel):
@@ -247,7 +250,7 @@ def enroll(body: EnrollRequest, issuer: Issuer = Depends(get_issuer)):
 def renew(body: RenewRequest, request: Request, issuer: Issuer = Depends(get_issuer)):
     cert_pem = _presented_cert(request)
     try:
-        return issuer.renew(cert_pem, body.csr.encode())
+        return issuer.renew(cert_pem, body.csr.encode(), body.proof)
     except IssuanceError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except IssuerUnavailable as exc:

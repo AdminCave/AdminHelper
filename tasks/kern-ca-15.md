@@ -14,8 +14,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-27 R-1812: Besitznachweis als Feld `proof` in POST /renew (Signatur über die CSR-DER-Bytes mit dem alten Schlüssel, geprüft gegen den Public Key des vorgelegten Zertifikats); ein Release Übergang: ohne `proof` angenommen mit WARN, ab dem übernächsten Release abgelehnt.
 - Signierte Nachricht: `b"AdminHelper renew v1\x00"` + CSR-DER, ECDSA P-256/SHA-256, Signatur ASN.1 DER, Base64 (Standard-Alphabet mit Padding).
 
-### T1 — R-1812: ca-issuer prüft `proof` in /renew  [ ]
+### T1 — R-1812: ca-issuer prüft `proof` in /renew  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_enroll_renew.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @e9be4bf71 2026-11-27T14:45:58+01:00
+Review: approve (.ah-out/review/kern-ca-15/T1.verdict.json)
 Änderung: `RenewRequest.proof` optional (Base64, Länge begrenzt); `Issuer.renew` prüft ihn gegen den Public Key des vorgelegten Zertifikats, falsch/unlesbar → `IssuanceError` (403); fehlt er → WARN mit CN und Scope, Erneuerung wie bisher. Tests: gültiger proof erneuert; proof eines fremden Schlüssels, über eine andere CSR, ohne Präfix und unlesbar → 403; ohne proof erneuert und loggt WARN.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_enroll_renew.py tests/test_schemathesis.py
 Doku: → T5
