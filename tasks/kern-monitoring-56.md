@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 # kern-monitoring-56 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-56 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-56 · Review: pro Task
 Spec: docs/features/kern-monitoring-56.md (Roadmap R-1690, R-1696, R-1792, R-1827, R-1828)
 Heavy: none — nur Monitoring-Logik und Schemas, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -43,8 +43,10 @@ Review: approve (.ah-out/review/kern-monitoring-56/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_rule_layer_db.py
 Doku: → T5
 
-### T5 — Doku und Changelog  [ ]
+### T5 — Doku und Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-56.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d24fd5ddc 2026-11-27T21:24:27+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Cooldown-Absatz (eine Entwarnung startet ihn nicht), Phase eines Checks nach Neustart und Ändern, Changelog-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
