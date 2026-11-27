@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1d — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
+Status: erledigt · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1d.md (Roadmap R-1638)
 Heavy: linux-full — Monitoring-Migration (`monitor_checks.rule_layer`), geänderter Push-Pfad (`routers/agent.py`) und neue Monitoring-Route; kein Server-, Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
