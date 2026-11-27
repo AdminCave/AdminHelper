@@ -231,8 +231,10 @@ Abhängt von: T5, T10
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_exception_migration.py tests/test_migrations_smoke.py tests/test_seed.py tests/test_checks_crud.py tests/test_template_sync.py tests/test_alembic_builtin.py
 Doku: → T14
 
-### T12 — Desktop: ignoreService maskiert den Dienstnamen (R-1637, R-1521)  [ ]
+### T12 — Desktop: ignoreService maskiert den Dienstnamen (R-1637, R-1521)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @18d4d2f94 2026-11-27T14:53:40+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T12.verdict.json)
 Änderung:
 - `ignoreService` (`monitoring.ts:489`) maskiert `[`, `*` und `?` im Namen, bevor er in `ignore` geht. Das passt zu den Dienst-Mustern des Servers.
 - Tests:

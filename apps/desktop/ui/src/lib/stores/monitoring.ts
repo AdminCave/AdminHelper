@@ -482,6 +482,13 @@ function ignoreNames(raw: unknown): string[] {
     .filter((x) => x !== '');
 }
 
+// The pattern that matches the name and nothing else: the checker and the server's
+// exceptions read an ignore entry as an fnmatch pattern (mask in exception_scope.py), so
+// [, * and ? go in brackets (R-1521).
+function maskName(name: string): string {
+  return name.replace(/[[*?]/g, (c) => `[${c}]`);
+}
+
 // Takes one service out of a service_process check instead of turning off the whole
 // check (R-1520): auto mode ignores the name, list mode stops watching it. The mode
 // is the config's, read as the checker reads it (list without one). Only the config
@@ -492,7 +499,7 @@ export async function ignoreService(check: MonitorCheck, name: string): Promise<
   const config = check.config ?? {};
   const next =
     (config.mode ?? 'list') === 'auto'
-      ? { ...config, ignore: [...new Set([...ignoreNames(config.ignore), name])] }
+      ? { ...config, ignore: [...new Set([...ignoreNames(config.ignore), maskName(name)])] }
       : { ...config, services: (config.services ?? []).filter((s) => s !== name) };
   try {
     const updated = await monitoringApi.updateCheckConfig(session, check.id, next);

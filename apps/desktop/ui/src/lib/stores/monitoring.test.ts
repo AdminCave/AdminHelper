@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   adoptFinding: vi.fn(),
   adoptAllFindings: vi.fn(),
   dismissFinding: vi.fn(),
+  updateCheckConfig: vi.fn(),
   reportError: vi.fn(),
   showStatus: vi.fn(),
 }));
@@ -49,6 +50,7 @@ vi.mock('$lib/api/monitoring', () => ({
     adoptFinding: h.adoptFinding,
     adoptAllFindings: h.adoptAllFindings,
     dismissFinding: h.dismissFinding,
+    updateCheckConfig: h.updateCheckConfig,
   },
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError, showStatus: h.showStatus }));
@@ -82,6 +84,7 @@ import {
   openServerPage,
   setOverviewView,
   setTab,
+  ignoreService,
 } from './monitoring';
 import { IpcError, SESSION_EXPIRED } from '$lib/utils/errors';
 
@@ -410,5 +413,48 @@ describe('monitoring store: the server list signal (R-1675)', () => {
     await loadServers();
     expect(get(monitoringServersLoaded)).toBe(false);
     expect(get(monitoringServers)).toEqual([]);
+  });
+});
+
+describe('ignoring one service of the services card (R-1520, R-1521)', () => {
+  const units = {
+    id: 'units',
+    serverId: 'srv-1',
+    config: { mode: 'auto', ignore: ['cron*'] },
+    state: { status: 'ok' },
+  } as unknown as MonitorCheck;
+
+  beforeEach(async () => {
+    for (const fn of [h.updateCheckConfig, h.reportError, h.fetchStatus]) fn.mockReset();
+    h.fetchStatus.mockResolvedValue([units]);
+    await loadMonitoring();
+  });
+
+  it('masks [, * and ? so the entry matches the name and nothing else', async () => {
+    h.updateCheckConfig.mockResolvedValueOnce(units);
+    await ignoreService(units, 'app[1]*?.service');
+    // The checker and the exceptions read each entry as an fnmatch pattern.
+    expect(h.updateCheckConfig).toHaveBeenCalledWith(h.session, 'units', {
+      mode: 'auto',
+      ignore: ['cron*', 'app[[]1][*][?].service'],
+    });
+  });
+
+  it('keeps the check as it was and reports a failed PUT', async () => {
+    h.updateCheckConfig.mockRejectedValueOnce(new Error('boom'));
+    await ignoreService(units, 'a.service');
+    expect(get(monitoringChecks)).toEqual([units]);
+    expect(h.reportError).toHaveBeenCalledWith('boom');
+  });
+
+  it('puts the answer of the PUT in place of the check', async () => {
+    const updated = {
+      ...units,
+      config: { mode: 'auto', ignore: ['a.service', 'cron*'] },
+    } as unknown as MonitorCheck;
+    h.updateCheckConfig.mockResolvedValueOnce(updated);
+    await ignoreService(units, 'a.service');
+    expect(get(monitoringChecks)).toEqual([updated]);
+    expect(h.reportError).not.toHaveBeenCalled();
   });
 });
