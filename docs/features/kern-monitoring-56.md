@@ -28,9 +28,9 @@ Migration (R-1792, Stil) bleibt, eine ausgerollte Migration ändert der Zug nich
 ## Entwurf R-1696
 - Ein Job, dessen Intervall gleich bleibt, behält seinen nächsten Lauf (wie `hooks/scheduler.py:add_hook`).
 - Beim Laden (`load_all_checks`) beginnt die Phase bei `MonitorState.last_check` + Intervall; liegt das in der
-  Vergangenheit, läuft der Check sofort. Zentrale Checks ohne bekannten Lauf behalten die zufällige Phase (R-1224);
-  ein überfälliger zentraler Check läuft in der ersten Minute an zufälliger Stelle, damit die Limits von
-  `app.central` nicht die meisten verwerfen.
+  Vergangenheit, läuft der Check in der ersten Minute an zufälliger Stelle: nach einem langen Stillstand feuerten
+  sonst alle zugleich, und ein Lauf, der länger als `misfire_grace_time` im Pool wartet, verfällt für eine volle
+  Periode. Zentrale Checks ohne bekannten Lauf behalten die zufällige Phase (R-1224).
 
 ## Datenmodell / API / Migrationen
 Keine Migration. API: `server_id`/`match_server_id` höchstens 255 Zeichen, Regelwerte (Zeichenketten) höchstens
