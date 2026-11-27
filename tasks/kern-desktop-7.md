@@ -60,8 +60,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T6
 
-### T5 — R-1830: Test für Abmelden während `fetchUnreadCount`  [ ]
+### T5 — R-1830: Test für Abmelden während `fetchUnreadCount`  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ba71335f4 2026-11-27T16:42:22+01:00
+Review: am Ende (Branch-Review)
 Änderung: Ein Test hält `fetchUnreadCount` an, meldet ab und zeigt, dass die späte Antwort weder Liste noch Badge füllt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: keine (nur Test)

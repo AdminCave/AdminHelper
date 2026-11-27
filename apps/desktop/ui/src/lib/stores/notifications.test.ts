@@ -439,6 +439,21 @@ describe('notifications store', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('a badge count that arrives after deactivate fills nothing', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);
+    let resolve: (v: { count: number }) => void = () => {};
+    h.fetchUnreadCount.mockImplementationOnce(
+      () => new Promise<{ count: number }>((r) => (resolve = r)),
+    );
+    const pending = loadFeed();
+    await vi.waitFor(() => expect(h.fetchUnreadCount).toHaveBeenCalled());
+    deactivateNotifications();
+    resolve({ count: 7 });
+    await pending;
+    expect(get(notificationItems)).toEqual([]);
+    expect(get(unreadCount)).toBe(0);
+  });
+
   it('a center page started just before activate is kept', async () => {
     // After a login the page's onMount load starts before AppShell activates.
     let resolve: (v: NotificationItem[]) => void = () => {};
