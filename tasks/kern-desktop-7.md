@@ -14,8 +14,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-27: R-1708 und R-1830 angenommen (Notizen der Zeilen).
 - Plan: T1 baut auf dem Stand aus kern-desktop-6 T8 (Prüfrunde 3) auf. Neu ist dabei: `remove_file(part)`, danach `WRITE|CREATE|EXCLUDE`.
 
-### T1 — R-1708: SFTP-Upload über `.<name>.ah-part`  [ ]
+### T1 — R-1708: SFTP-Upload über `.<name>.ah-part`  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e3a187a4c 2026-11-27T15:38:32+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Upload entfernt einen alten Eintrag unter dem Teil-Namen und legt die Teil-Datei mit `WRITE|CREATE|EXCLUDE` an.
   - Die Rechte gelten ab dem ersten Byte.
   - Danach benennt er um: beim Überschreiben mit `posix-rename@openssh.com`, sonst entfernt er das Ziel und benennt um.

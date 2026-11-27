@@ -15,7 +15,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::OpenFlags;
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, Command};
@@ -113,8 +113,9 @@ pub async fn mkdir(program: &OsStr, args: &[String], path: &str) -> Result<(), A
     channel.finish(result).await
 }
 
-/// Uploads `local` into `remote_dir` under its own name. An existing file there is replaced only
-/// with `overwrite`, else the upload fails with [`AppError::SftpExists`].
+/// Uploads `local` into `remote_dir` under its own name: written next to it first and renamed
+/// when complete, so a failed upload leaves a file of that name as it was. An existing file there
+/// is replaced only with `overwrite`, else the upload fails with [`AppError::SftpExists`].
 pub async fn upload(
     program: &OsStr,
     args: &[String],
@@ -435,29 +436,87 @@ impl Channel {
         {
             return Err(Failure::App(AppError::SftpExists(name.to_string())));
         }
-        // EXCLUDE: a file created meanwhile is not replaced either.
-        let flags = OpenFlags::WRITE
-            | OpenFlags::CREATE
-            | if overwrite {
-                OpenFlags::TRUNCATE
-            } else {
-                OpenFlags::EXCLUDE
+        // Overwriting a link writes through it, as writing onto the target did: the file it
+        // points to is the one replaced, and its mode stays (R-1708). Owner and group are the
+        // uploader's, as with any new file.
+        let (target_path, mode) = if overwrite {
+            let target_path = match self.session.symlink_metadata(target_path.as_str()).await {
+                Ok(meta) if meta.is_symlink() => self
+                    .session
+                    .canonicalize(target_path.as_str())
+                    .await
+                    .map_err(remote)?,
+                _ => target_path,
             };
-        let mut target = self
-            .session
-            .open_with_flags(target_path, flags)
-            .await
-            .map_err(remote)?;
-        pump(
-            &mut source,
-            &mut target,
-            total,
-            progress,
-            Failure::Local,
-            remote,
-        )
-        .await?;
-        target.close().await.map_err(remote)
+            let mode = match self.session.metadata(target_path.as_str()).await {
+                Ok(meta) => meta.permissions.map(|p| p & 0o7777),
+                Err(_) => None,
+            };
+            (target_path, mode)
+        } else {
+            (target_path, None)
+        };
+        // Written under a hidden name first: a broken upload leaves the file there as it was and
+        // no partial file under its name (R-1708). Whatever an earlier one left under that name
+        // goes first, and the part file is created anew: a link placed there is never followed.
+        let (part_dir, part_name) = target_path.rsplit_once('/').unwrap_or(("", &target_path));
+        let part_path = join(
+            if part_dir.is_empty() && target_path.starts_with('/') {
+                "/"
+            } else {
+                part_dir
+            },
+            &format!(".{part_name}.ah-part"),
+        );
+        // The mode of the file it replaces before the first byte: the part file holds the new
+        // content, and one left by a broken connection stays. Given at the open and set again on
+        // the handle, past the server's umask and without going by the name.
+        let attrs = FileAttributes {
+            permissions: mode,
+            ..FileAttributes::empty()
+        };
+        // A failed remove (nothing there) is left to the exclusive open to report.
+        let _ = self.session.remove_file(part_path.as_str()).await;
+        let result = async {
+            let mut target = self
+                .session
+                .open_with_flags_and_attributes(
+                    part_path.as_str(),
+                    OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
+                    attrs.clone(),
+                )
+                .await
+                .map_err(remote)?;
+            if mode.is_some() {
+                target.set_metadata(attrs).await.map_err(remote)?;
+            }
+            pump(
+                &mut source,
+                &mut target,
+                total,
+                progress,
+                Failure::Local,
+                remote,
+            )
+            .await?;
+            target.close().await.map_err(remote)?;
+            // SFTP v3 rename does not replace a file on OpenSSH, so without `overwrite` a file
+            // created meanwhile stays. russh-sftp 3.0.1 has no `posix-rename@openssh.com`: the
+            // old file goes just before the rename, after the upload is complete. A failed remove
+            // (no such file) is left to the rename to report.
+            if overwrite {
+                let _ = self.session.remove_file(target_path.as_str()).await;
+            }
+            self.session
+                .rename(part_path.as_str(), target_path.as_str())
+                .await
+                .map_err(remote)
+        }
+        .await;
+        if result.is_err() {
+            let _ = self.session.remove_file(part_path.as_str()).await;
+        }
+        result
     }
 
     async fn download(
@@ -787,6 +846,44 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(std::fs::read(remote_dir.join("note.txt")).unwrap(), b"new");
+            assert!(!remote_part(&remote_dir, "note.txt").exists());
+        }
+
+        #[tokio::test]
+        async fn an_overwritten_file_keeps_its_mode_and_a_link_is_written_through() {
+            use std::os::unix::fs::PermissionsExt;
+            let scratch = Scratch::new();
+            let local = scratch.0.join("secret.env");
+            std::fs::write(&local, b"new").unwrap();
+            let remote_dir = scratch.0.join("remote");
+            std::fs::create_dir(&remote_dir).unwrap();
+            let real = remote_dir.join("real.env");
+            std::fs::write(&real, b"old").unwrap();
+            std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o640)).unwrap();
+            std::os::unix::fs::symlink("real.env", remote_dir.join("secret.env")).unwrap();
+            // Left by an earlier broken upload, with the server's default mode.
+            let part = remote_part(&remote_dir, "real.env");
+            std::fs::write(&part, b"stale").unwrap();
+            std::fs::set_permissions(&part, std::fs::Permissions::from_mode(0o644)).unwrap();
+            let (program, args) = server(&scratch.0);
+
+            // The part file holds the new content, so it has the mode of the file from the start.
+            let mut part_modes = Vec::new();
+            upload(program, &args, &local, "remote/", true, &mut |_, _| {
+                if let Ok(meta) = std::fs::metadata(&part) {
+                    part_modes.push(meta.permissions().mode() & 0o7777);
+                }
+            })
+            .await
+            .unwrap();
+            assert!(!part_modes.is_empty());
+            assert!(part_modes.iter().all(|m| *m == 0o640), "{part_modes:?}");
+            let link = std::fs::symlink_metadata(remote_dir.join("secret.env")).unwrap();
+            assert!(link.file_type().is_symlink(), "the link stays a link");
+            assert_eq!(std::fs::read(&real).unwrap(), b"new");
+            let mode = std::fs::metadata(&real).unwrap().permissions().mode() & 0o7777;
+            assert_eq!(mode, 0o640);
+            assert!(!remote_part(&remote_dir, "real.env").exists());
         }
 
         #[tokio::test]
@@ -816,6 +913,102 @@ mod tests {
                 .unwrap_err();
             assert_eq!(std::fs::read(taken.join("inside")).unwrap(), b"mine");
             assert!(!part_path(&taken).unwrap().exists());
+        }
+
+        /// The remote part file of an upload of `name` into `dir`.
+        fn remote_part(dir: &Path, name: &str) -> PathBuf {
+            dir.join(format!(".{name}.ah-part"))
+        }
+
+        // R-1708: the upload wrote onto the file itself, a broken one left it cut off.
+        #[tokio::test]
+        async fn a_broken_upload_leaves_the_file_there_as_it_was() {
+            let scratch = Scratch::new();
+            let local = scratch.0.join("data.bin");
+            std::fs::write(&local, content()).unwrap();
+            let remote_dir = scratch.0.join("remote");
+            std::fs::create_dir(&remote_dir).unwrap();
+            std::fs::write(remote_dir.join("data.bin"), b"old").unwrap();
+            let (server, _) = server(&scratch.0);
+            // The connection breaks after the first 64 KiB the server gets.
+            let args = vec![
+                "-c".to_string(),
+                format!(
+                    "head -c 65536 | exec {} -d {}",
+                    server.to_str().unwrap(),
+                    scratch.0.display()
+                ),
+            ];
+
+            upload(
+                OsStr::new("sh"),
+                &args,
+                &local,
+                "remote",
+                true,
+                &mut |_, _| {},
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(std::fs::read(remote_dir.join("data.bin")).unwrap(), b"old");
+        }
+
+        #[tokio::test]
+        async fn a_failed_upload_takes_its_part_file_away() {
+            let scratch = Scratch::new();
+            let local = scratch.0.join("note.txt");
+            std::fs::write(&local, b"new").unwrap();
+            let remote_dir = scratch.0.join("remote");
+            // A folder of that name: the upload completes, the rename fails.
+            std::fs::create_dir_all(remote_dir.join("note.txt")).unwrap();
+            std::fs::write(remote_dir.join("note.txt").join("inside"), b"old").unwrap();
+            let (program, args) = server(&scratch.0);
+
+            upload(program, &args, &local, "remote", true, &mut |_, _| {})
+                .await
+                .unwrap_err();
+            assert_eq!(
+                std::fs::read(remote_dir.join("note.txt").join("inside")).unwrap(),
+                b"old"
+            );
+            assert!(!remote_part(&remote_dir, "note.txt").exists());
+        }
+
+        #[tokio::test]
+        async fn a_part_file_left_on_the_server_is_emptied_not_appended_to() {
+            let scratch = Scratch::new();
+            let local = scratch.0.join("note.txt");
+            std::fs::write(&local, b"new").unwrap();
+            let remote_dir = scratch.0.join("remote");
+            std::fs::create_dir(&remote_dir).unwrap();
+            std::fs::write(remote_part(&remote_dir, "note.txt"), b"left over, longer").unwrap();
+            let (program, args) = server(&scratch.0);
+
+            upload(program, &args, &local, "remote", false, &mut |_, _| {})
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(remote_dir.join("note.txt")).unwrap(), b"new");
+            assert!(!remote_part(&remote_dir, "note.txt").exists());
+        }
+
+        #[tokio::test]
+        async fn a_link_at_the_part_name_on_the_server_is_not_followed() {
+            let scratch = Scratch::new();
+            let local = scratch.0.join("note.txt");
+            std::fs::write(&local, b"new").unwrap();
+            let remote_dir = scratch.0.join("remote");
+            std::fs::create_dir(&remote_dir).unwrap();
+            let elsewhere = scratch.0.join("elsewhere");
+            std::fs::write(&elsewhere, b"untouched").unwrap();
+            std::os::unix::fs::symlink(&elsewhere, remote_part(&remote_dir, "note.txt")).unwrap();
+            let (program, args) = server(&scratch.0);
+
+            upload(program, &args, &local, "remote", false, &mut |_, _| {})
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(&elsewhere).unwrap(), b"untouched");
+            assert_eq!(std::fs::read(remote_dir.join("note.txt")).unwrap(), b"new");
+            assert!(std::fs::symlink_metadata(remote_part(&remote_dir, "note.txt")).is_err());
         }
 
         #[tokio::test]
