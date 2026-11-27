@@ -1,5 +1,5 @@
 # klein-doku-12 — Task-Ledger
-Status: aktiv · Branch: feature/klein-doku-12 · Review: pro Task
+Status: bereit · Branch: feature/klein-doku-12 · Review: pro Task
 Spec: docs/features/klein-doku-12.md (Roadmap R-1774, R-1802)
 Heavy: none — Doku, Kommentare und ein Quelltext-Test
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/klein-doku-12/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: keine (Test)
 
-### T3 — Doku: cicd.html, installation.html, Changelog (R-1774, R-1802)  [ ]
+### T3 — Doku: cicd.html, installation.html, Changelog (R-1774, R-1802)  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, docs/admin/installation.html, changelog.d/klein-doku-12.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d7b563080 2026-11-27T14:39:42+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: "sobald scharf geschaltet" entfällt (SHA256SUMS.minisig gibt es immer), die Jobliste der `release.yml`-Zeile nennt `image-pins`, `pkg-signing-key` und `freebsd-pkg-tool` (DE+EN, gegen `release.yml` geprüft); DE `installation.html` Zeile 87 bekommt den STCP-Visitor-Hinweis der EN-Seite (6000-6999 bindet lokal am Desktop-Client). Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Dateien selbst
