@@ -732,7 +732,8 @@ layer_lint() {
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
     # The same paths as the CI job ops-scripts; the frps supervisor runs under the busybox sh
-    # of its image, so it is checked as POSIX sh there too.
+    # of its image and the opnsense scripts under FreeBSD's /bin/sh, so they are checked as
+    # POSIX sh there too.
     run_step shellcheck "shellcheck (ops scripts)" -- bash -c 'shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh .github/scripts/*.sh apps/*/docker-entrypoint.sh && shellcheck --severity=warning -s sh apps/frps/frps-supervisor.sh scripts/vm/opnsense/*.sh'
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }

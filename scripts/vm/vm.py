@@ -2057,7 +2057,8 @@ df -h /
 # base-freebsd's /etc/rc.conf lines go as well: the firewall configures its
 # services, interfaces and hostname itself (rc.conf.d), and a probe lease came up
 # with guest agent, address and sshd without them.
-# Both values are shell-quoted at the call.
+# user and forget are shell-quoted at the call; rc_conf is joined unquoted from
+# the fixed names in OPNSENSE_DROP_RC_CONF, so it must never take a variable value.
 OPNSENSE_FORGET_CERT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "opnsense", "forget-webgui-cert.php"
 )
@@ -2072,7 +2073,7 @@ OPNSENSE_CLEAN = OPNSENSE_PATH + (
     "/var/log/nuageinit.log /usr/local/etc/sudoers.d/90-nuageinit-users /firstboot "
     "/etc/rc.conf.d/firstboot_pkg_upgrade"
 )
-# What base-freebsd's image and import (FREEBSD_PREPARE) put into /etc/rc.conf.
+# What base-freebsd's image and import (seed_user_data) put into /etc/rc.conf.
 OPNSENSE_DROP_RC_CONF = (
     "hostname",
     "firstboot_pkg_upgrade_enable",
