@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1d — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-neu-p1d · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1d.md (Roadmap R-1638)
 Heavy: linux-full — Monitoring-Migration (`monitor_checks.rule_layer`), geänderter Push-Pfad (`routers/agent.py`) und neue Monitoring-Route; kein Server-, Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -95,6 +95,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6, T7
+
+### T9 — `_update` mit Default für `now`, Sperren als `FOR NO KEY UPDATE` (R-1638)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_check_rules_api.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/features/arch-monitoring-neu-p1d.md
+Änderung: Fund der Abschlussprüfung: `_update` verlangt seit T6 `now`, `tests/test_rule_model_prototype.py` ruft es mit sieben Argumenten auf und ist rot; `now` bekommt den Default der Datei (`None`, dann `utcnow_naive()`), der Prototyp-Test bleibt unverändert. Nit derselben Prüfung: die drei Sperren aus T7 (`instance_checks`, `update_check`, `_rules_check`) werden `FOR NO KEY UPDATE` (`with_for_update(key_share=True)`), die Sperre, die ihr UPDATE ohnehin nimmt; so warten sie und die Statuszeilen des Push-Pfads (`FOR KEY SHARE` über den FK auf `monitor_checks`) nicht mehr aufeinander. Postgres-Test dazu; Entwickler-Doku und Spec nennen die Sperre.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_rule_model_prototype.py tests/test_check_rules_api.py tests/test_module_sync.py tests/test_rule_layer_db.py tests/test_checks_crud.py
+Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html (DE+EN), Spec
+Abhängt von: T6, T7
 
 ## Entscheidungen
 - Kevin 2026-11-27: Regel-API als neue Route `GET/PUT /checks/{id}/rules`, `PUT /checks/{id}` übersetzt, nicht Ausdrückbares 422 mit Verweis; `MonitorCheckOut` bleibt (Spec, Entscheidung 1).
