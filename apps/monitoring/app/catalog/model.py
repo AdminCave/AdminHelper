@@ -439,6 +439,14 @@ class Check(_Model):
             when = rule.when
             if when is not None and when.check is None and when.field not in self.fields:
                 raise ValueError(f"when field {when.field!r} is not among the check's fields")
+        keys = [rule_key(rule) for rule in self.rules]
+        for rule, key in zip(self.rules, keys, strict=True):
+            # The hysteresis is kept by key: two rules under one key would hold each other.
+            # A stored config from before keys may name two rules alike, but none has clear.
+            if rule.clear is not None and keys.count(key) > 1:
+                raise ValueError(
+                    f"rule key {key!r} is given twice; a rule with clear needs its own"
+                )
         return self
 
 

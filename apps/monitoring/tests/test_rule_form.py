@@ -230,6 +230,13 @@ class TestProbeConfig:
         with pytest.raises(ValueError):
             validate_check_config("probe", self._config([rule]))
 
+    def test_a_rule_with_clear_needs_a_key_of_its_own(self):
+        rules = [{**_SLOW, "clear": 400}, {**_SLOW, "value": 900}]
+        with pytest.raises(ValueError, match="a rule with clear needs its own"):
+            validate_check_config("probe", self._config(rules))
+        rules[1]["key"] = "very_slow"
+        validate_check_config("probe", self._config(rules))
+
     def test_a_stored_config_with_two_rules_alike_stays_valid(self):
         # Stored before rule keys existed: the agent plan checks it again on every build and
         # leaves out what fails, so refusing it here would end its monitoring.

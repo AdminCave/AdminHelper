@@ -89,6 +89,8 @@ def test_ok_result_shows_the_values():
             "values": {"status_code": 200, "duration_ms": 31.5},
             "baseline": None,
             "problems": [],
+            "firing": [],
+            "resting": [],
         }
     }
 
@@ -422,6 +424,247 @@ def test_unusable_previous_details_mean_no_baseline(prev):
     level, _, metrics = _rate(_ok({"restarts": 9}), prev, **rate)
     assert level == "ok"
     assert metrics["_details"]["baseline"] is None
+
+
+# --- hysteresis and conditions (R-1638) ---
+
+_SLOW = {**_rule("duration_ms", "gt", 500, "warning"), "clear": 400}
+_HYST = {"fields": ["duration_ms"], "rules": [_SLOW]}
+
+
+def _stamp(offset):
+    return datetime.fromtimestamp(T0 + offset, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _run(values, prev=None, offset=0, **config):
+    """One measured run `offset` seconds after T0, rated in a report sent at that time."""
+    return _rate(_ok(values, ts=T0 + offset), prev, _stamp(offset), **{**_HYST, **config})
+
+
+def _details(rated):
+    return rated[2]["_details"]
+
+
+def test_a_rule_with_clear_holds_until_the_value_passes_clear():
+    first = _run({"duration_ms": 600})
+    assert first[:2] == ("warning", "duration_ms = 600 (gt 500)")
+    assert _details(first)["firing"] == ["duration_ms.warning"]
+
+    held = _run({"duration_ms": 450}, _details(first), 300)
+    assert held[:2] == ("warning", "duration_ms = 450 (gt 500, clears at 400)")
+    assert _details(held)["firing"] == ["duration_ms.warning"]
+
+    # On clear itself the alerting case no longer holds: gt 400 is false at 400.
+    cleared = _run({"duration_ms": 400}, _details(held), 600)
+    assert cleared[0] == "ok"
+    assert _details(cleared)["firing"] == []
+
+    # Past clear the hysteresis ends; between clear and the limit the rule stays quiet.
+    again = _run({"duration_ms": 450}, _details(cleared), 900)
+    assert again[0] == "ok"
+
+
+def test_without_a_firing_run_before_the_limit_counts():
+    assert _run({"duration_ms": 450})[0] == "ok"
+    assert _run({"duration_ms": 450}, {"firing": "duration_ms.warning"})[0] == "ok"
+
+
+def test_a_rule_without_clear_has_no_hysteresis():
+    rules = [_rule("duration_ms", "gt", 500, "warning")]
+    first = _run({"duration_ms": 600}, rules=rules)
+    assert _details(first)["firing"] == ["duration_ms.warning"]
+    assert _run({"duration_ms": 450}, _details(first), 300, rules=rules)[0] == "ok"
+
+
+def test_the_firing_rule_is_named_by_its_key():
+    rules = [{**_SLOW, "key": "slow"}]
+    first = _run({"duration_ms": 600}, rules=rules)
+    assert _details(first)["firing"] == ["slow"]
+    assert _run({"duration_ms": 450}, _details(first), 300, rules=rules)[0] == "warning"
+    # The key of another rule does not hold this one.
+    other = {**_details(first), "firing": ["duration_ms.warning"]}
+    assert _run({"duration_ms": 450}, other, 300, rules=rules)[0] == "ok"
+
+
+def test_the_same_run_sent_again_keeps_its_rating():
+    first = _run({"duration_ms": 600})
+    held = _run({"duration_ms": 450}, _details(first), 300)
+    resent = _rate(_ok({"duration_ms": 450}, ts=T0 + 300), _details(held), _stamp(600), **_HYST)
+    assert resent[:2] == held[:2]
+    assert _details(resent)["firing"] == ["duration_ms.warning"]
+
+
+@pytest.mark.parametrize(
+    ("result", "level"),
+    [
+        ({"status": "error", "error": "timeout"}, "critical"),
+        ({"status": "denied", "error": ""}, "warning"),
+        ({"status": "weird"}, "unknown"),
+    ],
+)
+def test_a_run_without_a_rating_keeps_the_hysteresis(result, level):
+    first = _run({"duration_ms": 600})
+    gap = _rate({"ts": T0 + 300, **result}, _details(first), _stamp(300), **_HYST)
+    assert gap[0] == level
+    assert _details(gap)["firing"] == ["duration_ms.warning"]
+    assert _run({"duration_ms": 450}, _details(gap), 600)[0] == "warning"
+
+
+def test_a_stale_run_keeps_the_hysteresis():
+    first = _run({"duration_ms": 600})
+    stale = _rate(_ok({"duration_ms": 450}, ts=T0), _details(first), _stamp(901), **_HYST)
+    assert stale[0] == "unknown"
+    assert _details(stale)["firing"] == ["duration_ms.warning"]
+
+
+def test_a_rule_without_a_value_keeps_the_hysteresis():
+    first = _run({"duration_ms": 600})
+    gap = _run({}, _details(first), 300)
+    assert gap[:2] == ("unknown", "duration_ms: no usable value in the probe result")
+    assert _details(gap)["firing"] == ["duration_ms.warning"]
+    assert _run({"duration_ms": 450}, _details(gap), 600)[0] == "warning"
+
+
+def test_an_absent_value_rated_ok_keeps_the_hysteresis():
+    rules = [{**_SLOW, "if_absent": "ok"}]
+    first = _run({"duration_ms": 600}, rules=rules)
+    gap = _run({}, _details(first), 300, rules=rules)
+    assert gap[0] == "ok"
+    assert _details(gap)["firing"] == ["duration_ms.warning"]
+
+
+@pytest.mark.parametrize("firing", [None, "x", [1, None], {"duration_ms.warning": 1}])
+def test_unusable_firing_means_none(firing):
+    first = _details(_run({"duration_ms": 600}))
+    assert _run({"duration_ms": 450}, {**first, "firing": firing}, 300)[0] == "ok"
+
+
+_GATED = {
+    "fields": ["status_code", "duration_ms"],
+    "rules": [
+        {
+            **_rule("duration_ms", "gt", 500, "warning"),
+            "when": {"field": "status_code", "op": "eq", "value": 200},
+        }
+    ],
+}
+
+
+def test_a_rule_rests_while_its_condition_on_the_own_result_fails():
+    rested = _run({"status_code": 503, "duration_ms": 900}, **_GATED)
+    assert rested[0] == "ok"
+    when = {"field": "status_code", "op": "eq", "value": 200}
+    assert _details(rested)["resting"] == [{"key": "duration_ms.warning", "when": when}]
+    assert _details(rested)["firing"] == []
+
+    rated = _run({"status_code": 200, "duration_ms": 900}, **_GATED)
+    assert rated[:2] == ("warning", "duration_ms = 900 (gt 500)")
+    assert _details(rated)["resting"] == []
+
+
+@pytest.mark.parametrize("status_code", [None, "200x", [200]])
+def test_a_condition_without_a_usable_value_lets_the_rule_rate(status_code):
+    values = {"duration_ms": 900}
+    if status_code is not None:
+        values["status_code"] = status_code
+    rated = _run(values, **_GATED)
+    if status_code == "200x":
+        # A text is a value: eq 200 is told and fails.
+        assert rated[0] == "ok"
+    else:
+        assert rated[0] == "warning"
+        assert _details(rated)["resting"] == []
+
+
+def test_a_resting_rule_ends_its_hysteresis():
+    rules = [{**_SLOW, "when": {"field": "status_code", "op": "eq", "value": 200}}]
+    config = {"fields": ["status_code", "duration_ms"], "rules": rules}
+    first = _run({"status_code": 200, "duration_ms": 600}, **config)
+    assert _details(first)["firing"] == ["duration_ms.warning"]
+    rested = _run({"status_code": 503, "duration_ms": 450}, _details(first), 300, **config)
+    assert _details(rested)["firing"] == []
+    back = _run({"status_code": 200, "duration_ms": 450}, _details(rested), 600, **config)
+    assert back[0] == "ok"
+
+
+def test_a_probe_error_is_critical_whatever_the_condition_says():
+    error = {"ts": T0, "status": "error", "error": "refused"}
+    assert _rate(error, **_GATED)[:2] == ("critical", "Probe failed: refused")
+
+
+_ON_MAIL = {
+    "fields": ["duration_ms"],
+    "rules": [
+        {
+            **_rule("duration_ms", "gt", 500, "warning"),
+            "when": {"field": "ok", "op": "eq", "value": True, "check": "test_mail"},
+        }
+    ],
+}
+
+
+def _sibling(ok, age=60, interval_s=300):
+    return {"test_mail": {"values": {"ok": ok}, "measured_ts": T0 - age, "interval_s": interval_s}}
+
+
+def test_a_rule_rests_while_its_condition_on_a_sibling_fails():
+    rested = _run({"duration_ms": 900}, _siblings=_sibling(False), **_ON_MAIL)
+    assert rested[0] == "ok"
+    assert [r["key"] for r in _details(rested)["resting"]] == ["duration_ms.warning"]
+    assert _run({"duration_ms": 900}, _siblings=_sibling(True), **_ON_MAIL)[0] == "warning"
+
+
+@pytest.mark.parametrize(
+    ("interval_s", "age", "rests"),
+    [(300, 900, True), (300, 901, False), (3600, 7500, True), (3600, 7501, False)],
+)
+def test_a_sibling_counts_while_its_result_is_fresh_by_its_interval(interval_s, age, rests):
+    siblings = _sibling(False, age=age, interval_s=interval_s)
+    level = _run({"duration_ms": 900}, _siblings=siblings, **_ON_MAIL)[0]
+    assert level == ("ok" if rests else "warning")
+
+
+def test_the_agents_probe_factor_stretches_the_siblings_freshness():
+    siblings = _sibling(False, age=2 * 300 * 2 + 300)
+    report = {"collectors": {"probes": {"factor": 2}}}
+    result = _ok({"duration_ms": 900})
+    rated = _rate(result, None, STAMP, report, **_ON_MAIL, _siblings=siblings)
+    assert rated[0] == "ok"
+    assert _rate(result, None, STAMP, None, **_ON_MAIL, _siblings=siblings)[0] == "warning"
+
+
+@pytest.mark.parametrize(("age", "rests"), [(600, True), (601, False)])
+def test_max_age_bounds_the_siblings_age(age, rests):
+    rules = [{**_ON_MAIL["rules"][0]}]
+    rules[0]["when"] = {**rules[0]["when"], "max_age": 600}
+    siblings = _sibling(False, age=age)
+    level = _run({"duration_ms": 900}, _siblings=siblings, **{**_ON_MAIL, "rules": rules})[0]
+    assert level == ("ok" if rests else "warning")
+
+
+@pytest.mark.parametrize(
+    "siblings",
+    [
+        None,
+        {},
+        {"test_mail": "garbage"},
+        {"test_mail": {"values": {"ok": False}}},
+        {"test_mail": {"values": {"ok": False}, "measured_ts": "T0"}},
+        {"test_mail": {"values": "garbage", "measured_ts": T0}},
+        {"test_mail": {"values": {}, "measured_ts": T0}},
+        {"other": {"values": {"ok": False}, "measured_ts": T0}},
+    ],
+)
+def test_a_sibling_that_cannot_tell_lets_the_rule_rate(siblings):
+    config = {**_ON_MAIL} if siblings is None else {**_ON_MAIL, "_siblings": siblings}
+    rated = _run({"duration_ms": 900}, **config)
+    assert rated[0] == "warning"
+    assert _details(rated)["resting"] == []
+
+
+def test_firing_and_resting_are_empty_on_a_plain_result():
+    details = _details(_rate(_ok({"status_code": 200})))
+    assert (details["firing"], details["resting"]) == ([], [])
 
 
 # --- push path ---
