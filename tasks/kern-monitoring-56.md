@@ -18,9 +18,11 @@ Beweis: main@6895f8eaf apps/monitoring/app/alerter.py:669-690 · Dedup-Key: bug:
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_cooldown.py tests/test_alerter.py
 Doku: → T5
 
-### T2 — R-1696: der Scheduler hält die Phase eines Checks  [ ]
+### T2 — R-1696: der Scheduler hält die Phase eines Checks  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/scheduler.py, apps/monitoring/tests/test_scheduler.py
-Änderung: `add_check` lässt einen Job mit unverändertem Intervall stehen; `load_all_checks` setzt die Phase aus `MonitorState.last_check` + Intervall, Überfälliges läuft sofort (zentral: in der ersten Minute zufällig). Test erst rot.
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ec8c7d31f 2026-11-27T21:09:10+01:00
+Review: approve (.ah-out/review/kern-monitoring-56/T2.verdict.json)
+Änderung: `add_check` lässt einen Job mit unverändertem Intervall stehen; `load_all_checks` setzt die Phase aus `MonitorState.last_check` + Intervall, Überfälliges läuft in der ersten Minute an zufälliger Stelle. Test erst rot.
 Beweis: main@6895f8eaf apps/monitoring/app/scheduler.py:61-79,105-112,152 · Dedup-Key: bug:monitoring:scheduler.py:add-check-resets-interval-phase
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_scheduler.py tests/test_scheduler_after_commit.py
 Doku: → T5
