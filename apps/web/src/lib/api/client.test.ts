@@ -325,16 +325,66 @@ describe('http client token refresh', () => {
     expect(calls.map((c) => c.path)).toEqual(['/api/auth/login']); // no /api/auth/refresh
   });
 
-  it('treats a network error during refresh as a failed refresh (6.85)', async () => {
-    // The catch in tryRefresh (fetch throws, not just a non-ok response) must map to a failed
-    // refresh -> auth-failure handler + 'Session expired', not an unhandled rejection.
+  // R-1709 (Kevin 2026-11-27): a refresh without a verdict on the cookie keeps the session; the
+  // request fails as unreachable, and the next 401 refreshes again. This replaces the 6.85 case,
+  // where a network error ended the session.
+  it.each([
+    ['a network error', () => Promise.reject(new TypeError('network down'))],
+    ['502', () => Promise.resolve(jsonResponse({}, 502))],
+    ['503', () => Promise.resolve(jsonResponse({}, 503))],
+    ['504', () => Promise.resolve(jsonResponse({}, 504))],
+  ])('keeps the session when the refresh meets %s', async (_name, unanswered) => {
+    let refreshes = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         recordCall(calls, input, init);
         if (String(input) === '/api/auth/refresh') {
-          return Promise.reject(new TypeError('network down'));
+          refreshes += 1;
+          return refreshes === 1
+            ? unanswered()
+            : Promise.resolve(jsonResponse({ access_token: 'new-token' }));
         }
+        const authorization = new Headers(init?.headers).get('Authorization');
+        return Promise.resolve(
+          authorization === 'Bearer new-token'
+            ? jsonResponse({ ok: true })
+            : jsonResponse({ detail: 'expired' }, 401),
+        );
+      }),
+    );
+
+    const { http, registerAuthFailureHandler, setAccessToken, getAccessToken } =
+      await importClient();
+    setAccessToken('old-token');
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+
+    const err = await http.get('/api/servers').catch((e: unknown) => e);
+
+    const apiErr = err as ApiError;
+    expect(apiErr.name).toBe('ApiError');
+    expect(apiErr.status).toBe(503);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe('old-token');
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']); // no retry
+
+    // The next 401 refreshes again, and this time it is granted.
+    await expect(http.get('/api/servers')).resolves.toEqual({ ok: true });
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe('new-token');
+  });
+
+  it.each([
+    ['400', () => Promise.resolve(jsonResponse({ detail: 'bad' }, 400))],
+    ['500', () => Promise.resolve(jsonResponse({}, 500))],
+    ['a timeout', () => Promise.reject(new DOMException('slow', 'TimeoutError'))],
+  ])('ends the session when the refresh meets %s', async (_name, refused) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        if (String(input) === '/api/auth/refresh') return refused();
         return Promise.resolve(jsonResponse({ detail: 'expired' }, 401));
       }),
     );
@@ -351,6 +401,29 @@ describe('http client token refresh', () => {
     expect(apiErr.message).toBe('Session expired');
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
     expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']); // no retry
+  });
+
+  it('keeps the session when the raw refresh path meets a 502', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        if (String(input) === '/api/auth/refresh') {
+          return Promise.resolve(jsonResponse({}, 502));
+        }
+        return Promise.resolve(jsonResponse({ detail: 'expired' }, 401));
+      }),
+    );
+
+    const { requestRaw, registerAuthFailureHandler, setAccessToken } = await importClient();
+    setAccessToken('old-token');
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+
+    const err = await requestRaw('/api/frp/frps.toml').catch((e: unknown) => e);
+
+    expect((err as ApiError).status).toBe(503);
+    expect(onAuthFailure).not.toHaveBeenCalled();
   });
 });
 
