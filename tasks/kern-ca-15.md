@@ -70,8 +70,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/enroll/
 Doku: keine (Test)
 Abhängt von: T6
 
-### T8 — R-1812: Desktop prüft den gemeinsamen Vektor  [ ]
+### T8 — R-1812: Desktop prüft den gemeinsamen Vektor  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c1f52d0a1 2026-11-27T15:18:51+01:00
+Review: approve (.ah-out/review/kern-ca-15/T8.verdict.json)
 Änderung: ein Test liest den Vektor aus T6 (`include_str!`) und prüft ihn mit `RENEW_PROOF_PREFIX` und ring `ECDSA_P256_SHA256_ASN1`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
 Doku: keine (Test)

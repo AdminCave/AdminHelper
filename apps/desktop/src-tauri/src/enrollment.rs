@@ -1367,6 +1367,36 @@ mod tests {
         assert!(key.verify(&message, &other_signature).is_err());
     }
 
+    // The vector the issuer checks too (apps/ca-issuer/tests/test_renew_proof_vector.py): a
+    // RENEW_PROOF_PREFIX that drifts from the issuer's fails here instead of every renew with a
+    // 403 (R-1812).
+    #[test]
+    fn the_shared_renew_proof_vector_verifies_with_our_prefix() {
+        use base64::Engine;
+        use ring::signature::{UnparsedPublicKey, ECDSA_P256_SHA256_ASN1};
+        use rustls::pki_types::CertificateSigningRequestDer;
+
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../ca-issuer/tests/fixtures/renew_proof_vector.json"
+        ))
+        .unwrap();
+        let field = |name: &str| vector[name].as_str().unwrap().replace("\r\n", "\n");
+        let cert_pem = field("cert");
+        let pem = x509_parser::pem::Pem::read(std::io::Cursor::new(cert_pem.as_bytes()))
+            .unwrap()
+            .0;
+        let (_, cert) = x509_parser::parse_x509_certificate(&pem.contents).unwrap();
+        let public = cert.public_key().subject_public_key.data.to_vec();
+        let csr_pem = field("csr");
+        let csr = CertificateSigningRequestDer::from_pem_slice(csr_pem.as_bytes()).unwrap();
+        let signature = base64::engine::general_purpose::STANDARD
+            .decode(field("proof"))
+            .unwrap();
+        let key = UnparsedPublicKey::new(&ECDSA_P256_SHA256_ASN1, public);
+        let message = [RENEW_PROOF_PREFIX, csr.as_ref()].concat();
+        assert!(key.verify(&message, &signature).is_ok());
+    }
+
     #[test]
     fn each_keypair_is_fresh() {
         // No two on-device keys may be identical.
