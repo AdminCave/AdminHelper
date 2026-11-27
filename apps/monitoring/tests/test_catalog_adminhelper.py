@@ -253,11 +253,10 @@ def _pg_backup(tmp_path, pg_dump_body, role_passwords=True):
     fake.chmod(0o755)
     backups = tmp_path / "backups"
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "BACKUP_DIR": str(backups)}
-    env.pop("SERVER_DB_PASSWORD", None)
-    env.pop("MONITOR_DB_PASSWORD", None)
+    env.pop("BACKUP_DB_PASSWORD", None)
     if role_passwords:
-        # pg-backup dumps each database as its service role (R-1759).
-        env |= {"SERVER_DB_PASSWORD": "pw-server", "MONITOR_DB_PASSWORD": "pw-monitor"}
+        # pg-backup dumps both databases as the read-only role ah_backup (R-1783).
+        env["BACKUP_DB_PASSWORD"] = "pw-backup"
     run = subprocess.run(["sh", str(PG_BACKUP)], env=env, capture_output=True, check=False)
     files = sorted(p.name for p in backups.iterdir() if p.is_file()) if backups.exists() else []
     return run.returncode, files

@@ -165,6 +165,10 @@ case "$*" in
   "compose pull"*)
     [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0
     [ -z "${AH_TEST_ENV_LOCK:-}" ] || : > "$AH_TEST_ENV_LOCK"
+    # AH_TEST_SNAP_SWAP=1 replaces the run's snapshot in backups/ with another archive.
+    if [ "${AH_TEST_SNAP_SWAP:-}" = 1 ]; then
+      for s in backups/runtime-prev-*.tar.gz; do "$AH_TEST_REAL_TAR" czf "$s" -C / dev/null 2>/dev/null; done
+    fi
     echo "stub: pull failed" >&2; exit 1 ;;
   "compose stop server "*)
     [ "${AH_TEST_STOP_FAIL:-}" != 1 ] || { echo "stub: stop failed" >&2; exit 1; }
@@ -271,14 +275,22 @@ exec "$AH_TEST_REAL_RM" "$@"
 EOF
 chmod +x "$BIN/rm"
 # --- a tar wrapper: real tar for everything, except that AH_TEST_TAR_FAIL=1 fails
-# the restore's unpack of the runtime snapshot (`xzf backups/runtime-prev-…`)
+# the restore's unpack of the runtime snapshot (`xzf <tmp>/runtime-prev.tar.gz`)
 # before it unpacks anything; writing the snapshot and unpacking the bundle or the
 # agent repo go through ---
 AH_TEST_REAL_TAR=$(command -v tar); export AH_TEST_REAL_TAR
+# --- an od wrapper: AH_TEST_OD_HEX fixes the random hex od reads from /dev/urandom ---
+AH_TEST_REAL_OD=$(command -v od); export AH_TEST_REAL_OD
+cat > "$BIN/od" <<'EOF'
+#!/usr/bin/env bash
+[ -z "${AH_TEST_OD_HEX:-}" ] || { echo " $AH_TEST_OD_HEX"; exit 0; }
+exec "$AH_TEST_REAL_OD" "$@"
+EOF
+chmod +x "$BIN/od"
 cat > "$BIN/tar" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
-  "xzf backups/runtime-prev-"*)
+  "xzf "*/runtime-prev.tar.gz)
     [ "${AH_TEST_TAR_FAIL:-}" != 1 ] || { echo "stub: tar failed" >&2; exit 1; } ;;
 esac
 exec "$AH_TEST_REAL_TAR" "$@"
@@ -687,6 +699,41 @@ grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt' <<<"$out" \
   && ok "pull failure message names the rollback" || bad "no rollback message"
 { grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up -d' "$DLOG"; } \
   && ok "pull failure recreated no container" || bad "pull failure: docker calls $(tr '\n' ';' < "$DLOG")"
+
+# ── 14b. the snapshot: built in the run's temp dir, kept in backups/ ─────────
+# The name is predictable: a link standing there is replaced, not written through,
+# and no working copy stays behind. A snapshot swapped in backups/ after the run
+# wrote it changes nothing: the rollback unpacks the one in the temp dir. A link on
+# the working name (AH_TEST_OD_HEX fixes it, as a racer who saw it would) stops the
+# run before anything changes, and the link's target keeps content and mode.
+INST="$WORK/inst14b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"; : > "$WORK/inst14b.victim"
+for s in $(seq 0 59); do
+  ln -s "$WORK/inst14b.victim" "$INST/backups/runtime-prev-$(date -u -d "+${s} seconds" +%Y%m%dT%H%M%SZ).tar.gz"
+done
+out=$(run_update "$INST" 2>&1); rc=$?
+snap=$(cd "$INST/backups" && find . -maxdepth 1 -type f -name 'runtime-prev-*.tar.gz' -printf '%f\n')
+{ [ $rc -eq 0 ] && [ ! -s "$WORK/inst14b.victim" ] && [ -n "$snap" ] \
+    && [ "$(stat -c %a "$INST/backups/$snap")" = 600 ] \
+    && [ -z "$(find "$INST/backups" -maxdepth 1 -name '.runtime-prev-*')" ]; } \
+  && ok "the snapshot replaces a link on its name, owner-only, no work dir left" \
+  || bad "snapshot write: rc=$rc snap=$snap victim=$(stat -c %s "$WORK/inst14b.victim")"
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst14c"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_PULL=1 AH_TEST_SNAP_SWAP=1 run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'zurueckgerollt' <<<"$out" && ! grep -q 'UNVOLLSTAENDIG' <<<"$out" \
+    && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
+  && ok "a snapshot swapped in backups/ does not reach the rollback" \
+  || bad "swapped snapshot: rc=$rc $out"
+INST2="$WORK/inst14d"; make_install 0.33.0 "$SRC_OLD" "$INST2"
+mkdir -p "$INST2/backups"; printf 'keep\n' > "$WORK/inst14d.victim"; chmod 644 "$WORK/inst14d.victim"
+ln -s "$WORK/inst14d.victim" "$INST2/backups/.runtime-prev-00112233445566ff"
+out=$(AH_TEST_OD_HEX=00112233445566ff run_update "$INST2" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Laufzeit-Snapshot fehlgeschlagen' <<<"$out" \
+    && [ "$(cat "$WORK/inst14d.victim")" = keep ] && [ "$(stat -c %a "$WORK/inst14d.victim")" = 644 ] \
+    && grep -q 'marker: 0.33.0' "$INST2/docker-compose.yml"; } \
+  && ok "a link on the snapshot's working name stops the run, its target untouched" \
+  || bad "link on the working name: rc=$rc victim=$(cat "$WORK/inst14d.victim") $out"
 
 # ── 15. ...and the next run tries the update again ──────────────────────────
 : > "$DLOG"
@@ -1242,6 +1289,25 @@ if grep -q 'probe=xx' "$KEY_FN" && . "$KEY_FN"; then
   [ "$rc" -ne 0 ] && ok "without UTF-8 an empty key is refused" || bad "without UTF-8: an empty key rc=$rc"
 else
   bad "env_key_ok could not be taken from update.sh with its probe turned off"
+fi
+# Such a key may still be blanks only: trimmed, it is empty, and the check refuses it
+# like any bad key instead of using it as an array index (R-1821). The whole .env check
+# runs from a copy with the probe turned off, under C.UTF-8: only there [[:space:]] knows
+# U+2003, whatever the caller's locale. Without C.UTF-8 the test ends with 75.
+BLANK_SKIP=""
+CHECK_FN="$WORK/env_check.sh"; CHECK_DIR="$WORK/env-check-blank"; mkdir -p "$CHECK_DIR"
+sed -n '/^# >>> env check/,/^# <<< env check$/p' "$REAL_UPDATE" | sed "s/probe=\\$'\\\\xc3\\\\x84'/probe=xx/" > "$CHECK_FN"
+printf 'A=1\nexport \xe2\x80\x83=zz9v\n' > "$CHECK_DIR/.env"
+if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
+  BLANK_SKIP="the case of a key of blanks only needs the locale C.UTF-8, this system has none"
+  echo "  SKIP $BLANK_SKIP"
+elif grep -q 'probe=xx' "$CHECK_FN"; then
+  # shellcheck disable=SC1090
+  out=$( export LC_ALL=C.UTF-8 && cd "$CHECK_DIR" && die() { echo "FEHLER: $*"; exit 1; } && . "$CHECK_FN" && check_env_templates 2>&1 ); rc=$?
+  { [ "$rc" -ne 0 ] && grep -qF "the entry in line 2 has a key docker compose rejects" <<<"$out" && ! grep -q zz9 <<<"$out"; } \
+    && ok "with the UTF-8 probe off a key of blanks only is refused with its line" || bad "probe off: a key of blanks only rc=$rc out=[$out]"
+else
+  bad "the .env check could not be taken from update.sh with its probe turned off"
 fi
 
 # ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
@@ -2105,6 +2171,7 @@ echo "────────────────────────�
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ] || exit 1
 [ -z "$LOCALE_SKIP" ] || echo "SKIP: $LOCALE_SKIP"
+[ -z "$BLANK_SKIP" ] || echo "SKIP: $BLANK_SKIP"
 [ -z "$RIGHTS_SKIP" ] || echo "SKIP: $RIGHTS_SKIP"
 [ -z "$TTY_SKIP" ] || echo "SKIP: $TTY_SKIP"
-[ -z "$LOCALE_SKIP$RIGHTS_SKIP$TTY_SKIP" ] || exit 75
+[ -z "$LOCALE_SKIP$BLANK_SKIP$RIGHTS_SKIP$TTY_SKIP" ] || exit 75

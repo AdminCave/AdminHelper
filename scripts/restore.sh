@@ -7,7 +7,12 @@
 # means existing agents stay trusted (same Root + intermediates).
 #
 # Usage (from the repository root):
-#   ./scripts/restore.sh <backup.tar.gz> [--yes]
+#   ./scripts/restore.sh [--yes] [--allow-foreign] <backup.tar.gz>
+#
+# The archive must belong to the caller (or root) and be writable by nobody else, nor
+# sit in a folder others can write to without the sticky bit: restore.sh runs as root
+# and puts the archive's CA and databases in place. --allow-foreign skips that check,
+# not the check of the archive's content.
 #
 # DESTRUCTIVE: replaces the contents of the ca-pki / monitoring-data /
 # victoria-data volumes and both databases. The script stops the stack first.
@@ -17,9 +22,19 @@
 
 set -euo pipefail
 
-ARCHIVE="${1:?Usage: restore.sh <backup.tar.gz> [--yes]}"
+usage() { echo "Usage: restore.sh [--yes] [--allow-foreign] <backup.tar.gz>" >&2; exit 1; }
+ARCHIVE=""
 ASSUME_YES=0
-[ "${2:-}" = "--yes" ] && ASSUME_YES=1
+ALLOW_FOREIGN=0
+for arg in "$@"; do
+    case "$arg" in
+        --yes) ASSUME_YES=1 ;;
+        --allow-foreign) ALLOW_FOREIGN=1 ;;
+        -*) usage ;;
+        *) [ -z "$ARCHIVE" ] || usage; ARCHIVE="$arg" ;;
+    esac
+done
+[ -n "$ARCHIVE" ] || usage
 
 if [ ! -f "$ARCHIVE" ]; then
     echo "[restore] FEHLER: Backup nicht gefunden: $ARCHIVE" >&2
@@ -27,7 +42,34 @@ if [ ! -f "$ARCHIVE" ]; then
 fi
 
 STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
+HOLD=$(mktemp -d)
+trap 'rm -rf "$STAGE" "$HOLD"' EXIT
+
+# Where the archive comes from (R-1786): opened once, the checks look at the open file
+# and every later read goes to the copy in $HOLD, so nothing swapped in between counts.
+TRUSTED_UIDS=" $(id -u) ${SUDO_UID:-} 0 "
+foreign() {
+    echo "[restore] FEHLER: $1 — abgebrochen. Ein Backup aus fremder Hand mit --allow-foreign einspielen." >&2
+    exit 1
+}
+# The folder of the file itself: a link to the archive does not stand in for it.
+DIR=$(dirname -- "$(readlink -f -- "$ARCHIVE")")
+d_stat=$(stat -L -c '%u %a' -- "$DIR")
+read -r d_uid d_mode <<< "$d_stat"
+exec 3< "$ARCHIVE"
+[ -f /dev/fd/3 ] || { echo "[restore] FEHLER: Backup ist keine Datei: $ARCHIVE" >&2; exit 1; }
+a_stat=$(stat -L -c '%u %a' /dev/fd/3)
+read -r a_uid a_mode <<< "$a_stat"
+if [ "$ALLOW_FOREIGN" != 1 ]; then
+    case "$TRUSTED_UIDS" in *" $a_uid "*) ;; *) foreign "Backup gehoert uid $a_uid, nicht dem Aufrufer" ;; esac
+    (( (8#$a_mode & 8#022) == 0 )) || foreign "Backup ist fuer andere beschreibbar (Modus $a_mode)"
+    case "$TRUSTED_UIDS" in *" $d_uid "*) ;; *) foreign "Ordner $DIR gehoert uid $d_uid, nicht dem Aufrufer" ;; esac
+    (( (8#$d_mode & 8#022) == 0 || (8#$d_mode & 8#1000) != 0 )) \
+        || foreign "Ordner $DIR ist fuer andere beschreibbar (Modus $d_mode)"
+fi
+cat <&3 > "$HOLD/backup.tar.gz"
+exec 3<&-
+ARCHIVE="$HOLD/backup.tar.gz"
 
 # A backup is operator-supplied data. Before extracting it onto the host, reject
 # a crafted archive that could escape $STAGE: absolute paths, ../ escapes, or
@@ -324,7 +366,7 @@ role_password() {
 }
 check_role_passwords() {
     local key value missing=()
-    for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD; do
+    for key in SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD BACKUP_DB_PASSWORD; do
         value=$(role_password "$key") || exit 1
         [ -n "$value" ] || missing+=("$key")
     done
@@ -337,6 +379,17 @@ check_role_passwords() {
         exit 1
     fi
 }
+# A backup from before the role ah_backup (R-1783) has no BACKUP_DB_PASSWORD. The .env it
+# gives a fresh host gets one, as init-secrets.sh would add it: db-init needs every role's.
+if [ -n "$NEW_ENV" ]; then
+    BACKUP_PW=$(role_password BACKUP_DB_PASSWORD) || exit 1
+    if [ -z "$BACKUP_PW" ]; then
+        BACKUP_PW=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
+        [ "${#BACKUP_PW}" = 64 ] || { echo "[restore] ERROR: could not generate BACKUP_DB_PASSWORD; nothing was changed." >&2; exit 1; }
+        printf 'BACKUP_DB_PASSWORD=%s\n' "$BACKUP_PW" >> "$NEW_ENV"
+    fi
+    unset BACKUP_PW
+fi
 check_role_passwords
 
 # Compose alone knows the project name (the volume prefix: it reads

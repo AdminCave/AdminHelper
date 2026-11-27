@@ -266,17 +266,20 @@ def test_only_postgres_and_db_init_see_the_superuser_password():
     assert holders == ["db-init", "postgres"]
 
 
-def test_pg_backup_dumps_each_database_as_its_role():
+def test_pg_backup_dumps_both_databases_as_the_read_only_role():
     services = yaml.safe_load(_COMPOSE.read_text(encoding="utf-8"))["services"]
     env = dict(entry.split("=", 1) for entry in services["pg-backup"]["environment"])
-    assert env["SERVER_DB_PASSWORD"] == "${SERVER_DB_PASSWORD}"
-    assert env["MONITOR_DB_PASSWORD"] == "${MONITOR_DB_PASSWORD}"
-    assert "PGUSER" not in env and "PGPASSWORD" not in env
+    # The one database password it sees is that of ah_backup (R-1783).
+    assert [k for k in env if k.endswith("PASSWORD")] == ["BACKUP_DB_PASSWORD"]
+    assert env["BACKUP_DB_PASSWORD"] == "${BACKUP_DB_PASSWORD}"
+    assert "PGUSER" not in env
     assert services["pg-backup"]["depends_on"]["db-init"] == {
         "condition": "service_completed_successfully"
     }
     script = (_COMPOSE.parent / "scripts" / "pg-backup.sh").read_text(encoding="utf-8")
-    assert "PGUSER=ah_server " in script and "PGUSER=ah_monitor " in script
+    users = re.findall(r"PGUSER=(\S+)", script)
+    assert users == ["ah_backup", "ah_backup"]
+    assert "SERVER_DB_PASSWORD" not in script and "MONITOR_DB_PASSWORD" not in script
 
 
 def test_each_service_connects_with_its_role_after_db_init():
@@ -303,5 +306,6 @@ def test_each_service_connects_with_its_role_after_db_init():
         "SCHEDULER_DB_PASSWORD",
         "MONITOR_DB_PASSWORD",
         "CA_DB_PASSWORD",
+        "BACKUP_DB_PASSWORD",
     ):
         assert init_env[var] == f"${{{var}}}", var

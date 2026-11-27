@@ -12,10 +12,14 @@ passwords, creates the monitoring database if it is missing, hands the `public` 
 both databases and every object in it to its service's role (also on an install whose tables
 the superuser created) and limits CONNECT. The databases themselves stay the superuser's: an
 owner could attach settings to its database (`ALTER DATABASE … SET search_path`) that every
-later superuser session, this one included, would run under. `grant-ca` gives the ca-issuer
-exactly what it does on its tables and takes the scheduler's write rights on `alembic_version`;
-the server runs it as their owner after its migrations, so a migration that recreates one of
-them does not leave the ca-issuer without rights until the next setup.
+later superuser session, this one included, would run under. The backup role `ah_backup`
+owns nothing: CONNECT on both databases and SELECT on what schema `public` holds, now and later,
+so pg-backup dumps without the write and schema rights of a service role. Not `pg_read_all_data`:
+that reads the system catalogs too, the password verifiers in `pg_authid` among them.
+`grant-ca` gives the ca-issuer exactly what it does on its tables and takes the scheduler's
+write rights on `alembic_version`; the server runs it as their owner after its migrations, so a
+migration that recreates one of them does not leave the ca-issuer without rights until the next
+setup.
 """
 
 import os
@@ -33,6 +37,7 @@ ROLES = {
     "scheduler": (os.environ.get("SCHEDULER_DB_ROLE", "ah_scheduler"), "SCHEDULER_DB_PASSWORD"),
     "monitor": (os.environ.get("MONITOR_DB_ROLE", "ah_monitor"), "MONITOR_DB_PASSWORD"),
     "ca": (os.environ.get("CA_DB_ROLE", "ah_ca"), "CA_DB_PASSWORD"),
+    "backup": (os.environ.get("BACKUP_DB_ROLE", "ah_backup"), "BACKUP_DB_PASSWORD"),
 }
 
 # What the ca-issuer does on the tables of the server's database it works on
@@ -74,7 +79,7 @@ def role(name: str) -> str:
 
 
 def _passwords() -> dict[str, str]:
-    # All four read before anything changes: a missing one stops setup before the first role.
+    # All read before anything changes: a missing one stops setup before the first role.
     missing = [var for _, var in ROLES.values() if not os.environ.get(var)]
     if missing:
         raise SystemExit(f"db_roles: not set: {', '.join(missing)}")
@@ -152,6 +157,21 @@ def _hand_over(conn: psycopg.Connection, owner: str) -> None:
             )
 
 
+def _grant_backup(conn: psycopg.Connection, owner: str) -> None:
+    # Reads what the owner has made and will make in schema public; changes none of it.
+    backup, owner_id = sql.Identifier(role("backup")), sql.Identifier(owner)
+    conn.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(backup))
+    for kind in ("TABLES", "SEQUENCES"):
+        conn.execute(
+            sql.SQL("GRANT SELECT ON ALL {} IN SCHEMA public TO {}").format(sql.SQL(kind), backup)
+        )
+        conn.execute(
+            sql.SQL(
+                "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public GRANT SELECT ON {} TO {}"
+            ).format(owner_id, sql.SQL(kind), backup)
+        )
+
+
 def _connect_superuser(dbname: str) -> psycopg.Connection:
     # libpq takes host, port, user and password from the PG* variables.
     return psycopg.connect(dbname=dbname, autocommit=True, options=_SUPERUSER_OPTIONS)
@@ -179,8 +199,8 @@ def setup() -> None:
         # The databases stay the superuser's (see the module doc), also where a former run
         # of this very module handed them to a service role.
         for db, guests in (
-            (SERVER_DB, (role("server"), role("scheduler"), role("ca"))),
-            (MONITOR_DB, (role("monitor"),)),
+            (SERVER_DB, (role("server"), role("scheduler"), role("ca"), role("backup"))),
+            (MONITOR_DB, (role("monitor"), role("backup"))),
             ("postgres", ()),
             ("template1", ()),
         ):
@@ -201,6 +221,7 @@ def setup() -> None:
 
     with _connect_superuser(SERVER_DB) as conn:
         _hand_over(conn, role("server"))
+        _grant_backup(conn, role("server"))
         server, scheduler = sql.Identifier(role("server")), sql.Identifier(role("scheduler"))
         conn.execute(
             sql.SQL("GRANT USAGE ON SCHEMA public TO {}, {}").format(
@@ -231,6 +252,7 @@ def setup() -> None:
 
     with _connect_superuser(MONITOR_DB) as conn:
         _hand_over(conn, role("monitor"))
+        _grant_backup(conn, role("monitor"))
 
 
 def ca_grant_statements(existing: list[str], sequences: list[str]) -> list[sql.Composed]:
