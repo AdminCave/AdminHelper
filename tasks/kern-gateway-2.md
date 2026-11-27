@@ -1,5 +1,5 @@
 # Gateway: Webhook-Trigger auf :8444, Upstream-Keepalive — Task-Ledger
-Status: aktiv · Branch: feature/kern-gateway-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-gateway-2 · Review: pro Task
 Spec: docs/features/kern-gateway-2.md (Roadmap R-1687, R-1717)
 Heavy: linux-full — Gateway-Konfiguration und Server-API; der Stack-Test unter enforce läuft im PR (integration-stack)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,8 +51,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/modals/WebhookTokenModal.
 Doku: → T5
 Abhängt von: T3
 
-### T5 — Doku DE+EN und CHANGELOG (R-1687)  [ ]
+### T5 — Doku DE+EN und CHANGELOG (R-1687)  [x]
 Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-gateway-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6db2a1d67 2026-11-27T11:47:20+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: API-Referenz: Trigger auf :8444 ohne Zertifikat, `trigger_port`. Installation: Port 8444 auch für Webhooks.
 Betrieb: Ratelimit und Body-Grenze des Triggers auf der zertifikatslosen Ebene. Fragment umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
