@@ -15,6 +15,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - T7: die Monitore melden ueber eine Rueckruf-Funktion (`RdpWatch.report`, `RdpReport`) statt direkt an den AppHandle, damit der Test die Ereignisse eines `sh -c`-Stellvertreters zaehlen kann; der Exit-Thread joint die Leser vor seiner Entscheidung, wie `wait_interactive`.
 - T8: russh-sftp 3.0.1 bietet kein `posix-rename@openssh.com` (nur hardlink, fsync, limits, statvfs); beim Ueberschreiben entfernt der Upload das Ziel erst nach dem vollstaendigen Teil-Upload und benennt dann um. Reisst die Verbindung, bleibt die versteckte `.<name>.ah-part` liegen; der naechste Upload derselben Datei leert sie (TRUNCATE). Beim Ueberschreiben behaelt die Datei ihre Rechte, und zwar schon die Teil-Datei vor dem ersten Byte (beim Oeffnen und per `setstat` fuer einen Rest aus einem Abbruch), ein Symlink am Ziel wird durchschrieben (`canonicalize`, die Teil-Datei liegt neben der echten Datei); Eigentuemer und Gruppe sind die des Hochladenden. Ein Name ab 247 Bytes passt mit `.ah-part` nicht mehr (ENAMETOOLONG), hingenommen. Ein Symlink, dessen Ziel fehlt, laesst den Upload mit Fehler enden (`canonicalize`), statt die Datei durch den Link anzulegen; selten, hingenommen.
 - Plan: R-1689 ein Code `ERR_DEVICE_CERT_INVALID` fuer beide Wege (lokal abgelaufen, nginx-495-Seite).
+- Kevin 2026-11-27: dritte Pruefrunde fuer T8 erlaubt (Rechte der Teil-Datei vor dem ersten Byte nachgebessert).
 
 ### T1 — Erneuerung: Transportfehler und 502/503/504 behalten die Sitzung, Desktop (R-1709)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/auth.rs
@@ -74,7 +75,7 @@ Review: approve (.ah-out/review/kern-desktop-6/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::rdp::
 Doku: keine (Fehlerverhalten ohne dokumentierte Beschreibung; CHANGELOG in T12)
 
-### T8 — SFTP-Upload ueber eine Teil-Datei (R-1708)  [?] (Dritte Pruefrunde fuer T8 (Rechte der Teil-Datei vor dem ersten Byte nachgebessert)?)
+### T8 — SFTP-Upload ueber eine Teil-Datei (R-1708)  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
 Änderung: Upload nach `.<name>.ah-part` im Zielordner, danach Umbenennen (Ueberschreiben: `posix-rename@openssh.com`, wenn russh-sftp es anbietet, sonst Ziel entfernen und umbenennen), bei jedem Fehler die Teil-Datei entfernen. Tests gegen OpenSSH-sftp-server: abgebrochener Upload laesst die alte Datei unveraendert und keine Teil-Datei; Ueberschreiben nur auf Wunsch bleibt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
@@ -97,8 +98,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connect
 Doku: → T12
 Abhängt von: T9
 
-### T11 — Feed: ein Abruf zur Zeit, ein Nachlauf (R-1711)  [ ]
+### T11 — Feed: ein Abruf zur Zeit, ein Nachlauf (R-1711)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.ts, apps/desktop/ui/src/lib/stores/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5c0a461bb 2026-11-27T09:58:39+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T11.verdict.json)
 Änderung: `loadFeed` haelt den laufenden Abruf; weitere Aufrufe waehrenddessen ergeben hoechstens einen Nachlauf, eine aeltere Antwort ueberschreibt keine neuere. Test: viele Ereignisse waehrend eines Abrufs ergeben zwei Abrufe.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
 Doku: keine (internes Verhalten ohne Doku-Stelle)
