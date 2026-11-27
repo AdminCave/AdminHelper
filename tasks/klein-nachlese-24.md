@@ -5,8 +5,10 @@ Heavy: none — Agent-Nits und Doku, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Agent: Platten-Test faellt rot statt zu haengen, Warntext zaehlt nur Netz-Mounts (R-1777)  [ ]
+### T1 — Agent: Platten-Test faellt rot statt zu haengen, Warntext zaehlt nur Netz-Mounts (R-1777)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/disks_test.go, apps/agent/internal/monitor/disks_bounded.go, apps/agent/internal/monitor/disks_freebsd.go, changelog.d/klein-nachlese-24.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @559d94a7f 2026-11-27T13:52:25+01:00
+Review: approve (.ah-out/review/klein-nachlese-24/T1.verdict.json)
 Beweis: reviewer kern-agent-24 2026-11-25 (disks_test.go:127, disks_bounded.go:60, disks_freebsd.go:58)
 Änderung: Der Test bricht bei einem Fehlschlag sofort ab (kein Warten bis zum Timeout); ein doppelter Mountpfad in `boundedStats` zaehlt einmal, die FreeBSD-Warnung nennt nur die Netz-Mounts, die nicht antworteten. docs/developer/agent.html:224 nur pruefen (klein-doku-11 hat sie behoben).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
