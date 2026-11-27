@@ -419,6 +419,41 @@ describe('notifications store', () => {
     expect(get(centerItems)).toEqual([]);
   });
 
+  it('a feed answer that arrives after deactivate fills nothing, primes nothing, fires nothing', async () => {
+    const seen: NotificationItem[][] = [];
+    setNewNotificationHandler((items) => seen.push(items));
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);
+    await loadFeed(); // primes the session that is about to end
+    let resolve: (v: NotificationItem[]) => void = () => {};
+    h.fetchFeed.mockImplementationOnce(() => new Promise<NotificationItem[]>((r) => (resolve = r)));
+    const pending = loadFeed();
+    deactivateNotifications();
+    resolve([item({ id: 1, read: false }), item({ id: 2, read: false })]);
+    await pending;
+    expect(seen).toHaveLength(0);
+    expect(get(notificationItems)).toEqual([]);
+    expect(get(unreadCount)).toBe(0);
+    // The next session's first poll primes again instead of announcing its backlog.
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 3, read: false })]);
+    await loadFeed();
+    expect(seen).toHaveLength(0);
+  });
+
+  it('a badge count that arrives after deactivate fills nothing', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);
+    let resolve: (v: { count: number }) => void = () => {};
+    h.fetchUnreadCount.mockImplementationOnce(
+      () => new Promise<{ count: number }>((r) => (resolve = r)),
+    );
+    const pending = loadFeed();
+    await vi.waitFor(() => expect(h.fetchUnreadCount).toHaveBeenCalled(), { timeout: 30_000 });
+    deactivateNotifications();
+    resolve({ count: 7 });
+    await pending;
+    expect(get(notificationItems)).toEqual([]);
+    expect(get(unreadCount)).toBe(0);
+  });
+
   it('a center page started just before activate is kept', async () => {
     // After a login the page's onMount load starts before AppShell activates.
     let resolve: (v: NotificationItem[]) => void = () => {};

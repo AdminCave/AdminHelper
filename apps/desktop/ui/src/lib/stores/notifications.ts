@@ -94,8 +94,12 @@ export function loadFeed(): Promise<void> {
 async function fetchFeedOnce(): Promise<void> {
   const session = currentSession();
   if (!session) return;
+  const gen = logoutGen;
   try {
     const res = await notificationsApi.fetchFeed(session, 50);
+    // A logout during the request reset the feed and its priming; a late answer of the old
+    // session must not refill the list, prime the next one or raise an OS notification.
+    if (gen !== logoutGen) return;
     const list = Array.isArray(res) ? res : [];
     const pingedAt = (n: NotificationItem) => (n.notifiedAt ? Date.parse(n.notifiedAt) : NaN);
     if (primed) {
@@ -122,6 +126,7 @@ async function fetchFeedOnce(): Promise<void> {
     } catch {
       /* keep the list-derived count */
     }
+    if (gen !== logoutGen) return;
     _state.update((s) => ({ ...s, items: list, unreadCount: unread }));
   } catch {
     // Session expiry / transient errors: keep the current feed, retry next poll.
@@ -373,7 +378,7 @@ let unlistenStream: UnlistenFn | null = null;
 // Bumped by every activate/deactivate so an in-flight activation whose async awaits are
 // overtaken by a logout can detect it's stale and undo itself instead of leaking (4.41).
 let activationGen = 0;
-// Bumped only by deactivateNotifications (loadCenter's guard).
+// Bumped only by deactivateNotifications (the guard of loadCenter and of the feed).
 let logoutGen = 0;
 
 export async function activateNotifications(): Promise<void> {
