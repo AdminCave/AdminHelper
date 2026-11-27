@@ -34,6 +34,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   desktop-linux:
     name: Desktop (deb/rpm/bin, Linux)
+    timeout-minutes: 60
     # Only on a tag: a workflow_dispatch from a branch yields VERSION=main (non-semver),
     # failing build-deb/rpm after a full build and burning runner minutes (4.90).
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
@@ -64,7 +65,7 @@ jobs:
         run: cargo install tauri-cli --locked --version "2.12.4"
       - name: frpc sidecar
         run: |
-          curl -fsSL -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -95,6 +96,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   agent:
     name: Go Agent (deb/rpm/bins)
+    timeout-minutes: 30
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-26.04
     steps:
@@ -155,7 +157,7 @@ jobs:
           echo "ok: static, no GLIBC_ imports — $ftype"
       - name: Download frpc (bundled into deb/rpm)
         run: |
-          curl -fsSL -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -167,7 +169,7 @@ jobs:
       - name: Download frpc.exe (Windows release asset)
         run: |
           set -euo pipefail
-          curl -fsSL -o frpc-windows.zip \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc-windows.zip \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           echo "${FRP_SHA256_WINDOWS_AMD64}  frpc-windows.zip" | sha256sum -c -
           unzip -p frpc-windows.zip "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > frpc-windows-x86_64.exe
@@ -270,6 +272,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   desktop-windows:
     name: Desktop (MSI, Windows, best-effort)
+    timeout-minutes: 90
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: windows-latest
     continue-on-error: true
@@ -290,7 +293,7 @@ jobs:
       - name: frpc sidecar (windows)
         shell: bash
         run: |
-          curl -fsSL -o frpc.zip \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc.zip \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           echo "${FRP_SHA256_WINDOWS_AMD64}  frpc.zip" | sha256sum -c -
           unzip -o frpc.zip
@@ -387,6 +390,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   image-pins:
     name: Pin the signed tag images
+    timeout-minutes: 15
     needs: [desktop-linux, agent, agent-windows-smoke, desktop-windows]
     if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.agent-windows-smoke.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-26.04
@@ -424,6 +428,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   release:
     name: Draft GitHub Release
+    timeout-minutes: 30
     needs: [desktop-linux, agent, agent-windows-smoke, desktop-windows, image-pins]
     # Gate on the MANDATORY builds. desktop-windows is best-effort
     # (continue-on-error), so its failure must not block the draft — but a
@@ -495,7 +500,7 @@ jobs:
             $(bash scripts/release/build-pkg-tool.sh --deps) openssl
           bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
           FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
-          curl -fsSL -o "$FRP_DIR/frpc.tar.gz" \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o "$FRP_DIR/frpc.tar.gz" \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
           echo "${FRP_SHA256_FREEBSD_AMD64}  $FRP_DIR/frpc.tar.gz" | sha256sum -c -
           tar xzf "$FRP_DIR/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
