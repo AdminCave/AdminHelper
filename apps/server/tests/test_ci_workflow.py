@@ -568,19 +568,31 @@ def test_every_job_has_a_timeout_below_the_github_default(name):
 
 
 def test_every_download_of_the_release_retries():
-    # One GitHub Releases blip must not fail a tag's release run (R-1799).
-    release = yaml.safe_load(_CI.with_name("release.yml").read_text(encoding="utf-8"))
-    curls = [
-        line
-        for job in release["jobs"].values()
-        for step in job["steps"]
-        for line in step.get("run", "").splitlines()
-        if re.search(r"(^|\s)curl\s", line)
-    ]
-    assert curls
-    assert [
-        line for line in curls if "--retry " not in line or "--connect-timeout " not in line
-    ] == []
+    # One GitHub Releases blip must not fail a tag's release run (R-1799), and a download that
+    # stalls aborts after 30 s below 1 KiB/s instead of holding the job until its timeout (R-1801).
+    for name in ("release.yml", "ci.yml"):
+        workflow = yaml.safe_load(_CI.with_name(name).read_text(encoding="utf-8"))
+        curls = [
+            line
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+            for line in step.get("run", "").splitlines()
+            if re.search(r"(^|[\s$(])curl\s", line)
+        ]
+        assert curls, name
+        assert [
+            line
+            for line in curls
+            if not all(
+                flag in line
+                for flag in (
+                    "--retry ",
+                    "--connect-timeout ",
+                    "--speed-time 30 ",
+                    "--speed-limit 1024 ",
+                )
+            )
+        ] == [], name
 
 
 def _comment_above(lines: list[str], step_name: str) -> str:

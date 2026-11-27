@@ -65,7 +65,7 @@ jobs:
         run: cargo install tauri-cli --locked --version "2.12.4"
       - name: frpc sidecar
         run: |
-          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -157,7 +157,7 @@ jobs:
           echo "ok: static, no GLIBC_ imports — $ftype"
       - name: Download frpc (bundled into deb/rpm)
         run: |
-          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc.tar.gz \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
           tar xzf frpc.tar.gz
@@ -169,7 +169,7 @@ jobs:
       - name: Download frpc.exe (Windows release asset)
         run: |
           set -euo pipefail
-          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc-windows.zip \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc-windows.zip \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           echo "${FRP_SHA256_WINDOWS_AMD64}  frpc-windows.zip" | sha256sum -c -
           unzip -p frpc-windows.zip "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > frpc-windows-x86_64.exe
@@ -293,7 +293,7 @@ jobs:
       - name: frpc sidecar (windows)
         shell: bash
         run: |
-          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o frpc.zip \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o frpc.zip \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           echo "${FRP_SHA256_WINDOWS_AMD64}  frpc.zip" | sha256sum -c -
           unzip -o frpc.zip
@@ -473,7 +473,7 @@ jobs:
           bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
           bash scripts/release/build-pkg-tool.sh --bundle-libs "$RUNNER_TEMP/pkg-tool"
           FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
-          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 -o "$RUNNER_TEMP/frpc.tar.gz" \
+          curl -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 --speed-time 30 --speed-limit 1024 -o "$RUNNER_TEMP/frpc.tar.gz" \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
           echo "${FRP_SHA256_FREEBSD_AMD64}  $RUNNER_TEMP/frpc.tar.gz" | sha256sum -c -
           tar xzf "$RUNNER_TEMP/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
