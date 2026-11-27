@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from app.models import MonitorCheck
+from app.models import MonitorCheck, MonitorException, MonitorState
 from app.rule_layer import effective, read_layer, store_layer
 from app.template_sync import read_overrides
 
@@ -228,6 +228,123 @@ def test_run_now_executes_enabled_pull_check(client_db, monkeypatch):
     r = client.post(f"/checks/{cid}/run")
     assert r.status_code == 200
     assert called == [cid]
+
+
+# --- the admin's switch is a skip (R-1637) ----------------------------------------------
+# The column enabled is the system's switch (module and template sync); toggle, PUT and
+# POST switch through a skip with the actor, and enabled in the answer says whether the
+# check runs.
+
+_ALICE = {"X-AH-Actor-Id": "u-1", "X-AH-Actor-Name": "alice"}
+_BOB = {"X-AH-Actor-Id": "u-2", "X-AH-Actor-Name": "bob"}
+
+
+def _skips(factory, cid):
+    """(created by, ended by) of each skip on the check; the cases make at most one."""
+    with factory() as db:
+        return [
+            (row.created_by_id, row.created_by, row.ended_by_id, row.ended_by)
+            for row in db.query(MonitorException).filter_by(check_id=cid, effect="skip")
+        ]
+
+
+def _scheduler_calls(monkeypatch):
+    from app.routers import checks as checks_router
+
+    calls = []
+    monkeypatch.setattr(checks_router, "add_check", lambda c, *_: calls.append(("add", c)))
+    monkeypatch.setattr(checks_router, "remove_check", lambda c: calls.append(("remove", c)))
+    return calls
+
+
+def test_toggle_switches_off_with_a_skip_and_on_by_ending_it(client_db, monkeypatch):
+    client, factory = client_db
+    cid = _make_check(client)
+    with factory() as db:
+        db.query(MonitorState).filter_by(check_id=cid).update(
+            {"status": "critical", "fail_count": 4, "ok_count": 1}
+        )
+        db.commit()
+    calls = _scheduler_calls(monkeypatch)
+
+    r = client.post(f"/checks/{cid}/toggle", headers=_ALICE)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["enabled"] is False
+    assert _skips(factory, cid) == [("u-1", "alice", None, None)]
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
+    assert client.get(f"/checks/{cid}").json() == r.json()
+    assert [c["enabled"] for c in client.get("/checks").json() if c["id"] == cid] == [False]
+    assert calls == [("remove", cid)]
+
+    r = client.post(f"/checks/{cid}/toggle", headers=_BOB)
+
+    assert r.json()["enabled"] is True
+    assert _skips(factory, cid) == [("u-1", "alice", "u-2", "bob")]
+    # Back on, it starts fresh (R-1571): the old status is not reported again.
+    with factory() as db:
+        state = db.get(MonitorState, cid)
+        assert (state.status, state.fail_count, state.ok_count) == ("unknown", 0, 0)
+    assert calls == [("remove", cid), ("add", cid)]
+
+
+def test_put_enabled_switches_as_the_toggle_and_answers_as_get(client_db):
+    client, factory = client_db
+    cid = _make_check(client)
+
+    r = client.put(f"/checks/{cid}", json={"enabled": False}, headers=_ALICE)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["enabled"] is False
+    assert r.json() == client.get(f"/checks/{cid}").json()
+    # The editor sends every field back: off again is no second skip.
+    r = client.put(f"/checks/{cid}", json={"enabled": False, "interval": "15m"}, headers=_BOB)
+    assert (r.json()["enabled"], r.json()["interval"]) == (False, "15m")
+    assert _skips(factory, cid) == [("u-1", "alice", None, None)]
+
+    r = client.put(f"/checks/{cid}", json={"enabled": True}, headers=_BOB)
+
+    assert r.json()["enabled"] is True
+    assert r.json() == client.get(f"/checks/{cid}").json()
+    assert _skips(factory, cid) == [("u-1", "alice", "u-2", "bob")]
+    # An explicit null leaves the switch as it is, like a key left out.
+    assert client.put(f"/checks/{cid}", json={"enabled": None}).json()["enabled"] is True
+    assert len(_skips(factory, cid)) == 1
+
+
+def test_a_check_the_system_switched_off_is_switched_on_by_its_column(client_db):
+    # A module instance gone or a template's enabled: false turned the column off; no
+    # skip stands, so on turns the column on, as before R-1637, and off adds nothing.
+    client, factory = client_db
+    cid = _make_check(client)
+    with factory() as db:
+        db.query(MonitorCheck).filter_by(id=cid).update({"enabled": False})
+        db.commit()
+
+    assert client.put(f"/checks/{cid}", json={"enabled": False}).json()["enabled"] is False
+    assert _skips(factory, cid) == []
+
+    assert client.post(f"/checks/{cid}/toggle").json()["enabled"] is True
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
+    assert _skips(factory, cid) == []
+
+
+def test_a_check_created_off_is_skipped_from_the_start(client_db, monkeypatch):
+    client, factory = client_db
+    calls = _scheduler_calls(monkeypatch)
+
+    r = client.post("/checks", json=_payload(enabled=False), headers=_ALICE)
+
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    assert r.json()["enabled"] is False
+    assert client.get(f"/checks/{cid}").json()["enabled"] is False
+    assert _skips(factory, cid) == [("u-1", "alice", None, None)]
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
+    assert calls == [("remove", cid)]
 
 
 # --- consecutive_oks (alert-quality T3) -------------------------------------

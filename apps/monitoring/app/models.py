@@ -154,7 +154,9 @@ class MonitorCheck(Base):
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
-    def to_dict(self, state: MonitorState | None = None) -> dict:
+    def to_dict(self, state: MonitorState | None = None, *, running: bool) -> dict:
+        """``running`` (check_runs) is what enabled reports: the column alone says nothing
+        about a skip the admin switched the check off with (R-1637)."""
         d = {
             "id": self.id,
             "serverId": self.server_id,
@@ -162,7 +164,7 @@ class MonitorCheck(Base):
             "description": self.description,
             "checkType": self.check_type,
             "config": loads_readable(self.config) if self.config else {},
-            "enabled": self.enabled,
+            "enabled": running,
             "interval": self.interval,
             "severity": self.severity,
             "consecutiveFails": self.consecutive_fails,

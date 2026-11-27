@@ -29,7 +29,14 @@ from app import builtin_templates, template_sync
 from app.builtin_templates import seed_builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import MonitorCheck, MonitorCheckTombstone, MonitorState, MonitorTemplate
+from app.models import (
+    MonitorCheck,
+    MonitorCheckTombstone,
+    MonitorException,
+    MonitorState,
+    MonitorTemplate,
+)
+from app.schemas import DEFAULT_CONSECUTIVE_OKS
 from app.tag_sync import sync_tag_assignments
 from app.template_sync import apply_template
 
@@ -127,7 +134,8 @@ def test_stored_overridden_fields_come_back_as_a_list(client):
             )
         )
         db.commit()
-        assert db.get(MonitorCheck, "c1").to_dict()["overriddenFields"] == ["interval", "enabled"]
+        check = db.get(MonitorCheck, "c1")
+        assert check.to_dict(running=True)["overriddenFields"] == ["interval", "enabled"]
 
 
 def test_row_inserted_without_the_column_gets_the_db_default(client):
@@ -229,10 +237,14 @@ def test_setting_a_field_back_to_the_template_value_clears_it(client):
 
 
 def test_toggle_marks_enabled_and_toggling_back_clears_it(client):
-    c, _factory = client
+    # R-1637: the admin's off is a skip, the column stays the template's, so neither
+    # toggle marks it; the next sync has nothing of the admin's to keep.
+    c, factory = client
     cid = _template_check(c)
     r = c.post(f"/checks/{cid}/toggle")
-    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, ["enabled"])
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, [])
+    with factory() as db:
+        assert db.get(MonitorCheck, cid).enabled is True
     r = c.post(f"/checks/{cid}/toggle")
     assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
 
@@ -289,8 +301,12 @@ def test_a_field_the_stored_definition_leaves_out_compares_with_its_default(clie
     assert c.post("/templates/tpl-1/assign", json=_ASSIGN).status_code == 200
     (check,) = c.get("/checks", params={"server_id": "srv-1"}).json()
 
-    assert c.post(f"/checks/{check['id']}/toggle").json()["overriddenFields"] == ["enabled"]
-    assert c.post(f"/checks/{check['id']}/toggle").json()["overriddenFields"] == []
+    # consecutive_oks and description: two fields _PING_DEF leaves out (enabled, the
+    # third, is no field the admin's switch marks since R-1637).
+    r = c.put(f"/checks/{check['id']}", json={"consecutive_oks": 5})
+    assert r.json()["overriddenFields"] == ["consecutive_oks"]
+    r = c.put(f"/checks/{check['id']}", json={"consecutive_oks": DEFAULT_CONSECUTIVE_OKS})
+    assert r.json()["overriddenFields"] == []
     r = c.put(f"/checks/{check['id']}", json={"description": None})
     assert r.json()["overriddenFields"] == []
 
@@ -364,6 +380,22 @@ def test_reset_puts_the_templates_consecutive_oks_back(client):
     assert r.status_code == 200, r.text
     got = r.json()
     assert (got["consecutiveOks"], got["interval"], got["overriddenFields"]) == (1, "5m", [])
+
+
+def test_reset_switches_a_check_the_admin_switched_off_on_again(client):
+    # R-1637: the admin's off was the template field enabled before it became a skip, and
+    # reset brought the template's enabled back; it still does, by ending the skip.
+    c, factory = client
+    cid = _template_check(c)
+    assert c.post(f"/checks/{cid}/toggle").json()["enabled"] is False
+
+    r = c.post(f"/checks/{cid}/reset", headers={"X-AH-Actor-Name": "alice"})
+
+    assert r.status_code == 200, r.text
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
+    with factory() as db:
+        (skip,) = db.query(MonitorException).filter_by(check_id=cid).all()
+        assert (skip.ended_at is not None, skip.ended_by) == (True, "alice")
 
 
 # --- changes from before the update: marked once at the first start ---------------

@@ -1672,12 +1672,40 @@ def test_the_api_marks_the_admins_switch_and_rules_on_a_module_check(client_db, 
         web = _checks(db, finding)["web"]
         web_id, config = web.id, json.loads(web.config)
 
-    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == ["enabled"]
-    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == []
+    # R-1637: the admin's switch is a skip, the column the system's: it marks nothing.
+    r = client.post(f"/checks/{web_id}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, [])
+    r = client.post(f"/checks/{web_id}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
     r = client.put(f"/checks/{web_id}", json={"config": {**config, "interval_s": 900}})
     assert r.json()["overriddenFields"] == []
     r = client.put(f"/checks/{web_id}", json={"config": {**config, "rules": []}, "enabled": False})
-    assert r.json()["overriddenFields"] == ["config", "enabled"]
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, ["config"])
+
+
+def test_the_admins_switch_on_a_module_check_outlives_gone_and_back(client_db, actions):
+    # R-1637: off through the API is a skip; "gone" and "new" move only the column, so the
+    # check stays off until the admin switches it on again, and nothing is marked.
+    from app.exception_scope import check_runs
+
+    client, factory = client_db
+    with factory() as db:
+        _inventory(db)
+        finding = _finding(db)
+        adopt(db, finding.id, catalog=V1, now=NOW)
+        finding_id, web_id = finding.id, _checks(db, finding)["web"].id
+
+    assert client.post(f"/checks/{web_id}/toggle").json()["enabled"] is False
+    for kind, column in (("gone", False), ("new", True)):
+        with factory() as db:
+            _reopen(db, db.get(MonitorFinding, finding_id), kind)
+            adopt(db, finding_id, catalog=V1, now=NOW)
+            web = db.get(MonitorCheck, web_id)
+            assert (web.enabled, check_runs(db, web)) == (column, False), kind
+    assert client.get(f"/checks/{web_id}").json()["enabled"] is False
+
+    r = client.post(f"/checks/{web_id}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
 
 
 # --- a check of one instance, ports chosen at the host (R-1528) ---------------------

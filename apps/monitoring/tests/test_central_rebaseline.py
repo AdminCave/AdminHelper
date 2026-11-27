@@ -9,6 +9,7 @@ import json
 import pytest
 from fastapi.encoders import jsonable_encoder
 
+from app.exception_scope import check_runs
 from app.models import MonitorCheck, MonitorState
 
 HOST = "www.example.test"
@@ -52,7 +53,8 @@ def _stored(factory, check_id):
 def _produced(factory, check_id):
     with factory() as db:
         check = db.get(MonitorCheck, check_id)
-        return jsonable_encoder(check.to_dict(state=db.get(MonitorState, check_id)))
+        state = db.get(MonitorState, check_id)
+        return jsonable_encoder(check.to_dict(state=state, running=check_runs(db, check)))
 
 
 def test_the_baseline_goes_and_the_rest_of_the_details_stays(client_db):

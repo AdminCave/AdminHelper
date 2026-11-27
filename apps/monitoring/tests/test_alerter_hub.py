@@ -904,6 +904,7 @@ def bell_api(client_db, monkeypatch):
     monkeypatch.setattr("app.routers.checks.remove_check", lambda *a, **k: None)
     monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
     monkeypatch.setattr("app.routers.checks.utcnow_naive", lambda: _NOW)
+    monkeypatch.setattr("app.check_switch.utcnow_naive", lambda: _NOW)
     return client, factory, posts
 
 
@@ -1036,12 +1037,14 @@ def _route_then_tasks(factory, call):
     return result, tasks
 
 
-@pytest.mark.parametrize("route", ["toggle", "delete"])
+@pytest.mark.parametrize("route", ["toggle", "put", "delete"])
 def test_the_all_clear_goes_after_the_answer(bell_api, route):
     # R-1660: a hub that does not answer must not hold up the answer to the desktop.
     import asyncio
 
+    from app.core.actor import Actor
     from app.routers import checks as checks_router
+    from app.schemas import CheckUpdate
 
     _, factory, posts = bell_api
     seed_bell_check(
@@ -1049,7 +1052,10 @@ def test_the_all_clear_goes_after_the_answer(bell_api, route):
         hub_sent_at=_EARLIER,
     )  # fmt: skip
     if route == "toggle":
-        call = lambda tasks, db: checks_router.toggle_check("chk-bell", tasks, db)  # noqa: E731
+        call = lambda tasks, db: checks_router.toggle_check("chk-bell", tasks, db, Actor())  # noqa: E731
+    elif route == "put":
+        off = CheckUpdate(enabled=False)
+        call = lambda tasks, db: checks_router.update_check("chk-bell", off, tasks, db, Actor())  # noqa: E731
     else:
         call = lambda tasks, db: checks_router.delete_check("chk-bell", tasks, db)  # noqa: E731
 
@@ -1063,6 +1069,7 @@ def test_the_all_clear_goes_after_the_answer(bell_api, route):
 def test_a_refused_all_clear_after_the_answer_gives_the_slot_back(bell_api, monkeypatch):
     import asyncio
 
+    from app.core.actor import Actor
     from app.routers import checks as checks_router
 
     _, factory, posts = bell_api
@@ -1073,7 +1080,7 @@ def test_a_refused_all_clear_after_the_answer_gives_the_slot_back(bell_api, monk
     )  # fmt: skip
 
     out, tasks = _route_then_tasks(
-        factory, lambda tasks, db: checks_router.toggle_check("chk-bell", tasks, db)
+        factory, lambda tasks, db: checks_router.toggle_check("chk-bell", tasks, db, Actor())
     )
     assert out["enabled"] is False
     # Reserved with the answer, so the catch-up job does not send it meanwhile.

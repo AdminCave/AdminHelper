@@ -11,7 +11,6 @@ import logging
 import math
 import time
 import uuid
-from datetime import datetime
 from types import SimpleNamespace
 from typing import Annotated
 
@@ -21,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ah_common.pagination import paginate
-from app.alerter import bell_record, emit_to_hub, muted_reasons, release_hub_slot
+from app.alerter import emit_to_hub, muted_reasons
 from app.bell_catch_up import closed_message
 from app.catalog.model import Rule, rule_key
 from app.check_configs import (
@@ -30,14 +29,15 @@ from app.check_configs import (
     ProbeConfig,
     validate_check_config,
 )
+from app.check_switch import BELL_PROBLEMS, end_skips, send_all_clear, start_check, stop_check
 from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
-from app.core import database
+from app.core.actor import Actor, request_actor
 from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import escape_label_value, victoria
-from app.exception_scope import check_runs, runs
+from app.exception_scope import check_runs, load_skips, runs
 from app.history import (
     build_series,
     compare_query,
@@ -100,7 +100,11 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
         if check_ids
         else {}
     )
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    skips = load_skips(db)
+    return [
+        c.to_dict(state=states.get(c.id), running=c.enabled is True and c.id not in skips)
+        for c in checks
+    ]
 
 
 def _serialize_status(db: Session, checks: list[MonitorCheck]) -> list[dict]:
@@ -256,9 +260,6 @@ def _module_central_refused(check: MonitorCheck, data: CheckUpdate, sent: set[st
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# What hub_status records of an alarm the bell shows.
-_BELL_PROBLEMS = ("warning", "critical")
-
 # Type-specific metrics written to VictoriaMetrics.
 # VictoriaMetrics appends '_value' to InfluxDB line protocol metrics
 # (measurement + '_' + field_key), hence the suffix here.
@@ -354,7 +355,11 @@ def list_checks(
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
-def create_check(data: CheckCreate, db: Session = Depends(get_db)):
+def create_check(
+    data: CheckCreate,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Creates a new check and registers it in the scheduler."""
     if data.check_type not in VALID_CHECK_TYPES:
         raise HTTPException(
@@ -380,7 +385,8 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
         description=data.description,
         check_type=data.check_type,
         config=json.dumps(data.config),
-        enabled=data.enabled,
+        # The admin's off is a skip (R-1637), the column is the system's switch.
+        enabled=True,
         interval=interval,
         severity=data.severity,
         consecutive_fails=data.consecutive_fails,
@@ -390,13 +396,16 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
 
     state = MonitorState(check_id=check.id, status="pending")
     db.add(state)
+    if not data.enabled:
+        # A new check owes the bell nothing.
+        stop_check(db, check, actor)
 
     db.commit()
     db.refresh(check)
 
     _schedule(db, check)
 
-    return check.to_dict(state=state)
+    return check.to_dict(state=state, running=data.enabled)
 
 
 @router.get(
@@ -411,7 +420,7 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state)
+    return check.to_dict(state=state, running=check_runs(db, check))
 
 
 @router.put(
@@ -420,7 +429,13 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
-def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)):
+def update_check(
+    check_id: str,
+    data: CheckUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Updates a check."""
     check = (
         db.query(MonitorCheck)
@@ -515,7 +530,6 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         "name",
         "description",
         "check_type",
-        "enabled",
         "interval",
         "severity",
         "consecutive_fails",
@@ -527,20 +541,26 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         check.config = json.dumps(data.config)
     if layer is not None:
         store_layer(check, layer["catalog"], overrides, layer["conflicts"])
-    mark_overrides(db, check, {field: getattr(data, field) for field in sent})
-    mark_module_overrides(
-        check,
-        enabled=data.enabled if "enabled" in sent else None,
-        old_config=old_config if "config" in sent else None,
-    )
+    # enabled is the admin's switch, a skip (R-1637), no field to compare with the template.
+    mark_overrides(db, check, {field: getattr(data, field) for field in sent - {"enabled"}})
+    mark_module_overrides(check, old_config=old_config if "config" in sent else None)
+    clear = None
+    # An explicit null leaves the switch as it is, like a key left out.
+    if "enabled" in sent and data.enabled is not None and data.enabled != check_runs(db, check):
+        if data.enabled:
+            start_check(db, check, actor)
+        else:
+            clear = stop_check(db, check, actor)
 
     db.commit()
     db.refresh(check)
 
     _schedule(db, check)
 
+    if clear is not None:
+        background_tasks.add_task(send_all_clear, clear)
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state)
+    return check.to_dict(state=state, running=check_runs(db, check))
 
 
 def _stored_rules(check: MonitorCheck) -> list:
@@ -629,7 +649,7 @@ def delete_check(check_id: str, background_tasks: BackgroundTasks, db: Session =
         raise HTTPException(404, "Check not found")
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    shown = state.hub_status if state is not None and state.hub_status in _BELL_PROBLEMS else None
+    shown = state.hub_status if state is not None and state.hub_status in BELL_PROBLEMS else None
     # The row is gone after the commit: what the all-clear needs is taken now.
     gone = SimpleNamespace(id=check.id, name=check.name, server_id=check.server_id)
     msg = closed_message(check, "deleted")
@@ -655,68 +675,36 @@ def _all_clear_deleted(gone: SimpleNamespace, shown: str, msg: dict) -> None:
         )
 
 
-def _all_clear_disabled(
-    check: SimpleNamespace,
-    msg: dict,
-    before: tuple[str | None, datetime | None],
-    reserved: tuple[str | None, datetime | None],
-) -> None:
-    """The all-clear of a disabled check, after the answer; the request's session is closed
-    by then, so a refused one gives the slot back through a session of its own."""
-    if emit_to_hub(check, before[0], "ok", msg, severity=before[0]):
-        return
-    # The catch-up job sends it on a later run (lag_target of a disabled check).
-    db = database.SessionLocal()
-    try:
-        release_hub_slot(db, check.id, reserved, before)
-        db.commit()
-    finally:
-        db.close()
-
-
 @router.post(
     "/checks/{check_id}/toggle",
     response_model=MonitorCheckOut,
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
-def toggle_check(check_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def toggle_check(
+    check_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Enables/disables a check."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check not found")
 
-    check.enabled = not check.enabled
-    mark_overrides(db, check, {"enabled": check.enabled})
-    mark_module_overrides(check, enabled=check.enabled)
-    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    closing = None
-    if state is not None and check.enabled:
-        # Enabled again, the check starts fresh: the old status is not reported again,
-        # a problem the first run finds is a new one (R-1571).
-        state.status, state.fail_count, state.ok_count = "unknown", 0, 0
-        state.since = utcnow_naive()
-    elif state is not None and state.hub_status in _BELL_PROBLEMS:
-        # Disabled while the bell shows its alarm: no later run sends the all-clear,
-        # so this does. The slot is reserved in the same commit, as process_alert
-        # does, so the catch-up job does not send it a second time meanwhile; the
-        # all-clear counts as reported.
-        before = (state.hub_status, state.hub_sent_at)
-        reserved = bell_record("ok", check.severity, state.hub_sent_at, utcnow_naive())
-        state.hub_status, state.hub_sent_at = reserved
-        state.notified_status = "ok"
-        closing = (before, reserved)
+    clear = None
+    if check_runs(db, check):
+        clear = stop_check(db, check, actor)
+    else:
+        start_check(db, check, actor)
     db.commit()
 
     _schedule(db, check)
 
-    if closing is not None:
-        before, reserved = closing
-        # What the all-clear needs is taken now: the session is closed when it runs.
-        shown = SimpleNamespace(id=check.id, name=check.name, server_id=check.server_id)
-        msg = closed_message(check, "disabled")
-        background_tasks.add_task(_all_clear_disabled, shown, msg, before, reserved)
-    return check.to_dict(state=state)
+    if clear is not None:
+        background_tasks.add_task(send_all_clear, clear)
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    return check.to_dict(state=state, running=check_runs(db, check))
 
 
 @router.post(
@@ -725,7 +713,11 @@ def toggle_check(check_id: str, background_tasks: BackgroundTasks, db: Session =
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
-def reset_check(check_id: str, db: Session = Depends(get_db)):
+def reset_check(
+    check_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(request_actor),
+):
     """Drops the user's changes to a template check: every template field gets
     the template's value again."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
@@ -747,13 +739,15 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
     for field, value in template_values.items():
         setattr(check, field, json.dumps(value) if field == "config" else value)
     check.overridden_fields = "[]"
+    # The admin's off went with the template's enabled before it became a skip (R-1637).
+    end_skips(db, check, actor)
     db.commit()
     db.refresh(check)
 
     _schedule(db, check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state)
+    return check.to_dict(state=state, running=check_runs(db, check))
 
 
 @router.post(
@@ -792,7 +786,7 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state)
+    return check.to_dict(state=state, running=check_runs(db, check))
 
 
 @router.post(
@@ -826,7 +820,7 @@ def rebaseline_check(check_id: str, db: Session = Depends(get_db)):
         del details["baseline"]
         state.details = json.dumps(details)
         db.commit()
-    return check.to_dict(state=state)
+    return check.to_dict(state=state, running=check_runs(db, check))
 
 
 # ---------------------------------------------------------------------------

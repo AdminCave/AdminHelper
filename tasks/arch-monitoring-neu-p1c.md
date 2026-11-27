@@ -95,8 +95,10 @@ Abhängt von: T2
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py tests/test_alert_bundle.py tests/test_bell_catch_up.py tests/test_status_history.py tests/test_discovery_match.py tests/test_module_sync.py tests/test_agent_plan.py
 Doku: → T14
 
-### T5 — Abschalten als Ausnahme: toggle und PUT enabled (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/check_switch.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_openapi_snapshot.py, apps/monitoring/openapi.snapshot.json
+### T5 — Abschalten als Ausnahme: toggle und PUT enabled (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_switch.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_openapi_snapshot.py, apps/monitoring/openapi.snapshot.json, apps/monitoring/app/exception_scope.py, apps/monitoring/tests/test_alerter_hub.py, apps/monitoring/tests/test_central_rebaseline.py, apps/monitoring/tests/test_models_timestamps.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/test_tag_sync.py, apps/monitoring/tests/test_template_overrides.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @16e5b0636 2026-11-27T13:15:36+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T5.verdict.json)
 Abhängt von: T3, T4
 Änderung:
 - **Neu `app/check_switch.py`** (SPDX):
@@ -113,7 +115,7 @@ Abhängt von: T3, T4
   - Ein Vorlagen-Sync dreht die `skip` nicht zurück.
   - Ein Modul-Sync mit verschwundener Instanz schaltet die Spalte, die `skip` bleibt.
   - PUT mit `enabled` antwortet wie bisher.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_template_sync.py tests/test_module_sync.py tests/test_openapi_snapshot.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_template_sync.py tests/test_module_sync.py tests/test_openapi_snapshot.py tests/test_alerter_hub.py tests/test_central_rebaseline.py tests/test_models_timestamps.py tests/test_response_shapes.py tests/test_tag_sync.py tests/test_template_overrides.py tests/test_exception_scope.py
 Doku: → T14
 
 ### T6 — Ausnahme-API: Geltung object, Wirkungen skip und no_rating (R-1637)  [ ]
@@ -286,3 +288,9 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27 T3 → T5: Der Planer-Verzug in `main.py` zählt ab `updated_at`; endet ein Skip, setzt T5 `updated_at` des Checks neu, sonst zählt der Verzug ab dem letzten Lauf vor dem Skip.
 - Session 2026-11-27 T4: `discovery._update_findings` (`watched`) und `sync_catalog` (`dropped`/`changed`) fragen „läuft“ (Spalte an, kein Skip aus `load_skips`). Bisher schrieb das Abschalten des Admins die Spalte, ab T5 einen Skip: Eine Instanz, deren Checks der Admin abgeschaltet hat, beobachtet weiter nichts, und ein abgeschalteter Check öffnet sie beim Katalog-Update nicht wieder. Das Abschalten beim Übernehmen von „gone“ schreibt weiter die Spalte.
 - Session 2026-11-27 T4: `lag_target` bekommt `running` vom Aufrufer (`check_runs` in `_catch_up_one`) und bleibt ohne Datenbank. Die Entwarnung eines übersprungenen Checks heißt weiter „check disabled“, weil das Abschalten ab T5 ein Skip ist. Das Verify nimmt `test_agent_plan.py` auf, wo der Fall von `module_plan._probes` steht.
+- Session 2026-11-27 T5: `MonitorCheck.to_dict` nimmt `running` als Pflicht-Schlüsselwort: die Liste fragt `load_skips` einmal für alle Zeilen, einzelne Routen fragen `check_runs`. So kann kein Aufrufer die Spalte allein als `enabled` melden; die direkten Aufrufer in den Tests (`test_models_timestamps`, `test_response_shapes`, `test_central_rebaseline`) übergeben es.
+- Session 2026-11-27 T5: `app/check_switch.py` ändert nur die Datenbank (Skip, Zustand, Glocken-Slot); die Route committet und stellt danach den Planer ein, die Entwarnung geht als Hintergrund-Aufgabe nach der Antwort (R-1660). `send_all_clear` ersetzt `_all_clear_disabled` aus `checks.py` unverändert.
+- Session 2026-11-27 T5: Das Abschalten des Admins setzt die Marke `enabled` nicht mehr (Spec: „Die Marke fällt weg“). Die Tests, die sie prüften, behalten ihren Namen und prüfen jetzt Skip und leere Marken (`test_toggle_marks_enabled_and_toggling_back_clears_it`, `test_the_api_marks_the_admins_switch_and_rules_on_a_module_check`, `test_sync_keeps_a_check_the_user_disabled_disabled`); `test_a_field_the_stored_definition_leaves_out_compares_with_its_default` prüft das ausgelassene Feld über `consecutive_oks` statt über `enabled`.
+- Session 2026-11-27 T5: PUT mit `enabled` schaltet nur, wenn der Wert von „läuft“ abweicht; der Editor schickt alle Felder zurück, ein zweites Aus legt keine zweite Skip an. `enabled: null` lässt den Schalter, wie ein fehlender Schlüssel (bisher schrieb es NULL in die Spalte). Eine Altzeile mit NULL in der Spalte meldet `enabled: false` (sie läuft nicht).
+- Session 2026-11-27 T5: `create_check` mit `enabled = false` legt die Spalte an und die Skip mit dem Akteur dazu; eine Entwarnung entfällt (ein neuer Check hat keinen Alarm). `reset_check` beendet die Skips: vor R-1637 brachte Zurücksetzen das `enabled` der Vorlage zurück, das sichtbare Ergebnis bleibt gleich.
+- Session 2026-11-27 T5: `end_skips` setzt `updated_at` des Checks (der Planer-Verzug aus T3 → T5). `start_check` auf einer vom System abgeschalteten Spalte (ohne Skip) schaltet sie an und markiert sie wie bisher; PUT `enabled: false` auf so einem Check legt keine Skip an, er läuft ja nicht.

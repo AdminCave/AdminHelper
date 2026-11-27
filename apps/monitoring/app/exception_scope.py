@@ -185,6 +185,16 @@ def check_runs(db: Session, check: MonitorCheck) -> bool:
     return not db.query(exists().where(MonitorException.check_id == check.id, *_SKIP)).scalar()
 
 
+def check_skips(db: Session, check_id: str) -> list[MonitorException]:
+    """The skips in force on one check, by id."""
+    return (
+        db.query(MonitorException)
+        .filter(MonitorException.check_id == check_id, *_SKIP)
+        .order_by(MonitorException.id)
+        .all()
+    )
+
+
 def load_skips(db: Session) -> dict[str, MonitorException]:
     """The skip in force of each check that has one, by check id, for readers of many
     checks. Of two on one check (the API refuses a second) the lower id answers."""

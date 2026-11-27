@@ -17,6 +17,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app import template_sync
 from app.builtin_templates import BUILTIN_TEMPLATES, seed_builtin_templates
+from app.core.actor import Actor
+from app.exception_scope import check_runs
 from app.models import (
     MonitorAgentKey,
     MonitorAlertRule,
@@ -400,7 +402,7 @@ def test_sync_keeps_an_overridden_field_and_updates_the_others(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(interval="15m"), db)
+    checks_router.update_check(cid, CheckUpdate(interval="15m"), BackgroundTasks(), db, Actor())
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "interval": "1m", "severity": "warning"}])
     db.commit()
@@ -418,15 +420,16 @@ def test_sync_keeps_a_check_the_user_disabled_disabled(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.toggle_check(cid, BackgroundTasks(), db)
+    checks_router.toggle_check(cid, BackgroundTasks(), db, Actor())
     db.scheduled.clear()
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "severity": "warning"}])
     db.commit()
     sync_template(db, tpl)
 
+    # R-1637: the admin's off is a skip the sync does not touch; the column is the template's.
     check = db.get(MonitorCheck, cid)
-    assert (check.enabled, check.severity) == (False, "warning")
+    assert (check.enabled, check_runs(db, check), check.severity) == (True, False, "warning")
     assert cid not in db.scheduled
 
 
@@ -456,7 +459,9 @@ def test_sync_keeps_the_type_of_a_check_whose_config_the_user_changed(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(config={"target": "192.0.2.10"}), db)
+    checks_router.update_check(
+        cid, CheckUpdate(config={"target": "192.0.2.10"}), BackgroundTasks(), db, Actor()
+    )
 
     tpl.check_definitions = json.dumps(
         [
@@ -532,7 +537,7 @@ def test_overridden_check_is_deleted_when_its_definition_leaves_the_template(db)
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(interval="15m"), db)
+    checks_router.update_check(cid, CheckUpdate(interval="15m"), BackgroundTasks(), db, Actor())
 
     tpl.check_definitions = json.dumps([])
     db.commit()
@@ -607,7 +612,7 @@ def test_sync_keeps_a_consecutive_oks_the_user_changed(db):
     tpl = _template(db, [PING_DEF])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     cid = db.query(MonitorCheck).one().id
-    checks_router.update_check(cid, CheckUpdate(consecutive_oks=5), db)
+    checks_router.update_check(cid, CheckUpdate(consecutive_oks=5), BackgroundTasks(), db, Actor())
     assert json.loads(db.get(MonitorCheck, cid).overridden_fields) == ["consecutive_oks"]
 
     tpl.check_definitions = json.dumps([{**PING_DEF, "consecutive_oks": 1, "severity": "warning"}])

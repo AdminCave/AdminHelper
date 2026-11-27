@@ -17,6 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import update
 
 from app import builtin_templates
+from app.exception_scope import check_runs
 from app.models import (
     MonitorAgentKey,
     MonitorAlertLog,
@@ -164,7 +165,7 @@ def _produced(factory, check_id: str) -> dict:
     with factory() as db:
         check = db.get(MonitorCheck, check_id)
         state = db.get(MonitorState, check_id)
-        return jsonable_encoder(check.to_dict(state=state))
+        return jsonable_encoder(check.to_dict(state=state, running=check_runs(db, check)))
 
 
 class TestCheckShape:
@@ -173,7 +174,8 @@ class TestCheckShape:
         _seed_checks(factory)
         want = [_produced(factory, "chk-full"), _produced(factory, "chk-sparse")]
         assert "state" in want[0] and "state" not in want[1]
-        assert want[1]["enabled"] is None and want[1]["consecutiveFails"] is None
+        # enabled says whether the check runs (R-1637): a NULL column does not.
+        assert want[1]["enabled"] is False and want[1]["consecutiveFails"] is None
 
         r = client.get("/checks")
         assert r.status_code == 200, r.text
