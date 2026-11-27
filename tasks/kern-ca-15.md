@@ -38,8 +38,10 @@ Review: approve (.ah-out/review/kern-ca-15/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
 Doku: → T5
 
-### T4 — R-1813: Test für --no-proxy-headers im ca-issuer-Entrypoint  [ ]
+### T4 — R-1813: Test für --no-proxy-headers im ca-issuer-Entrypoint  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/tests/test_entrypoint.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @46169b489 2026-11-27T15:06:19+01:00
+Review: approve (.ah-out/review/kern-ca-15/T4.verdict.json)
 Änderung: neue Testdatei (SPDX-Header): liest die uvicorn-Zeile aus `apps/ca-issuer/docker-entrypoint.sh` wie `apps/server/tests/test_server_entrypoint.py` und verlangt `--no-proxy-headers` ohne `--forwarded-allow-ips`.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_entrypoint.py
 Doku: keine (Test)
