@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-harness-14 — Box-Bootstrap mit Pins, OPNsense-Vorlage, Ledger-Feld — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-14 · Review: pro Task
 Spec: docs/features/kern-harness-14.md (Roadmap R-1364, R-1824, R-1803, R-1796, R-1800)
 Heavy: linux-full — frische Box bootstrappt mit dem geänderten bootstrap_linux.sh (warm.sh desktop) und Bake base-opnsense mit Lease daraus, vor dem Merge (Kevin 2026-11-27)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: DEVELOPMENT.md (Box-Bootstrap: was gepinnt ist) · changelog.d/kern-harness-14.md
 Abhängt von: T2
 
-### T4 — R-1364: OPNsense: shellcheck, sshd-Prüfung, rc.conf der Vorlage  [ ]
-Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/vm/vm.py, scripts/vm/tests/test_vm.py
+### T4 — R-1364: OPNsense: shellcheck, sshd-Prüfung, rc.conf der Vorlage  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/vm/vm.py, scripts/vm/tests/test_vm.py, .github/workflows/ci.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1c599f803 2026-11-27T20:51:39+01:00
+Review: approve (.ah-out/review/kern-harness-14/T4.verdict.json)
 Änderung: der shellcheck-Schritt nimmt `scripts/vm/opnsense/*.sh` mit (als sh, wie der Inhalt es verlangt); `OPNSENSE_CHECK` fragt `/usr/local/sbin/sshd -T` (Form der Ausgabe auf einer Probe-Box belegt); `OPNSENSE_CLEAN` entfernt die rc.conf-Zeilen aus base-freebsd (`sysrc -x`), die eine OPNsense-Lease nicht braucht, belegt durch Bake und Lease.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Harness-intern)

@@ -2987,6 +2987,14 @@ def test_an_opnsense_bake_reboots_into_our_user_before_it_checks_and_cleans(
     # the first boot's web GUI certificate goes before the user and its checkout
     assert commands[5].index("sudo -n php -r ") < commands[5].index("pw userdel")
     assert "/conf/backup/config-*.xml" in commands[5]
+    # base-freebsd's rc.conf, which the firewall does not read for its services
+    assert "sudo -n sysrc -x hostname firstboot_pkg_upgrade_enable " in commands[5]
+    assert " qemu_guest_agent_enable && " in commands[5]
+    assert "/etc/rc.conf.d/firstboot_pkg_upgrade" in commands[5]
+    # the firewall's sshd, whose -T output is mixed case
+    assert "SSHD=/usr/local/sbin/sshd" in commands[4]
+    assert "sudo -n $SSHD -T | grep -qix 'passwordauthentication no'" in commands[4]
+    assert "sudo -n sshd -T" not in commands[4]
     assert not any("bash" in c for c in commands)  # the firewall has none
     assert [r["timeout"] for r in ssh[1:3]] == [vm.CLOUD_INIT_LIMIT, vm.BOOTSTRAP_LIMIT]
     assert [r["timeout"] for r in ssh[4:]] == [120, vm.CLEAN_LIMIT]
