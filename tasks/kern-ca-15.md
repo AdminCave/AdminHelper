@@ -61,8 +61,10 @@ Review: approve (.ah-out/review/kern-ca-15/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_renew_proof_vector.py
 Doku: keine (Test)
 
-### T7 — R-1812: Agent prüft den gemeinsamen Vektor  [ ]
+### T7 — R-1812: Agent prüft den gemeinsamen Vektor  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/renew_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0f435d050 2026-11-27T15:13:29+01:00
+Review: approve (.ah-out/review/kern-ca-15/T7.verdict.json)
 Änderung: `TestRenewProofVector` liest den Vektor aus T6 und prüft ihn mit `checkRenewProof`, also mit `RenewProofPrefix`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/enroll/
 Doku: keine (Test)

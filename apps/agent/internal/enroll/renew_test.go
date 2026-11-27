@@ -959,3 +959,28 @@ func TestMaybeRenewChecksTheTrustGenerationUnderTheLock(t *testing.T) {
 		})
 	}
 }
+
+// TestRenewProofVector checks the vector the issuer checks too
+// (apps/ca-issuer/tests/test_renew_proof_vector.py) with RenewProofPrefix: a prefix that drifts
+// from the issuer's fails here instead of every renew with a 403 (R-1812).
+func TestRenewProofVector(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "ca-issuer", "tests", "fixtures", "renew_proof_vector.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vector struct{ Cert, CSR, Proof string }
+	if err := json.Unmarshal(raw, &vector); err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode([]byte(vector.Cert))
+	if block == nil {
+		t.Fatal("cert is not PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRenewProof([]*x509.Certificate{cert}, RenewRequest{CSR: vector.CSR, Proof: vector.Proof}); err != nil {
+		t.Fatalf("shared vector: %v", err)
+	}
+}
