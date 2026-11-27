@@ -5,7 +5,8 @@
 #
 # build_pkg_tool_test.sh — scripts/release/build-pkg-tool.sh reuses a cached prefix only if its
 # pkg runs and reports the pinned version (R-1454): a binary that no longer loads on a newer
-# runner image, or one of another version, is rebuilt instead of trusted.
+# runner image, or one of another version, is rebuilt instead of trusted. --bundle-libs copies
+# the libraries pkg loads next to it (R-1787).
 # Hermetic: stub prefixes with a fake sbin/pkg and the real pin; clang is pointed at an empty
 # directory, so a rebuild stops at the clang check before any clone. The positive case proves the
 # check can pass at all.
@@ -64,6 +65,35 @@ run "$p"
 [ "$rc" != 0 ] && [[ "$out" != *"already in"* ]] && [[ "$out" == *"clang-18 not found"* ]] \
   && ok "a prefix with another pin is rebuilt" \
   || bad "stale pin: rc=$rc out=$out"
+
+# --bundle-libs (R-1787): the release's signing job installs nothing, so pkg's libraries travel
+# with it. A real binary (xz, linked to liblzma) stands in for pkg; a stub ldd covers the rest.
+xz_bin=$(command -v xz) || { echo "SKIP: xz missing"; exit 75; }
+p="$WORK/bundle"; mkdir -p "$p/sbin"; cp "$xz_bin" "$p/sbin/pkg"
+out=$(bash "$SCRIPT" --bundle-libs "$p" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ -f "$p/lib/liblzma.so.5" ] && [ ! -e "$p/lib/libc.so.6" ] && [ ! -L "$p/lib/liblzma.so.5" ] \
+  && ok "--bundle-libs copies the libraries of pkg but not glibc's" \
+  || bad "bundle: rc=$rc out=$out lib=$(ls "$p/lib" 2>&1)"
+out=$(env -i PATH=/usr/bin:/bin LD_LIBRARY_PATH="$p/lib" "$p/sbin/pkg" --version 2>&1); rc=$?
+[ "$rc" = 0 ] && ok "the bundled stand-in runs with LD_LIBRARY_PATH on the bundle" || bad "bundled run: rc=$rc out=$out"
+
+printf '#!/bin/sh\nprintf "\\tlibgone.so.1 => not found\\n\\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x1)\\n"\n' > "$WORK/ldd-missing"
+chmod +x "$WORK/ldd-missing"
+out=$(PKG_TOOL_LDD="$WORK/ldd-missing" bash "$SCRIPT" --bundle-libs "$p" 2>&1); rc=$?
+[ "$rc" != 0 ] && [[ "$out" == *"libgone.so.1"* ]] \
+  && ok "--bundle-libs fails on a library the runner lacks" \
+  || bad "missing library: rc=$rc out=$out"
+
+printf '#!/bin/sh\nprintf "\\tlibpkg.so.4 => %s/lib/libpkg.so.4 (0x1)\\n"\n' "$p" > "$WORK/ldd-own"
+chmod +x "$WORK/ldd-own"
+: > "$p/lib/libpkg.so.4"
+out=$(PKG_TOOL_LDD="$WORK/ldd-own" bash "$SCRIPT" --bundle-libs "$p" 2>&1); rc=$?
+[ "$rc" = 0 ] && [[ "$out" == *"bundled 0 libraries"* ]] \
+  && ok "--bundle-libs leaves a library already in the bundle" \
+  || bad "own library: rc=$rc out=$out"
+
+out=$(bash "$SCRIPT" --bundle-libs "$WORK/no-such-prefix" 2>&1); rc=$?
+[ "$rc" = 2 ] && ok "--bundle-libs without sbin/pkg is a usage error" || bad "no pkg: rc=$rc out=$out"
 
 echo "build_pkg_tool_test: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
