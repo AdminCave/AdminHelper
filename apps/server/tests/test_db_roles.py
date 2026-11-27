@@ -24,6 +24,7 @@ PASSWORDS = {
     "SCHEDULER_DB_PASSWORD": "scheduler-pw",
     "MONITOR_DB_PASSWORD": "monitor-pw",
     "CA_DB_PASSWORD": "ca-pw",
+    "BACKUP_DB_PASSWORD": "backup-pw",
 }
 
 
@@ -254,6 +255,63 @@ def test_monitoring_owns_its_database_and_nothing_else(as_superuser):
     assert _owners(port, db_roles.MONITOR_DB) == {"ah_monitor"}
     with pytest.raises(psycopg.OperationalError):
         _connect_as(port, "monitor")
+
+
+def test_the_backup_role_reads_both_databases_and_changes_nothing(as_superuser):
+    port = as_superuser
+    _seed_an_existing_install(port)
+    db_roles.setup()
+    with _connect_as(port, "monitor", db_roles.MONITOR_DB) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS checks (id int)")
+        conn.execute("INSERT INTO checks VALUES (7)")
+    with psycopg.connect(_dsn(port, SUPERUSER, SUPERPASS)) as conn:
+        flags = conn.execute(
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls "
+            "FROM pg_roles WHERE rolname = 'ah_backup'"
+        ).fetchone()
+        member_of = conn.execute(
+            "SELECT b.rolname FROM pg_auth_members m JOIN pg_roles b ON b.oid = m.roleid "
+            "JOIN pg_roles r ON r.oid = m.member WHERE r.rolname = 'ah_backup'"
+        ).fetchall()
+    assert flags == (False, False, False, False, False)
+    # No predefined role: pg_read_all_data would read pg_authid too.
+    assert member_of == []
+
+    with _connect_as(port, "backup") as conn:
+        assert conn.execute("SELECT username FROM users").fetchone() == ("admin",)
+        assert conn.execute("SELECT scope FROM revoked_identities").fetchone() == ("agent",)
+        conn.execute("SELECT last_value FROM users_id_seq")
+        # pg_dump locks every table it dumps in ACCESS SHARE mode.
+        with conn.transaction():
+            conn.execute("LOCK TABLE users, counters IN ACCESS SHARE MODE")
+        for stmt in (
+            "SELECT rolpassword FROM pg_authid",
+            "INSERT INTO users (username) VALUES ('x')",
+            "UPDATE users SET username = 'x'",
+            "DELETE FROM revoked_identities",
+            "TRUNCATE counters",
+            "SELECT nextval('users_id_seq')",
+            "CREATE TABLE mine (id int)",
+            "ALTER TABLE users ADD COLUMN x int",
+            "DROP TABLE counters",
+        ):
+            with pytest.raises(errors.InsufficientPrivilege):
+                conn.execute(stmt)
+    # A table a later migration makes, as the owner, is readable without another setup.
+    with _connect_as(port, "server") as conn:
+        conn.execute("CREATE TABLE later (id serial PRIMARY KEY)")
+        conn.execute("INSERT INTO later DEFAULT VALUES")
+    with _connect_as(port, "backup") as conn:
+        assert conn.execute("SELECT id FROM later").fetchone() == (1,)
+        conn.execute("SELECT last_value FROM later_id_seq")
+    with _connect_as(port, "backup", db_roles.MONITOR_DB) as conn:
+        assert conn.execute("SELECT id FROM checks").fetchone() == (7,)
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("INSERT INTO checks VALUES (8)")
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("CREATE TABLE mine (id int)")
+    with pytest.raises(psycopg.OperationalError):
+        _connect_as(port, "backup", "postgres")
 
 
 def test_the_scheduler_writes_but_does_not_change_the_schema(as_superuser):

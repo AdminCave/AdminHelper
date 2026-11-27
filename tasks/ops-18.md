@@ -14,6 +14,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-27: die Session merged ops-18 selbst (auch install.sh/update.sh).
 - Kevin 2026-11-27 R-1783: Rolle ah_backup über db_roles.setup (pg_read_all_data, CONNECT), Passwort BACKUP_DB_PASSWORD über init-secrets.sh, keine DB-Migration.
 - T1 (security T1): Der Snapshot entsteht in `$TMP` (0700, außerhalb jedes Container-Mounts), der Rollback entpackt nur ihn; die Kopie in `backups/` dient der Aufbewahrung, exklusiv angelegt (`dd conv=excl`) und per `mv -fT` umbenannt. Damit entfallen das `mktemp -d` unter `backups/` und der SHA-256-Vergleich der Änderung oben.
+- T5 (security T5): `ah_backup` bekommt statt `pg_read_all_data` je Datenbank USAGE auf `public`, SELECT auf alle Tabellen und Sequenzen und Default-Privilegien für die Eigentümer-Rolle; `pg_read_all_data` liest auch die System-Kataloge. Enger als Kevins Vorgabe, gleiche Wirkung für pg_dump (Probe: TOC wie beim Superuser-Dump); im Bericht an Kevin genannt.
 
 ### T1 — R-1782: update.sh legt den Laufzeit-Snapshot sicher an und prüft ihn vor dem Rollback  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
@@ -49,9 +50,11 @@ Review: approve (.ah-out/review/ops-18/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- init-secrets_test restore_guard_test diagnostics_test lib_e2e_stack_test
 Doku: → T6
 
-### T5 — R-1783: Rolle ah_backup und pg-backup liest als sie  [ ]
-Komponente: server · Dateien: apps/server/app/db_roles.py, apps/server/tests/test_db_roles.py, docker-compose.yml, scripts/pg-backup.sh, apps/server/tests/test_env_parity.py, scripts/tests/backup_restore_test.sh
-Änderung: `ROLES["backup"]` (`ah_backup`, `BACKUP_DB_PASSWORD`), in `setup` CONNECT auf beide DBs und `GRANT pg_read_all_data`, sonst nichts. db-init bekommt das Passwort; pg-backup nur noch `BACKUP_DB_PASSWORD`, dumpt als `ah_backup`. Tests: Rolle kann lesen, nicht schreiben, kein DDL; Compose-Parität; der Live-Block in backup_restore_test.sh dumpt als ah_backup.
+### T5 — R-1783: Rolle ah_backup und pg-backup liest als sie  [x]
+Komponente: server · Dateien: apps/server/app/db_roles.py, apps/server/tests/test_db_roles.py, docker-compose.yml, scripts/pg-backup.sh, apps/server/tests/test_env_parity.py, scripts/tests/backup_restore_test.sh, docs/features/ops-18.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @90dcab63d 2026-11-27T14:24:34+01:00
+Review: approve (.ah-out/review/ops-18/T5.verdict.json)
+Änderung: `ROLES["backup"]` (`ah_backup`, `BACKUP_DB_PASSWORD`), in `setup` CONNECT auf beide DBs und je DB SELECT auf `public` samt Default-Privilegien (nicht `pg_read_all_data`, siehe Entscheidungen), sonst nichts. db-init bekommt das Passwort; pg-backup nur noch `BACKUP_DB_PASSWORD`, dumpt als `ah_backup`. Tests: Rolle kann lesen, nicht schreiben, kein DDL; Compose-Parität; der Live-Block in backup_restore_test.sh dumpt als ah_backup.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_db_roles.py tests/test_env_parity.py tests/test_compose_hardening.py
 Doku: → T6
 Abhängt von: T4

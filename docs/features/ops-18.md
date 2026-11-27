@@ -32,8 +32,9 @@ merged selbst („du darfst alles mergen“), obwohl der Zug `scripts/install.sh
   Zeilennummer abgelehnt.
 - **R-1783** `pg-backup` (`docker-compose.yml:675`, `scripts/pg-backup.sh:35,40`): sichert mit den Dienst-Rollen,
   die Schreib- und DDL-Rechte haben. Ziel (Kevin 2026-11-27):
-  - Eine fünfte Rolle `ah_backup` in `apps/server/app/db_roles.py` `setup`, mit `pg_read_all_data` und CONNECT auf
-    beide Datenbanken, sonst nichts.
+  - Eine fünfte Rolle `ah_backup` in `apps/server/app/db_roles.py` `setup`, mit CONNECT auf beide Datenbanken und
+    je Datenbank SELECT auf das Schema `public` samt Default-Privilegien, sonst nichts. Nicht `pg_read_all_data`:
+    das liest auch die System-Kataloge (Entscheidung T5 im Ledger).
   - Das Passwort `BACKUP_DB_PASSWORD` erzeugt `scripts/init-secrets.sh:129` wie die übrigen, wenn es fehlt. Ein
     normales Update holt die Rolle also nach (update.sh ruft init-secrets.sh auf, db-init setzt die Rolle bei
     jedem Start).
