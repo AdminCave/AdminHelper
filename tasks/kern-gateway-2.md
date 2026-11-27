@@ -1,5 +1,5 @@
 # Gateway: Webhook-Trigger auf :8444, Upstream-Keepalive — Task-Ledger
-Status: bereit · Branch: feature/kern-gateway-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-gateway-2 · Review: pro Task
 Spec: docs/features/kern-gateway-2.md (Roadmap R-1687, R-1717)
 Heavy: linux-full — Gateway-Konfiguration und Server-API; der Stack-Test unter enforce läuft im PR (integration-stack)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
