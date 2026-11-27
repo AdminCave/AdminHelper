@@ -7,6 +7,7 @@
 from the grant not the CSR, tokens are one-time, deprovisioned identities
 cannot renew."""
 
+import base64
 import datetime
 import logging
 import urllib.parse
@@ -21,7 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app import config, db, pki, rotation, storage
-from app.issuer import Issuer
+from app.issuer import RENEW_PROOF_PREFIX, Issuer
 from app.main import app
 from app.storage import Intermediate
 from app.tokens import (
@@ -192,6 +193,78 @@ def test_renew_requires_verified_header(client):
         headers={config.HEADER_VERIFY: "FAILED", config.HEADER_CERT: urllib.parse.quote(leaf_pem)},
     )
     assert r.status_code == 401
+
+
+def _enroll_with_key(client, subject_id, scope):
+    """Enroll and keep the key, as a client does for its next renew."""
+    key = pki.generate_key()
+    csr = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, subject_id)]))
+        .sign(key, hashes.SHA256())
+    )
+    client.app.state.token_store.mint("t", EnrollmentGrant(subject_id=subject_id, scope=scope))
+    r = client.post(
+        "/enroll",
+        json={"token": "t", "csr": csr.public_bytes(serialization.Encoding.PEM).decode()},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["cert"], key
+
+
+def _proof(key, csr_pem: str, prefix: bytes = RENEW_PROOF_PREFIX) -> str:
+    der = x509.load_pem_x509_csr(csr_pem.encode()).public_bytes(serialization.Encoding.DER)
+    return base64.b64encode(key.sign(prefix + der, ec.ECDSA(hashes.SHA256()))).decode()
+
+
+def test_renew_with_a_proof_by_the_old_key_reissues(client):
+    leaf_pem, key = _enroll_with_key(client, "agent-30", "tunnel")
+    csr = _csr_pem("ignored")
+    r = client.post(
+        "/renew", json={"csr": csr, "proof": _proof(key, csr)}, headers=_renew_headers(leaf_pem)
+    )
+    assert r.status_code == 200, r.text
+    assert _cn(_leaf(r.json()["cert"])) == "agent-30"
+
+
+@pytest.mark.parametrize("case", ["foreign_key", "other_csr", "no_prefix", "not_base64", "garbage"])
+def test_renew_refuses_a_proof_that_does_not_hold(client, case):
+    leaf_pem, key = _enroll_with_key(client, "agent-31", "tunnel")
+    csr = _csr_pem("ignored")
+    proof = {
+        "foreign_key": lambda: _proof(pki.generate_key(), csr),
+        "other_csr": lambda: _proof(key, _csr_pem("ignored")),
+        "no_prefix": lambda: _proof(key, csr, prefix=b""),
+        "not_base64": lambda: "!!not base64!!",
+        "garbage": lambda: base64.b64encode(b"\x30\x02\x01").decode(),
+    }[case]()
+    r = client.post("/renew", json={"csr": csr, "proof": proof}, headers=_renew_headers(leaf_pem))
+    assert r.status_code == 403, r.text
+    # Nothing was issued: the old certificate still renews with a valid proof.
+    r = client.post(
+        "/renew", json={"csr": csr, "proof": _proof(key, csr)}, headers=_renew_headers(leaf_pem)
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_renew_refuses_an_oversized_proof(client):
+    leaf_pem, _ = _enroll_with_key(client, "agent-32", "tunnel")
+    r = client.post(
+        "/renew",
+        json={"csr": _csr_pem("x"), "proof": "A" * 200},
+        headers=_renew_headers(leaf_pem),
+    )
+    assert r.status_code == 422
+
+
+def test_renew_without_proof_still_reissues_and_warns(client, caplog):
+    # One release of transition (Kevin 2026-11-27): older clients renew without a proof.
+    leaf_pem, _ = _enroll_with_key(client, "agent-33", "tunnel")
+    with caplog.at_level(logging.WARNING, logger="ca-issuer.issuer"):
+        r = client.post("/renew", json={"csr": _csr_pem("x")}, headers=_renew_headers(leaf_pem))
+    assert r.status_code == 200, r.text
+    warned = _issuer_records(caplog, logging.WARNING)
+    assert any("without proof" in m and "agent-33" in m and "tunnel" in m for m in warned)
 
 
 def test_renew_refused_for_deprovisioned_identity(client):

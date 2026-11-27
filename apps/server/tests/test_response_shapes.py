@@ -800,8 +800,9 @@ class TestHookShape:
         r = test_client.post(f"/api/hooks/{hook_id}/rotate", headers=h)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert list(body) == ["token"]
+        assert list(body) == ["token", "trigger_port"]
         assert isinstance(body["token"], str) and body["token"] != old
+        assert isinstance(body["trigger_port"], int)
 
 
 GRANT_KEYS = ["token", "subjectId", "scope", "browser", "enrollPort", "expiresAt"]

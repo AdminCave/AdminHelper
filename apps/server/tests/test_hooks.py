@@ -12,6 +12,8 @@ import logging
 
 import pytest
 
+from app.core import config
+
 WEBHOOK = {"name": "wh", "hook_type": "webhook", "script": "-- noop"}
 
 
@@ -131,6 +133,33 @@ class TestHookCreateValidation:
         r = test_client.post("/api/hooks", json=WEBHOOK, headers=h)
         assert r.status_code == 201, r.text
         assert r.json().get("token")  # the one-time webhook token is returned
+        # The trigger URL points at the enrollment plane (R-1687).
+        assert r.json()["trigger_port"] == 8444
+
+    def test_the_token_answers_name_a_changed_enrollment_port(
+        self, test_client, db_session, admin_user, monkeypatch
+    ):
+        monkeypatch.setattr(config, "ENROLL_PORT", 9444)
+        h = _login(test_client, "admin", "adminpass")
+        r = test_client.post("/api/hooks", json=WEBHOOK, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["trigger_port"] == 9444
+        rotated = test_client.post(f"/api/hooks/{r.json()['id']}/rotate", headers=h)
+        assert rotated.status_code == 200, rotated.text
+        assert rotated.json()["trigger_port"] == 9444
+        assert rotated.json()["token"] != r.json()["token"]
+
+    def test_hooks_without_a_token_name_no_trigger_port(self, test_client, db_session, admin_user):
+        h = _login(test_client, "admin", "adminpass")
+        event = {
+            "name": "e",
+            "hook_type": "event",
+            "script": "x",
+            "event_triggers": ["connection.created"],
+        }
+        r = test_client.post("/api/hooks", json=event, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["token"] is None and r.json()["trigger_port"] is None
 
     @pytest.mark.parametrize(
         "payload",
@@ -653,6 +682,14 @@ class TestFailedRunsRingTheBell:
         # The type only: the message of an exception can carry internal details (R-1764).
         assert "RuntimeError" in (rows[0].body or "")
         assert "runner broke" not in (rows[0].body or "")
+
+    def test_the_bell_text_of_a_raised_run_names_the_type_and_no_service(self):
+        """Schedule and server.startup hooks log in the scheduler service, event hooks in the
+        web service: the text must not name either."""
+        from app.modules.hooks.script_runner import raised_run_error
+
+        text = raised_run_error(RuntimeError("secret path /etc/x"))
+        assert text == "RuntimeError (details in the log)"
 
     def test_a_failed_notice_does_not_raise_after_the_rollback(self, caplog):
         """The rollback expires the hook: reading its name afterwards would load it again,

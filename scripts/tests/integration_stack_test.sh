@@ -395,6 +395,33 @@ done)
 grep -q '^429$' <<<"$codes" && ok "enroll plane returns 429 after a burst (limit_req)" \
     || bad "no 429 after 40 enroll requests"
 
+# ── 9b. Webhook triggers come certless over :8444 to the server (R-1687) ──────
+# A wrong token gets the server's own answer (a JSON detail), not the gateway's page;
+# other paths and other methods stay refused by the gateway.
+for form in header path; do
+    if [ "$form" = header ]; then
+        resp=$(curl -k -s -w '\n%{http_code}' --max-time 5 -X POST -H 'X-Hook-Token: bogus' \
+            "$ENROLL/api/hooks/trigger" 2>/dev/null || echo 000)
+    else
+        resp=$(curl -k -s -w '\n%{http_code}' --max-time 5 -X POST \
+            "$ENROLL/api/hooks/trigger/bogus" 2>/dev/null || echo 000)
+    fi
+    code=$(tail -n1 <<<"$resp")
+    if [ "$code" = "404" ] && grep -q '"detail"' <<<"$resp"; then
+        ok "webhook trigger ($form) over :8444 without a cert reaches the server (404 from the app)"
+    else
+        bad "webhook trigger ($form) over :8444: expected the app's 404, got '$code'"
+    fi
+done
+code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$ENROLL/api/hooks/trigger/bogus" 2>/dev/null || echo 000)
+[ "$code" = "403" ] && ok "webhook trigger over :8444 takes POST only (GET 403)" || bad "GET trigger over :8444: expected 403, got '$code'"
+resp=$(curl -k -s -w '\n%{http_code}' --max-time 5 -X POST "$ENROLL/api/hooks" 2>/dev/null || echo 000)
+if [ "$(tail -n1 <<<"$resp")" = "404" ] && ! grep -q '"detail"' <<<"$resp"; then
+    ok "the rest of /api/hooks stays closed on :8444 (gateway 404)"
+else
+    bad "/api/hooks over :8444 was not refused by the gateway: $(tail -n1 <<<"$resp")"
+fi
+
 # ── 10. Repo plane :8445 path filtering (6.63 exposes it, 6.125 asserts it) ──
 # Seed the host repo mount so /apt is genuinely served — else every path 404s and
 # the filter can't be told from a missing file. Only /apt|/rpm may be reachable;

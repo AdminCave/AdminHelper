@@ -76,17 +76,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
     toggleExpanded(check.id);
   }
 
-  function onToggle(e: MouseEvent | KeyboardEvent): void {
+  // Enter on an action button is clicked by the browser itself; only the row's own
+  // Enter expands, or the keydown would bubble up from the button and run twice.
+  function onRowKey(e: KeyboardEvent): void {
+    if (e.key === 'Enter' && e.target === e.currentTarget) onClick();
+  }
+
+  function onToggle(e: MouseEvent): void {
     e.stopPropagation();
     void toggleCheck(check.id);
   }
 
-  function onEdit(e: MouseEvent | KeyboardEvent): void {
+  function onEdit(e: MouseEvent): void {
     e.stopPropagation();
     openCheckEditor(check, check.serverId ?? '');
   }
 
-  function onRun(e: MouseEvent | KeyboardEvent): void {
+  function onRun(e: MouseEvent): void {
     e.stopPropagation();
     void runCheck(check.id);
   }
@@ -109,7 +115,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     role="button"
     tabindex="0"
     onclick={onClick}
-    onkeydown={(e) => e.key === 'Enter' && onClick()}
+    onkeydown={onRowKey}
   >
     <span class="mon-dot {statusClass(status)}"></span>
     <span class="mon-line-label">
@@ -131,19 +137,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button
         class="mon-line-action"
         onclick={onEdit}
-        onkeydown={(e) => e.key === 'Enter' && onEdit(e)}
         title={$t('action.edit')}
         aria-label={$t('action.edit')}
       >
         <MonSectionIcon name="edit" />
       </button>
       {#if overridden.length > 0}
-        <!-- Enter clicks a button by itself; the key only must not reach the row,
-             which would expand. -->
         <button
           class="mon-line-action"
           onclick={onReset}
-          onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}
           title={$t('monitoring.check.resetToTemplate')}
           aria-label={$t('monitoring.check.resetToTemplate')}
         >
@@ -153,7 +155,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button
         class="mon-line-action"
         onclick={onRun}
-        onkeydown={(e) => e.key === 'Enter' && onRun(e)}
         disabled={!runnable}
         title={runnable ? $t('monitoring.check.runNow') : runBlockedReason}
         aria-label={runnable ? $t('monitoring.check.runNow') : runBlockedReason}
@@ -164,7 +165,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
         class="mon-line-action"
         class:muted={!check.enabled}
         onclick={onToggle}
-        onkeydown={(e) => e.key === 'Enter' && onToggle(e)}
         title={check.enabled ? $t('monitoring.check.disable') : $t('monitoring.check.enable')}
         aria-label={check.enabled ? $t('monitoring.check.disable') : $t('monitoring.check.enable')}
       >

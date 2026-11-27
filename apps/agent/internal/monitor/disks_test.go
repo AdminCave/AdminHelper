@@ -133,7 +133,7 @@ func TestBoundedStatsAsksAHungMountOnlyOnce(t *testing.T) {
 
 	// The hung mount is not asked: the run ends without a deadline, since all it asked answered.
 	answered.Add(1)
-	if got := boundedStats(mounts, make(chan time.Time), stat); len(got) != 1 || got[0].Mount != "/mnt/once-ok" {
+	if got := boundedStats(mounts, time.After(30*time.Second), stat); len(got) != 1 || got[0].Mount != "/mnt/once-ok" {
 		t.Fatalf("second run = %+v, want /mnt/once-ok only", got)
 	}
 	mu.Lock()
@@ -156,6 +156,13 @@ func TestBoundedStatsAsksAHungMountOnlyOnce(t *testing.T) {
 	defer mu.Unlock()
 	if asks["/mnt/once-hung"] != 2 {
 		t.Fatalf("the answered mount was asked %d times in all, want 2", asks["/mnt/once-hung"])
+	}
+}
+
+func TestUniqueMounts(t *testing.T) {
+	got := uniqueMounts([]string{"/a", "/b", "/a", "/c", "/b"})
+	if want := []string{"/a", "/b", "/c"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("uniqueMounts = %v, want %v", got, want)
 	}
 }
 

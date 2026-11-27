@@ -6,7 +6,12 @@ package enroll
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -21,10 +26,35 @@ import (
 // out — the current cert is still valid for the remaining half).
 const RenewalFraction = 0.5
 
-// RenewRequest is the /renew body (CSR only; identity comes from the presented
-// client cert, which the gateway verifies and forwards).
+// RenewRequest is the /renew body; identity comes from the presented client cert,
+// which the gateway verifies and forwards. Proof shows the issuer that the agent
+// holds that cert's key (R-1812).
 type RenewRequest struct {
-	CSR string `json:"csr"`
+	CSR   string `json:"csr"`
+	Proof string `json:"proof,omitempty"`
+}
+
+// RenewProofPrefix starts the message Proof signs; the CSR's DER follows it.
+// It must match RENEW_PROOF_PREFIX in apps/ca-issuer/app/issuer.py.
+const RenewProofPrefix = "AdminHelper renew v1\x00"
+
+// renewProof signs RenewProofPrefix + csrDER with the key of the current identity:
+// ECDSA over SHA-256, ASN.1 DER, standard Base64.
+func renewProof(dir string, csrDER []byte) (string, error) {
+	pair, err := tls.LoadX509KeyPair(CertPath(dir), KeyPath(dir))
+	if err != nil {
+		return "", fmt.Errorf("load current identity: %w", err)
+	}
+	key, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return "", fmt.Errorf("current key is not ECDSA")
+	}
+	digest := sha256.Sum256(append([]byte(RenewProofPrefix), csrDER...))
+	sig, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
+	if err != nil {
+		return "", fmt.Errorf("sign renew proof: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
 // NeedsRenewal reports whether the leaf in certPEM is past `fraction` of its
@@ -80,8 +110,13 @@ func Renew(ctx context.Context, dir, baseURL string, timeout time.Duration) erro
 	if err != nil {
 		return err
 	}
+	block, _ := pem.Decode(csr)
+	proof, err := renewProof(dir, block.Bytes)
+	if err != nil {
+		return err
+	}
 	endpoint := strings.TrimRight(baseURL, "/") + "/ca/renew"
-	resp, err := Submit(ctx, client, endpoint, RenewRequest{CSR: string(csr)})
+	resp, err := Submit(ctx, client, endpoint, RenewRequest{CSR: string(csr), Proof: proof})
 	if err != nil {
 		return err
 	}

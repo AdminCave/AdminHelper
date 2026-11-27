@@ -33,7 +33,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.catalog.model import INTERVALS, Check, Rule
+from app.catalog.model import INTERVALS, Check, Condition, Rule
 from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 
 
@@ -210,6 +210,9 @@ class ProbeConfig(_StrictConfig):
     rules: list[Rule] = []
     credential: ProbeCredential | None = None
     test_object: StrictBool = False
+    # From the module only, like the target (routers/checks.py _PROBE_MEASURE): the check
+    # rests while the condition on another check of the module is known not to hold (R-1825).
+    when: Condition | None = None
 
     @field_validator("interval_s")
     @classmethod
@@ -256,6 +259,7 @@ class ProbeConfig(_StrictConfig):
                     if self.credential is None
                     else {"use": self.credential.use, "optional": self.credential.optional},
                     "test_object": self.test_object,
+                    "when": self.when,
                 }
             )
         except ValidationError as exc:

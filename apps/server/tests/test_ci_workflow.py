@@ -416,35 +416,72 @@ def _steps():
 
 
 def test_only_the_signing_step_of_the_release_sees_the_pkg_signing_key():
-    """Building pkg from outside sources and fetching frpc run without the signing key; the
-    next step, which checks the key and signs, gets it (R-1452)."""
-    steps = [step for where, step in _steps() if where.startswith("release.yml:")]
+    """pkg is built from outside sources and frpc fetched in a job of their own that names no
+    secret (R-1787): a job that names one gets its value on its runner. Whether the key is set is
+    checked in a job of its own with nothing else in it. The release job installs nothing before
+    it signs, checks the archive against the tool job's output and gives the key only to the
+    step that signs."""
+    jobs = yaml.safe_load(_CI.with_name("release.yml").read_text(encoding="utf-8"))["jobs"]
+    check, tool, release = jobs["pkg-signing-key"], jobs["freebsd-pkg-tool"], jobs["release"]
+
+    assert check["permissions"] == {}
+    [only] = check["steps"]
+    assert set(only) == {"name", "env", "run"}
+    assert only["env"] == {"HAS_PKG_REPO_SIGNING_KEY": "${{ secrets.PKG_REPO_SIGNING_KEY != '' }}"}
+    assert tool["needs"] == "pkg-signing-key"
+    assert tool["permissions"] == {"contents": "read"}
+    assert "secrets." not in str(tool) and "env" not in tool
+    builder = next(
+        s for s in tool["steps"] if s.get("name") == "Build the pkg tool and fetch the FreeBSD frpc"
+    )
+    assert '--bundle-libs "$RUNNER_TEMP/pkg-tool"' in builder["run"]
+    assert "frp_${FRP_VERSION}_freebsd_amd64" in builder["run"]
+    assert "sha256sum -c" in builder["run"]
+    assert tool["outputs"] == {"sha256": "${{ steps.pack.outputs.sha256 }}"}
+    pack = next(s for s in tool["steps"] if s.get("id") == "pack")
+    assert "tar czf pkg-tool.tar.gz" in pack["run"] and "$GITHUB_OUTPUT" in pack["run"]
+
+    assert "freebsd-pkg-tool" in release["needs"]
+    assert "needs.freebsd-pkg-tool.result == 'success'" in release["if"]
+    steps = release["steps"]
     holders = [
         s
         for s in steps
-        if "PKG_REPO_SIGNING_KEY" in str(s.get("env") or {})
-        or "PKG_REPO_SIGNING_KEY" in str(s.get("with") or {})
+        if "PKG_REPO_SIGNING_KEY" in str(s.get("env") or {}) + str(s.get("with") or {})
     ]
     assert [s["name"] for s in holders] == [
         "Build signed FreeBSD pkg repo (agent + OPNsense plugin)"
     ]
     signer = holders[0]["run"]
-    assert "build-pkg-tool.sh" not in signer and "curl " not in signer and "apt-get" not in signer
+    assert "build-pkg-tool.sh" not in signer and "curl " not in signer
+    assert 'LD_LIBRARY_PATH="$RUNNER_TEMP/pkg-tool/lib"' in signer
+    assert "$RUNNER_TEMP/pkg-tool/sbin" in signer and 'FRP_DIR="$RUNNER_TEMP/frp-freebsd"' in signer
     names = [s.get("name") for s in steps]
-    builder = steps[names.index("Build the pkg tool and fetch the FreeBSD frpc")]
-    assert "secrets." not in str(builder)
+    signs_at = names.index(holders[0]["name"])
+    # Nothing is installed before pkg signs; later steps install their own tools (minisign, rpm).
+    assert [s for s in steps[: signs_at + 1] if "apt-get" in s.get("run", "")] == []
+    take = steps[names.index("Take the pkg tool")]
+    assert take["env"] == {"PKG_TOOL_SHA256": "${{ needs.freebsd-pkg-tool.outputs.sha256 }}"}
+    run = take["run"]
     assert (
-        "build-pkg-tool.sh" in builder["run"]
-        and "frp_${FRP_VERSION}_freebsd_amd64" in builder["run"]
+        run.index("sha256sum -c") < run.index("tar xzf")
+        and "rmdir artifacts/freebsd-pkg-tool" in run
     )
-    assert names.index("Build the pkg tool and fetch the FreeBSD frpc") < names.index(
-        holders[0]["name"]
+    assert names.index("Take the pkg tool") < names.index("Flatten and checksum")
+    assert names.index("Take the pkg tool") < names.index(holders[0]["name"])
+
+
+def test_the_pr_ci_runs_the_bundled_pkg_in_a_bare_pinned_ubuntu():
+    # The release job installs nothing, so the bundle must carry every library pkg loads (R-1787).
+    steps = _workflow()["jobs"]["pkg-repo"]["steps"]
+    names = [s.get("name") for s in steps]
+    probe = steps[names.index("Run the bundled pkg without its build dependencies")]["run"]
+    assert '--bundle-libs "$HOME/pkg-tool"' in probe
+    assert re.search(r"ubuntu:26\.04@sha256:[0-9a-f]{64}", probe)
+    assert "LD_LIBRARY_PATH=/opt/pkg-tool/lib" in probe and "pkg --version" in probe
+    assert names.index("Build pkg from source") < names.index(
+        "Run the bundled pkg without its build dependencies"
     )
-    assert (
-        '"$RUNNER_TEMP/frp-freebsd"' in builder["run"]
-        and 'FRP_DIR="$RUNNER_TEMP/frp-freebsd"' in signer
-    )
-    assert '"$RUNNER_TEMP/pkg-tool"' in builder["run"] and "$RUNNER_TEMP/pkg-tool/sbin" in signer
 
 
 def test_every_workflow_is_seen():
@@ -530,20 +567,42 @@ def test_every_job_has_a_timeout_below_the_github_default(name):
     assert not missing
 
 
-def test_every_download_of_the_release_retries():
-    # One GitHub Releases blip must not fail a tag's release run (R-1799).
-    release = yaml.safe_load(_CI.with_name("release.yml").read_text(encoding="utf-8"))
-    curls = [
-        line
-        for job in release["jobs"].values()
-        for step in job["steps"]
-        for line in step.get("run", "").splitlines()
-        if re.search(r"(^|\s)curl\s", line)
+_DOWNLOAD_FLAGS = ("--retry ", "--connect-timeout ", "--speed-time 30 ", "--speed-limit 1024 ")
+
+
+def _curl_calls(script: str) -> list[str]:
+    # A call wrapped with a trailing backslash is one command: its flags may sit on any line.
+    joined = re.sub(r"\\\n\s*", " ", script)
+    return [line for line in joined.splitlines() if re.search(r"(^|[\s$(])curl(\s|$)", line)]
+
+
+def _curl_calls_missing_flags(script: str) -> list[str]:
+    return [
+        call
+        for call in _curl_calls(script)
+        if not all(flag in f"{call} " for flag in _DOWNLOAD_FLAGS)
     ]
-    assert curls
-    assert [
-        line for line in curls if "--retry " not in line or "--connect-timeout " not in line
-    ] == []
+
+
+def test_the_download_check_follows_wrapped_curl_calls_and_catches_a_bare_one():
+    wrapped = "curl -fsSL --retry 5 \\\n  --connect-timeout 30 --speed-time 30 \\\n  --speed-limit 1024 -o x u"
+    assert _curl_calls(wrapped) != [] and _curl_calls_missing_flags(wrapped) == []
+    assert len(_curl_calls_missing_flags("echo hi\ncurl")) == 1
+    assert len(_curl_calls_missing_flags("curl -fsSL --retry 5 -o x u")) == 1
+
+
+def test_every_download_of_the_release_retries():
+    # One GitHub Releases blip must not fail a tag's release run (R-1799), and a download that
+    # stalls aborts after 30 s below 1 KiB/s instead of holding the job until its timeout (R-1801).
+    for name in ("release.yml", "ci.yml"):
+        workflow = yaml.safe_load(_CI.with_name(name).read_text(encoding="utf-8"))
+        runs = [
+            step.get("run", "")
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+        ]
+        assert [call for run in runs for call in _curl_calls(run)], name
+        assert [call for run in runs for call in _curl_calls_missing_flags(run)] == [], name
 
 
 def _comment_above(lines: list[str], step_name: str) -> str:

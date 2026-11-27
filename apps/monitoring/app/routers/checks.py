@@ -199,7 +199,7 @@ def _same_config(a, b) -> bool:
 
 # The parts of a probe config that say what the agent measures and where. Only a module
 # of the catalog sets them; the API leaves rules, interval and timeout to the admin.
-_PROBE_MEASURE = ("sensor", "target", "params", "fields", "credential", "test_object")
+_PROBE_MEASURE = ("sensor", "target", "params", "fields", "credential", "test_object", "when")
 
 
 def _probe_measure(config) -> dict | None:

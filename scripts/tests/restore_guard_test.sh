@@ -74,12 +74,18 @@
 # starts; without either it stops, unless POSTGRES_PASSWORD is in the environment;
 # an existing .env stays; a volume without POSTGRES_PASSWORD stops it, with it in
 # the environment it restores.
+# 30: restore.sh refuses an archive another user owns or can write, or one in a folder
+# others can write to without the sticky bit, unless --allow-foreign; its arguments
+# come in any order.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils, the
 #      locale C.UTF-8: without it tests 12 and 19 cannot run, and the test ends with 75)
 
 # shellcheck disable=SC2015
 set -uo pipefail
+# The archives below are made as root makes them (umask 022): restore.sh refuses one that
+# others can write (case 30), which a group-writable umask 002 would make every archive.
+umask 022
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -94,11 +100,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 # restore.sh reads the role passwords from the environment before .env, as compose
 # does: none may leak in from the caller.
-unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD POSTGRES_PASSWORD
+unset SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD BACKUP_DB_PASSWORD POSTGRES_PASSWORD
 ROLE_ENV='SERVER_DB_PASSWORD=pw-server
 SCHEDULER_DB_PASSWORD=pw-scheduler
 MONITOR_DB_PASSWORD=pw-monitor
-CA_DB_PASSWORD=pw-ca'
+CA_DB_PASSWORD=pw-ca
+BACKUP_DB_PASSWORD=pw-backup'
 # The stubs of 5-7 and 23-25 answer every docker volume inspect: the database volume
 # exists there, and restore.sh then needs POSTGRES_PASSWORD (case 27d).
 PG_ENV='POSTGRES_PASSWORD=pw-pg'
@@ -1152,6 +1159,24 @@ fresh_run "$WORK/fresh/g" "$WORK/fresh/g.tar.gz"
     && [ ! -e "$WORK/fresh/g/.env" ]; } \
   && ok "a backup .env without a role password: the message names the backup" || bad "backup without a role password: rc=$rc out=[$out]"
 untouched "a backup .env without a role password"
+# (g2) a backup from before ah_backup (R-1783): its .env gets a generated BACKUP_DB_PASSWORD,
+# the rest as the backup has it; a .env here without it stops the restore
+mkdir -p "$WORK/fresh/g2/arch"; grep -v '^BACKUP_DB_PASSWORD=' "$WORK/fresh/arch/env.sanitized" > "$WORK/fresh/g2/arch/env.sanitized"
+cp "$WORK/fresh/arch/ca-pki.tar.gz" "$WORK/fresh/arch/adminhelper.dump" "$WORK/fresh/g2/arch/"
+tar czf "$WORK/fresh/g2.tar.gz" -C "$WORK/fresh/g2/arch" .
+fresh_run "$WORK/fresh/g2" "$WORK/fresh/g2.tar.gz"
+{ [ $rc -eq 0 ] && cmp -s <(grep -v '^BACKUP_DB_PASSWORD=' "$WORK/fresh/expected.env") <(head -n -1 "$WORK/fresh/g2/.env") \
+    && LC_ALL=C grep -qxE 'BACKUP_DB_PASSWORD=[0-9a-f]{64}' <(tail -n 1 "$WORK/fresh/g2/.env") \
+    && cmp -s "$WORK/fresh/g2/.env" "$WORK/fresh/g2/env.at-pg-start" && ! grep -q 'BACKUP_DB_PASSWORD=' <<<"$out"; } \
+  && ok "a backup .env without BACKUP_DB_PASSWORD: the fresh .env gets a generated one before postgres starts" \
+  || bad "backup without BACKUP_DB_PASSWORD: rc=$rc out=[$out] env=[$(sed 's/=.*//' "$WORK/fresh/g2/.env" 2>/dev/null | tr '\n' ' ')]"
+mkdir -p "$WORK/fresh/g3"; grep -v '^BACKUP_DB_PASSWORD=' "$WORK/fresh/c.env.orig" > "$WORK/fresh/g3/.env"
+fresh_run "$WORK/fresh/g3" "$WORK/fresh/with.tar.gz"
+{ [ $rc -ne 0 ] && grep -q '.env lacks BACKUP_DB_PASSWORD — run ./scripts/init-secrets.sh first' <<<"$out" \
+    && ! grep -q '^BACKUP_DB_PASSWORD=' "$WORK/fresh/g3/.env"; } \
+  && ok "a .env here without BACKUP_DB_PASSWORD: the restore stops and names init-secrets.sh" \
+  || bad "a .env without BACKUP_DB_PASSWORD: rc=$rc out=[$out]"
+untouched "a .env here without BACKUP_DB_PASSWORD"
 # (h) the .env of the backup keeps the keys of the application only: COMPOSE_* and
 # DOCKER_* go in every form compose reads (COMPOSE_PROJECT_NAME stays), and compose
 # sees the cleaned file from its first call on; the images it starts stand in the output
@@ -1251,7 +1276,7 @@ proj_run "$WORK/proj/d" AH_TEST_CONFIG_FAIL=2
 mkdir -p "$WORK/roles/forms"
 printf '%s\n' 'SERVER_DB_PASSWORD=zz9-old' 'export SERVER_DB_PASSWORD = "pw-server"' \
   "SCHEDULER_DB_PASSWORD: 'pw-scheduler'" 'MONITOR_DB_PASSWORD=zz9-old' 'MONITOR_DB_PASSWORD=pw-monitor #note  ' \
-  'CA_DB_PASSWORD=pw-ca' "$PG_ENV" > "$WORK/roles/forms/.env"
+  'CA_DB_PASSWORD=pw-ca' 'BACKUP_DB_PASSWORD=pw-backup' "$PG_ENV" > "$WORK/roles/forms/.env"
 out=$( cd "$WORK/roles/forms" && STUB_DIR="$WORK/roles/forms" PATH="$WORK/roles/bin:$PATH" \
     bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
 calls="$WORK/roles/forms/calls.log"
@@ -1309,6 +1334,91 @@ for v in dd sq; do
     && ok "a role password with \$ ($v): read as compose reads it" \
     || bad "role password \$ ($v): rc=$rc out=[$out] calls=[$(cat "$calls" 2>/dev/null)]"
 done
+
+# --- 30. restore.sh checks where the archive comes from (R-1786) ─────────────
+# The archive must belong to the caller, SUDO_UID or root, be writable by nobody else
+# and sit in a folder others cannot write to (sticky bit aside); --allow-foreign skips
+# that. A stat wrapper plays a foreign owner: for the path in AH_TEST_STAT_PATH it
+# reports AH_TEST_STAT_UID as the owner, the mode stays the real one.
+mkdir -p "$WORK/prov/bin" "$WORK/prov/own" "$WORK/prov/open" "$WORK/prov/sticky" "$WORK/prov/yes"
+REAL_STAT=$(command -v stat)
+cat > "$WORK/prov/bin/stat" <<STATEOF
+#!/usr/bin/env bash
+out=\$("$REAL_STAT" "\$@") || exit
+if [ -n "\${AH_TEST_STAT_PATH:-}" ] && [ "\${!#}" = "\$AH_TEST_STAT_PATH" ]; then
+    echo "\$AH_TEST_STAT_UID \${out#* }"
+else
+    printf '%s\n' "\$out"
+fi
+STATEOF
+chmod +x "$WORK/prov/bin/stat"
+for d in own open sticky; do cp "$WORK/good.tar.gz" "$WORK/prov/$d/b.tar.gz"; done
+chmod 0777 "$WORK/prov/open"; chmod 1777 "$WORK/prov/sticky"
+# prov_run [VAR=value…] -- <restore.sh args…>
+prov_run() {
+    local envs=()
+    while [ "$1" != -- ]; do envs+=("$1"); shift; done; shift
+    ( cd "$WORK" && env ${envs[@]+"${envs[@]}"} PATH="$WORK/prov/bin:$WORK/cfg/bin:$PATH" \
+        bash "$RESTORE" "$@" </dev/null 2>&1 )
+}
+reached() { grep -q 'Fortfahren' <<<"$1" && ! grep -q 'abgebrochen' <<<"$1"; }
+refused() { [ "$1" -ne 0 ] && grep -q "$2" <<<"$3" && grep -q -- '--allow-foreign' <<<"$3" && ! grep -q 'Fortfahren' <<<"$3"; }
+
+out=$(prov_run -- "$WORK/prov/own/b.tar.gz"); rc=$?
+reached "$out" && ok "provenance: own archive in an own folder passes" || bad "own archive: rc=$rc out=[$out]"
+out=$(prov_run -- "$WORK/prov/open/b.tar.gz"); rc=$?
+refused $rc 'Ordner .* fuer andere beschreibbar (Modus 777)' "$out" \
+  && ok "provenance: a folder others can write to is refused" || bad "open folder: rc=$rc out=[$out]"
+chmod 0775 "$WORK/prov/open"
+out=$(prov_run -- "$WORK/prov/open/b.tar.gz"); rc=$?
+refused $rc 'Ordner .* fuer andere beschreibbar (Modus 775)' "$out" \
+  && ok "provenance: a folder its group can write to is refused" || bad "group folder: rc=$rc out=[$out]"
+chmod 0777 "$WORK/prov/open"
+ln -s "$WORK/prov/open/b.tar.gz" "$WORK/prov/own/link.tar.gz"
+out=$(prov_run -- "$WORK/prov/own/link.tar.gz"); rc=$?
+refused $rc 'Ordner .*/prov/open ist fuer andere beschreibbar' "$out" \
+  && ok "provenance: a link judges the folder of its target" || bad "link: rc=$rc out=[$out]"
+rm -- "$WORK/prov/own/link.tar.gz"
+out=$(prov_run -- --allow-foreign "$WORK/prov/open/b.tar.gz"); rc=$?
+reached "$out" && ok "provenance: --allow-foreign (first) takes it anyway" || bad "--allow-foreign: rc=$rc out=[$out]"
+out=$(prov_run -- "$WORK/prov/sticky/b.tar.gz"); rc=$?
+reached "$out" && ok "provenance: a sticky folder like /tmp passes" || bad "sticky folder: rc=$rc out=[$out]"
+for m in 664 646; do
+    chmod "$m" "$WORK/prov/own/b.tar.gz"
+    out=$(prov_run -- "$WORK/prov/own/b.tar.gz"); rc=$?
+    refused $rc "Backup ist fuer andere beschreibbar (Modus $m)" "$out" \
+      && ok "provenance: an archive in mode $m is refused" || bad "mode $m: rc=$rc out=[$out]"
+done
+chmod 0644 "$WORK/prov/own/b.tar.gz"
+fd=AH_TEST_STAT_PATH=/dev/fd/3
+out=$(prov_run "$fd" AH_TEST_STAT_UID=4242 -- "$WORK/prov/own/b.tar.gz"); rc=$?
+refused $rc 'Backup gehoert uid 4242' "$out" \
+  && ok "provenance: an archive of another user is refused" || bad "foreign owner: rc=$rc out=[$out]"
+out=$(prov_run "$fd" AH_TEST_STAT_UID=4242 SUDO_UID=4242 -- "$WORK/prov/own/b.tar.gz"); rc=$?
+reached "$out" && ok "provenance: the archive of the sudo caller passes" || bad "SUDO_UID owner: rc=$rc out=[$out]"
+out=$(prov_run "$fd" AH_TEST_STAT_UID=0 -- "$WORK/prov/own/b.tar.gz"); rc=$?
+reached "$out" && ok "provenance: an archive of root passes" || bad "root owner: rc=$rc out=[$out]"
+out=$(prov_run AH_TEST_STAT_PATH="$WORK/prov/own" AH_TEST_STAT_UID=4242 -- "$WORK/prov/own/b.tar.gz"); rc=$?
+refused $rc "Ordner $WORK/prov/own gehoert uid 4242" "$out" \
+  && ok "provenance: a folder of another user is refused" || bad "foreign folder: rc=$rc out=[$out]"
+out=$(prov_run AH_TEST_STAT_PATH="$WORK/prov/own" AH_TEST_STAT_UID=4242 -- "$WORK/prov/own/b.tar.gz" --allow-foreign); rc=$?
+reached "$out" && ok "provenance: --allow-foreign (last) takes a foreign folder" || bad "foreign folder allowed: rc=$rc out=[$out]"
+# The content check still runs under --allow-foreign.
+cp "$WORK/sym.tar.gz" "$WORK/prov/open/s.tar.gz"
+out=$(prov_run -- --allow-foreign "$WORK/prov/open/s.tar.gz"); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Sym-/Hardlink' <<<"$out"; } \
+  && ok "provenance: --allow-foreign keeps the content check" || bad "content check under --allow-foreign: rc=$rc out=[$out]"
+for args in "--force $WORK/prov/own/b.tar.gz" "$WORK/prov/own/b.tar.gz $WORK/good.tar.gz" "--yes"; do
+    # shellcheck disable=SC2086 # the words are the arguments
+    out=$(prov_run -- $args); rc=$?
+    { [ $rc -ne 0 ] && grep -q '^Usage: restore.sh \[--yes\] \[--allow-foreign\]' <<<"$out"; } \
+      && ok "provenance: '$args' prints the usage" || bad "usage for '$args': rc=$rc out=[$out]"
+done
+# --yes in front of the archive answers the question as it does behind it (case 5).
+cp "$WORK/dr.tar.gz" "$WORK/prov/yes/dr.tar.gz"
+out=$( cd "$WORK" && STUB_DIR="$WORK/prov/yes" PATH="$WORK/bin:$PATH" bash "$RESTORE" --yes "$WORK/prov/yes/dr.tar.gz" </dev/null 2>&1 ); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q 'Fortfahren' <<<"$out"; } \
+  && ok "provenance: --yes in front of the archive" || bad "--yes first: rc=$rc out=[$out]"
 
 echo
 echo "──────────────────────────────────────────"

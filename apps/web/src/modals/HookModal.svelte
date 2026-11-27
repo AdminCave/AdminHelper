@@ -27,7 +27,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     open: boolean;
     editing: HookDetail | null;
-    onClose: (created?: { token?: string | null }) => void;
+    onClose: (created?: { token?: string | null; trigger_port?: number | null }) => void;
   }
 
   let { open, editing, onClose }: Props = $props();
@@ -101,7 +101,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       } else {
         const created = await hooks.create(hookCreatePayload(form));
         if (hookType === 'webhook' && created.token) {
-          onClose({ token: created.token });
+          onClose({ token: created.token, trigger_port: created.trigger_port });
         } else {
           showToast($t('toast.hook.created'));
           onClose();

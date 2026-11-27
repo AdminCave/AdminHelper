@@ -133,13 +133,14 @@ TOKEN3=$(e2e_admin_token)
 grep -q "dr-probe" <<<"$(curl -k -s -H "Authorization: Bearer $TOKEN3" "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo "")" \
     && ok "the server record is back after the second restore" || bad "server record lost in the second restore"
 
-# ── pg-backup dumps each database as its service role (R-1759) ──────────────
+# ── pg-backup dumps both databases as ah_backup (R-1783) ────────────────────
 # One run of the profile service's script, as this user into a directory of the
-# test: both dumps there, not empty, owner-only, and no superuser password needed.
+# test: both dumps there, not empty, owner-only, with the password of the read-only
+# role alone (db-init has just set it up).
 mkdir -p "$E2E_WORK/pgb"
 if e2e_dc --profile backup run --rm -T --no-deps --user "$(id -u):$(id -g)" -v "$E2E_WORK/pgb:/backups" \
         --entrypoint /usr/local/bin/pg-backup.sh pg-backup >"$E2E_WORK/pgb.log" 2>&1; then
-    ok "pg-backup ran with the service roles"
+    ok "pg-backup ran as ah_backup"
 else
     bad "pg-backup failed"; tail -10 "$E2E_WORK/pgb.log" >&2
 fi

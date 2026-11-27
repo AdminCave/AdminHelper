@@ -2917,6 +2917,17 @@
               }
             ],
             "title": "Token"
+          },
+          "trigger_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Port"
           }
         },
         "required": [
@@ -3139,10 +3150,15 @@
           "token": {
             "title": "Token",
             "type": "string"
+          },
+          "trigger_port": {
+            "title": "Trigger Port",
+            "type": "integer"
           }
         },
         "required": [
-          "token"
+          "token",
+          "trigger_port"
         ],
         "title": "HookTokenOut",
         "type": "object"

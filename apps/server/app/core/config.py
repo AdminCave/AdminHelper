@@ -159,9 +159,9 @@ if not DATABASE_URL:
     DATABASE_URL = "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper"
 
 # ADMIN_PASSWORD: optional. If empty OR set to 'admin', NO default user is
-# created on first start; instead the server writes a one-time bootstrap token
-# to DATA_DIR/.bootstrap_token, which must be used to create the admin via
-# POST /api/auth/bootstrap. If a different value is set, the server creates an
+# created on first start; instead the server writes a one-time setup token
+# to DATA_DIR/.bootstrap_setup (DATA_DIR/.bootstrap_token holds only its hash), which
+# must be used to create the admin via POST /api/auth/bootstrap. If a different value is set, the server creates an
 # admin user directly (CI / test / explicit power-user configuration).
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 

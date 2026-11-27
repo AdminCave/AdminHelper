@@ -9,9 +9,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -196,6 +198,9 @@ func TestRenewSwapsIdentity(t *testing.T) {
 		if body.CSR == "" {
 			t.Error("CSR fehlt im Renew-Body")
 		}
+		if err := checkRenewProof(r.TLS.PeerCertificates, body); err != nil {
+			t.Errorf("proof: %v", err)
+		}
 		_ = json.NewEncoder(w).Encode(IssueResponse{
 			Cert: "new-leaf", Fullchain: "new-leaf+int", Chain: "int+root",
 		})
@@ -220,6 +225,31 @@ func TestRenewSwapsIdentity(t *testing.T) {
 	if got, _ := os.ReadFile(KeyPath(dir)); string(got) == string(keyPEM) {
 		t.Fatal("Key wurde nicht rotiert")
 	}
+}
+
+// checkRenewProof verifies body.Proof the way the issuer does: against the key of
+// the presented client certificate, over RenewProofPrefix + the CSR's DER.
+func checkRenewProof(peers []*x509.Certificate, body RenewRequest) error {
+	if len(peers) == 0 {
+		return errors.New("no client certificate")
+	}
+	pub, ok := peers[0].PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return errors.New("client key is not ECDSA")
+	}
+	block, _ := pem.Decode([]byte(body.CSR))
+	if block == nil {
+		return errors.New("CSR is not PEM")
+	}
+	sig, err := base64.StdEncoding.DecodeString(body.Proof)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(append([]byte(RenewProofPrefix), block.Bytes...))
+	if !ecdsa.VerifyASN1(pub, digest[:], sig) {
+		return errors.New("signature does not verify")
+	}
+	return nil
 }
 
 // The ctx of a run ends a renewal whose request the issuer holds, long before the
@@ -927,5 +957,30 @@ func TestMaybeRenewChecksTheTrustGenerationUnderTheLock(t *testing.T) {
 				t.Fatalf("renewed %d times, want %d", r, c.renewals)
 			}
 		})
+	}
+}
+
+// TestRenewProofVector checks the vector the issuer checks too
+// (apps/ca-issuer/tests/test_renew_proof_vector.py) with RenewProofPrefix: a prefix that drifts
+// from the issuer's fails here instead of every renew with a 403 (R-1812).
+func TestRenewProofVector(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "ca-issuer", "tests", "fixtures", "renew_proof_vector.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vector struct{ Cert, CSR, Proof string }
+	if err := json.Unmarshal(raw, &vector); err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode([]byte(vector.Cert))
+	if block == nil {
+		t.Fatal("cert is not PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRenewProof([]*x509.Certificate{cert}, RenewRequest{CSR: vector.CSR, Proof: vector.Proof}); err != nil {
+		t.Fatalf("shared vector: %v", err)
 	}
 }

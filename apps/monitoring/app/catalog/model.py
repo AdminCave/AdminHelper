@@ -52,6 +52,8 @@ _PACKAGE = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9+._-]{0,127}$")]
 _PORT = Annotated[int, Field(ge=1, le=65535, strict=True)]
 # A glob over an image tag (fnmatch: * and ?); Docker allows [A-Za-z0-9_.-] in a tag.
 _TAG_GLOB = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.*?-]{1,128}$")]
+# A container's name as the agent takes it (target.go containerPattern).
+_CONTAINER_NAME = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$"
 _Scalar = StrictBool | StrictInt | StrictFloat | StrictStr
 
 
@@ -122,11 +124,29 @@ class Target(_Model):
     # In order: the first whose port the last scan saw at the container (Bitwarden's nginx
     # listens on 8443 with TLS and redirects 8080 there, on 8080 alone without).
     alternatives: list[Alternative] | None = Field(None, min_length=1, max_length=4)
+    # A container of the installation by its fixed name instead of the instance's own
+    # (R-1825): Nextcloud AIO names its apache container nextcloud-aio-apache.
+    container: str | None = Field(None, pattern=_CONTAINER_NAME)
+
+    @model_serializer(mode="wrap")
+    def _container_only_when_set(self, handler: Any) -> dict[str, Any]:
+        # Left out when unset, so the checks that do not use it keep their hash.
+        data = handler(self)
+        if self.container is None:
+            data.pop("container", None)
+        return data
 
     @model_validator(mode="after")
     def _consistent(self) -> Target:
         if self.image_fallback and not self.service:
             raise ValueError("image_fallback needs a service")
+        if self.container is not None:
+            if self.kind != "container":
+                raise ValueError("container needs kind 'container'")
+            if self.service or self.image_fallback or self.alternatives is not None:
+                raise ValueError(
+                    "container names the container: no service, image_fallback or alternatives"
+                )
         if self.alternatives is not None:
             if self.kind not in ("container", "loopback", "unit"):
                 raise ValueError("alternatives need a container, loopback or unit target")
@@ -310,6 +330,10 @@ class Check(_Model):
     # Bound only at the instance with this key, at no other (R-1528): a check of the host
     # in a module whose instances are its units (the web interface of 3CX).
     instance: str | None = Field(None, min_length=1, max_length=255)
+    # The whole check rests while this condition on another probe check of the module is
+    # known not to hold, a failed run included (R-1825, ADR 0004 §6.4): a rule's when comes
+    # after the run's error, and AIO stops its apache container in every backup.
+    when: Condition | None = None
 
     @model_serializer(mode="wrap")
     def _options_only_when_set(self, handler: Any) -> dict[str, Any]:
@@ -317,8 +341,9 @@ class Check(_Model):
         data = handler(self)
         if not self.central:
             data.pop("central", None)
-        if self.instance is None:
-            data.pop("instance", None)
+        for key in ("instance", "when"):
+            if data.get(key) is None:
+                data.pop(key, None)
         return data
 
     @field_validator("interval")
@@ -390,6 +415,12 @@ class Check(_Model):
 
     @model_validator(mode="after")
     def _consistent(self) -> Check:
+        if self.when is not None:
+            if self.central:
+                raise ValueError("a central check takes no when")
+            if self.when.check is None:
+                # A failed run has no field of its own to wait for.
+                raise ValueError("when of a check needs when.check")
         if self.central:
             return self._central_consistent()
         if self.sensor not in SENSORS:
@@ -461,10 +492,8 @@ class Check(_Model):
         return self
 
 
-def _sibling_fits(check: Check, rule: Rule, by_key: dict[str, Check]) -> None:
+def _sibling_fits(check: Check, when: Condition, where: str, by_key: dict[str, Check]) -> None:
     # The server reads the other check's result at the same instance only (R-1638).
-    when = rule.when
-    where = f"check {check.key!r}, rule {rule_key(rule)!r}"
     other = by_key.get(when.check)
     if other is None or other is check:
         raise ValueError(f"{where}: when.check {when.check!r} names no other check of the module")
@@ -560,7 +589,10 @@ class Module(_Model):
                 raise ValueError(f"check {check.key!r}: {problems[0]}")
             for rule in check.rules:
                 if rule.when is not None and rule.when.check is not None:
-                    _sibling_fits(check, rule, by_key)
+                    where = f"check {check.key!r}, rule {rule_key(rule)!r}"
+                    _sibling_fits(check, rule.when, where, by_key)
+            if check.when is not None:
+                _sibling_fits(check, check.when, f"check {check.key!r}", by_key)
         for item in self.card:
             check = by_key.get(item.check_key)
             if check is None:
