@@ -312,6 +312,10 @@ pub struct Settings {
     /// empty.
     #[serde(default)]
     pub snippets: Option<Vec<Snippet>>,
+    /// Whether the connection list probes the reachability of its hosts (R-1710), kept in the
+    /// workspace (`workspace.json`); on unless turned off.
+    #[serde(default = "default_true")]
+    pub probe_reachability: bool,
 }
 
 /// A command of the snippet panel of the terminal (R-1071).
@@ -345,6 +349,7 @@ impl Default for Settings {
             restore_sessions: false,
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
     }
 }
@@ -369,6 +374,19 @@ pub struct TunnelStatus {
     pub visitors: Vec<String>,
     /// Where each visitor of the running frpc listens; empty while none runs.
     pub bindings: Vec<VisitorBinding>,
+    /// Whether the running frpc is signed in at frps; `None` while none runs.
+    pub login: Option<TunnelLogin>,
+}
+
+/// The sign-in of a running frpc at frps, as its log tells it (`frpc::login_after`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TunnelLogin {
+    /// Started or lost its sign-in, the next attempt pending.
+    Connecting,
+    LoggedIn,
+    /// The last attempt did not reach frps or was refused there; frpc keeps trying.
+    NoContact,
 }
 
 /// Where a visitor listens: the port the server's visitor TOML asked for and the local port on

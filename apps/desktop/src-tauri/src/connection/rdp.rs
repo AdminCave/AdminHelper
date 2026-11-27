@@ -478,9 +478,25 @@ fn linux_keyboard_layout_arg_from_ui_language(ui_language: Option<&str>) -> Stri
     format!("/kbd:layout:0x{lang_id:08X},lang:0x{lang_id:04X}")
 }
 
+/// What the monitors of a password-fed xfreerdp report: its end, and at most one error.
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RdpReport {
+    Exit,
+    Error(String),
+}
+
+#[cfg(unix)]
+const RDP_LOGIN_FAILED: &str =
+    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.";
+#[cfg(unix)]
+const RDP_CONNECT_FAILED: &str =
+    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.";
+
 /// The context every RDP output/exit monitor shares (audit 2.13): bundling the
-/// five hand-threaded fields keeps a new one from having to be added to three
-/// 7-arg signatures at once. Cheap to clone — Arcs, a String and an AppHandle.
+/// hand-threaded fields keeps a new one from having to be added to three
+/// signatures at once. Cheap to clone — Arcs and an Instant. `report` goes to the
+/// webview in the app ([`spawn_rdp_with_password`]) and to a list in the tests.
 #[cfg(unix)]
 #[derive(Clone)]
 struct RdpWatch {
@@ -488,20 +504,26 @@ struct RdpWatch {
     connected: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
-    correlation_id: String,
-    app: tauri::AppHandle,
+    connect_timeout: Duration,
+    report: Arc<dyn Fn(RdpReport) + Send + Sync>,
 }
 
 #[cfg(unix)]
-fn spawn_output_monitor(mut reader: impl Read + Send + 'static, watch: RdpWatch) {
-    let RdpWatch {
-        emitted,
-        connected,
-        connected_at_ms,
-        started_at,
-        correlation_id,
-        app,
-    } = watch;
+impl RdpWatch {
+    /// Report `message` unless another monitor of this attempt already reported an error:
+    /// one error per attempt (R-1707).
+    fn report_error_once(&self, message: &str) {
+        if !self.emitted.swap(true, Ordering::SeqCst) {
+            (self.report)(RdpReport::Error(message.to_string()));
+        }
+    }
+}
+
+#[cfg(unix)]
+fn spawn_output_monitor(
+    mut reader: impl Read + Send + 'static,
+    watch: RdpWatch,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buffer: Vec<u8> = Vec::new();
         let mut chunk = [0u8; 1024];
@@ -515,76 +537,74 @@ fn spawn_output_monitor(mut reader: impl Read + Send + 'static, watch: RdpWatch)
             if buffer.len() > OUTPUT_BUFFER_CAP {
                 buffer.drain(0..buffer.len().saturating_sub(OUTPUT_BUFFER_CAP));
             }
-            if !connected.load(Ordering::SeqCst) && buffer_has_connected(&buffer) {
-                let elapsed_ms = started_at.elapsed().as_millis() as u64;
+            if !watch.connected.load(Ordering::SeqCst) && buffer_has_connected(&buffer) {
+                let elapsed_ms = watch.started_at.elapsed().as_millis() as u64;
                 // Timestamp first, then the flag: a reader that sees
                 // `connected == true` must observe the final timestamp.
-                connected_at_ms.store(elapsed_ms, Ordering::SeqCst);
-                connected.store(true, Ordering::SeqCst);
+                watch.connected_at_ms.store(elapsed_ms, Ordering::SeqCst);
+                watch.connected.store(true, Ordering::SeqCst);
             }
             if let Some(message) = parse_freerdp_error(&buffer) {
-                if !emitted.swap(true, Ordering::SeqCst) {
-                    emit_rdp_error(&app, &correlation_id, message);
-                }
+                watch.report_error_once(&message);
                 break;
             }
         }
-    });
+    })
 }
 
+/// The error the end of a password-fed xfreerdp means, from what its output showed: no
+/// connect, or an end within [`LOGIN_FAIL_THRESHOLD_MS`] of it (a refused login); none after
+/// a session.
 #[cfg(unix)]
-fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
-    let RdpWatch {
-        emitted,
-        connected,
-        connected_at_ms,
-        started_at,
-        correlation_id,
-        app,
-    } = watch;
-    // Timeout thread
-    {
-        let emitted = emitted.clone();
-        let connected = connected.clone();
-        let app = app.clone();
-        let correlation_id = correlation_id.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(CONNECT_TIMEOUT);
-            if !connected.load(Ordering::SeqCst) && !emitted.swap(true, Ordering::SeqCst) {
-                emit_rdp_error(
-                    &app,
-                    &correlation_id,
-                    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.",
-                );
-            }
-        });
+fn exit_error(connected: bool, connected_for_ms: u64) -> Option<&'static str> {
+    if !connected {
+        Some(RDP_CONNECT_FAILED)
+    } else if connected_for_ms < LOGIN_FAIL_THRESHOLD_MS {
+        Some(RDP_LOGIN_FAILED)
+    } else {
+        None
     }
+}
 
-    // Exit monitoring thread
-    std::thread::spawn(move || {
-        let exited = child.wait().is_ok();
-        if exited {
-            emit_rdp_exit(&app, &correlation_id);
-        }
-        if exited && !emitted.load(Ordering::SeqCst) {
-            let elapsed_ms = started_at.elapsed().as_millis() as u64;
-            if !connected.load(Ordering::SeqCst) {
-                emit_rdp_error(
-                    &app,
-                    &correlation_id,
-                    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
-                );
-            } else if elapsed_ms.saturating_sub(connected_at_ms.load(Ordering::SeqCst))
-                < LOGIN_FAIL_THRESHOLD_MS
-            {
-                emit_rdp_error(
-                    &app,
-                    &correlation_id,
-                    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.",
-                );
+/// Watches the attempt: an attempt still unconnected at its timeout is a failed login; at the
+/// end of the process, once both readers are done with its output, the end decides. Of the
+/// readers' error line, the timeout and the end only the first reports an error. Returns the
+/// threads of the timeout and of the end.
+#[cfg(unix)]
+fn monitor_rdp_exit(
+    mut child: std::process::Child,
+    readers: Vec<std::thread::JoinHandle<()>>,
+    watch: RdpWatch,
+) -> (std::thread::JoinHandle<()>, std::thread::JoinHandle<()>) {
+    let timeout = {
+        let watch = watch.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(watch.connect_timeout);
+            if !watch.connected.load(Ordering::SeqCst) {
+                watch.report_error_once(RDP_LOGIN_FAILED);
             }
+        })
+    };
+
+    let end = std::thread::spawn(move || {
+        let exited = child.wait().is_ok();
+        // The readers end with the pipes: their error line or their connect counts first.
+        for reader in readers {
+            let _ = reader.join();
+        }
+        if !exited {
+            return;
+        }
+        (watch.report)(RdpReport::Exit);
+        let connected = watch.connected.load(Ordering::SeqCst);
+        let elapsed_ms = watch.started_at.elapsed().as_millis() as u64;
+        let connected_for_ms =
+            elapsed_ms.saturating_sub(watch.connected_at_ms.load(Ordering::SeqCst));
+        if let Some(message) = exit_error(connected, connected_for_ms) {
+            watch.report_error_once(message);
         }
     });
+    (timeout, end)
 }
 
 /// Feed a password to a spawned child's stdin, then zero the copy this function made
@@ -637,24 +657,30 @@ fn spawn_rdp_with_password(
     // Separate "connected" flag instead of `connected_at_ms == 0`: a
     // sub-millisecond connect would also store 0 and look like "never
     // connected", producing a false connection-failed toast.
+    let (app, correlation_id) = (app.clone(), correlation_id.to_string());
     let watch = RdpWatch {
         emitted: Arc::new(AtomicBool::new(false)),
         connected: Arc::new(AtomicBool::new(false)),
         connected_at_ms: Arc::new(AtomicU64::new(0)),
         started_at,
-        correlation_id: correlation_id.to_string(),
-        app: app.clone(),
+        connect_timeout: CONNECT_TIMEOUT,
+        report: Arc::new(move |report| match report {
+            RdpReport::Exit => emit_rdp_exit(&app, &correlation_id),
+            RdpReport::Error(message) => emit_rdp_error(&app, &correlation_id, message),
+        }),
     };
 
-    if let Some(stdout) = child.stdout.take() {
-        spawn_output_monitor(stdout, watch.clone());
-    }
-
-    if let Some(stderr) = child.stderr.take() {
-        spawn_output_monitor(stderr, watch.clone());
-    }
-
-    monitor_rdp_exit(child, watch);
+    let readers = [
+        child
+            .stdout
+            .take()
+            .map(|out| spawn_output_monitor(out, watch.clone())),
+        child
+            .stderr
+            .take()
+            .map(|err| spawn_output_monitor(err, watch.clone())),
+    ];
+    let _ = monitor_rdp_exit(child, readers.into_iter().flatten().collect(), watch);
     Ok(())
 }
 
@@ -1068,6 +1094,121 @@ mod tests {
             wait_interactive_on(script, Duration::from_secs(10)).as_deref(),
             Some("RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.")
         );
+    }
+
+    /// A connect timeout no test waits for: only the end decides.
+    const NO_TIMEOUT: Duration = Duration::from_secs(3600);
+
+    /// Runs `script` as a stand-in for a password-fed xfreerdp through the monitors of
+    /// [`spawn_rdp_with_password`], with `timeout` as its connect timeout, and returns what
+    /// they reported once the end is decided and, with `wait_for_timeout`, the timeout too.
+    /// Joined, not slept: the threads end on their own (`sh` exits, the timeout passes).
+    #[cfg(unix)]
+    fn reports_of(script: &str, timeout: Duration, wait_for_timeout: bool) -> Vec<RdpReport> {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("sh available");
+        let reports = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = reports.clone();
+        let watch = RdpWatch {
+            emitted: Arc::new(AtomicBool::new(false)),
+            connected: Arc::new(AtomicBool::new(false)),
+            connected_at_ms: Arc::new(AtomicU64::new(0)),
+            started_at: Instant::now(),
+            connect_timeout: timeout,
+            report: Arc::new(move |r| sink.lock().unwrap().push(r)),
+        };
+        let readers = vec![
+            spawn_output_monitor(child.stdout.take().unwrap(), watch.clone()),
+            spawn_output_monitor(child.stderr.take().unwrap(), watch.clone()),
+        ];
+        let (timer, end) = monitor_rdp_exit(child, readers, watch);
+        end.join().unwrap();
+        if wait_for_timeout {
+            timer.join().unwrap();
+        }
+        let reports = reports.lock().unwrap().clone();
+        reports
+    }
+
+    fn errors(reports: &[RdpReport]) -> Vec<&RdpReport> {
+        reports
+            .iter()
+            .filter(|r| matches!(r, RdpReport::Error(_)))
+            .collect()
+    }
+
+    // R-1707: an xfreerdp that ends before the timeout without an error line got the
+    // connect failure from the end and the login failure from the timeout. Which of the two
+    // comes first depends on how fast `sh` ends; either way there is one error.
+    #[test]
+    fn an_attempt_that_ends_unconnected_reports_one_error_also_past_its_timeout() {
+        let reports = reports_of("exit 1", Duration::from_millis(300), true);
+        assert_eq!(errors(&reports).len(), 1, "{reports:?}");
+        assert!(reports.contains(&RdpReport::Exit), "{reports:?}");
+    }
+
+    #[test]
+    fn an_attempt_that_ends_unconnected_is_a_failed_connect() {
+        let reports = reports_of("exit 1", NO_TIMEOUT, false);
+        assert_eq!(
+            reports,
+            vec![
+                RdpReport::Exit,
+                RdpReport::Error(RDP_CONNECT_FAILED.to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn an_error_line_is_the_one_error_of_its_attempt() {
+        let script = "echo '[ERROR][com.freerdp.core] - freerdp_set_last_error_ex \\
+                      ERRCONNECT_LOGON_FAILURE [0x00020014]' >&2; exit 1";
+        let reports = reports_of(script, NO_TIMEOUT, false);
+        assert_eq!(
+            reports,
+            vec![
+                RdpReport::Error(RDP_LOGIN_FAILED.to_string()),
+                RdpReport::Exit
+            ],
+            "the line read before the end decides"
+        );
+    }
+
+    #[test]
+    fn an_attempt_past_its_timeout_reports_the_failed_login_once() {
+        // The timeout passes long before `sh` ends.
+        let reports = reports_of("sleep 2", Duration::from_millis(100), true);
+        assert_eq!(
+            reports,
+            vec![
+                RdpReport::Error(RDP_LOGIN_FAILED.to_string()),
+                RdpReport::Exit
+            ]
+        );
+    }
+
+    #[test]
+    fn an_end_soon_after_the_connect_is_one_refused_login() {
+        let script = "echo '[INFO][com.freerdp.client.x11] - Connected to 192.0.2.10:3389'; exit 0";
+        let reports = reports_of(script, NO_TIMEOUT, false);
+        assert_eq!(
+            reports,
+            vec![
+                RdpReport::Exit,
+                RdpReport::Error(RDP_LOGIN_FAILED.to_string())
+            ]
+        );
+        assert_eq!(exit_error(true, LOGIN_FAIL_THRESHOLD_MS), None);
+        assert_eq!(
+            exit_error(true, LOGIN_FAIL_THRESHOLD_MS - 1),
+            Some(RDP_LOGIN_FAILED)
+        );
+        assert_eq!(exit_error(false, u64::MAX), Some(RDP_CONNECT_FAILED));
     }
 
     /// A stub `rdp_binary` in a directory of its own: `body` is its shell script.

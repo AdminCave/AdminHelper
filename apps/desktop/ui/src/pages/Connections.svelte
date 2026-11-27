@@ -5,15 +5,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { LayoutGrid, Plus, Rows3, SearchX } from '@lucide/svelte';
   import {
+    clearReachability,
     connections,
     connectionsStore,
     favorites,
     loadForCurrentMode as loadConnections,
     loading,
+    probesReachability,
     reachability,
     remove,
     searchTerm,
@@ -43,6 +45,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { Connection, ConnectionKind, SshConsole } from '$lib/bridge/types';
   import { tunnelMappings } from '$lib/stores/tunnel';
   import { infraServers } from '$lib/stores/infra';
+  import { settings } from '$lib/stores/session';
   import { openEditor } from '$lib/stores/editor';
   import { initiateConnect } from '$lib/stores/connectFlow';
   import { t } from '$lib/i18n';
@@ -126,19 +129,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
       : null,
   );
 
-  let stopProbe: (() => void) | null = null;
+  let loaded = $state(false);
   let destroyed = false;
+  let probing = $derived(probesReachability($settings));
   const clock = setInterval(() => (now = Date.now()), 60_000);
 
   onMount(async () => {
     await loadConnections();
     if (destroyed) return;
-    stopProbe = startReachability(() => ({ conns: shown, tunneled: ctx.tunneled }));
+    loaded = true;
+  });
+  // Follows the workspace setting without a restart. Untracked: the probe reads the list
+  // on each tick and must not restart with every change of it.
+  $effect(() => {
+    if (!loaded) return;
+    if (!probing) {
+      clearReachability();
+      return;
+    }
+    return untrack(() => startReachability(() => ({ conns: shown, tunneled: ctx.tunneled })));
   });
   onDestroy(() => {
     destroyed = true;
     clearInterval(clock);
-    stopProbe?.();
   });
 
   function resetFilters(): void {

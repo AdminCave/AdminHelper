@@ -16,7 +16,12 @@ storageRemove('adminhelper_token');
 storageRemove('adminhelper_refresh_token');
 
 let accessToken: string | null = null;
-let refreshInFlight: { session: number; promise: Promise<boolean> } | null = null;
+// unanswered: the refresh got no verdict on the cookie (no connection, or a 502, 503 or 504 of the
+// gateway), so the session stays and the next 401 tries again (R-1709). A timeout is refused: the
+// server may have rotated the cookie by then.
+type RefreshOutcome = 'renewed' | 'refused' | 'unanswered';
+
+let refreshInFlight: { session: number; promise: Promise<RefreshOutcome> } | null = null;
 let onAuthFailure: (() => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -69,8 +74,8 @@ export function clearTokens(): void {
 // start (the access token itself does not survive a reload). Returns true if a
 // session was restored. Verified against the server: POST /api/auth/refresh
 // accepts the refresh cookie alone, with no prior access token.
-export function restoreSession(): Promise<boolean> {
-  return tryRefresh();
+export async function restoreSession(): Promise<boolean> {
+  return (await tryRefresh()) === 'renewed';
 }
 
 export function registerAuthFailureHandler(handler: () => void): void {
@@ -98,35 +103,43 @@ export async function withAuthLock<T>(fn: () => Promise<T>): Promise<T> {
   return await run;
 }
 
-async function tryRefresh(): Promise<boolean> {
-  // A refresh started in an earlier session answers for that session only (refresh() returns false
+async function tryRefresh(): Promise<RefreshOutcome> {
+  // A refresh started in an earlier session answers for that session only (refresh() returns refused
   // once it ended): a request of the current one must not take its answer.
   if (refreshInFlight?.session === session) return refreshInFlight.promise;
 
   const started = session;
-  const refresh = async (): Promise<boolean> => {
+  const refresh = async (): Promise<RefreshOutcome> => {
     // The refresh token rides along as the HttpOnly cookie (same-origin
     // request → sent automatically); the body is intentionally empty.
-    const res = await fetchWithTimeout('/api/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    if (!res.ok) return false;
+    let res: Response;
+    try {
+      res = await fetchWithTimeout('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    } catch (err) {
+      // fetch rejects with a TypeError when the request did not get through; the timeout of
+      // fetchWithTimeout is an ApiError.
+      return err instanceof TypeError ? 'unanswered' : 'refused';
+    }
+    if (res.status >= 502 && res.status <= 504) return 'unanswered';
+    if (!res.ok) return 'refused';
     const data = (await res.json()) as RefreshResponse;
     // A refresh renews the session that asked for it, also one without a token yet: no new session.
     // One answered after that session ended (also one that waited for the lock across a login) sets
     // no token: it would replace the token of the session current by then.
-    if (started !== session) return false;
+    if (started !== session) return 'refused';
     accessToken = data.access_token;
-    return true;
+    return 'renewed';
   };
 
   const promise = (async () => {
     try {
       return await withAuthLock(refresh);
     } catch {
-      return false;
+      return 'refused';
     } finally {
       // session only grows, so at most one refresh per session is in flight: a later session's
       // stays.
@@ -135,6 +148,14 @@ async function tryRefresh(): Promise<boolean> {
   })();
   refreshInFlight = { session: started, promise };
   return promise;
+}
+
+// A 401 the refresh did not cure: without a verdict the session stays and the request fails as
+// unreachable (503), otherwise the session ends.
+function authFailed(outcome: RefreshOutcome): never {
+  if (outcome === 'unanswered') throw new ApiError(503, tNow('error.unreachable'));
+  onAuthFailure?.();
+  throw new ApiError(401, 'Session expired');
 }
 
 async function request<T>(
@@ -151,14 +172,13 @@ async function request<T>(
   let res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
 
   if (res.status === 401 && !path.includes('/auth/')) {
-    const refreshed = started === session && (await tryRefresh());
+    const outcome = started === session ? await tryRefresh() : 'refused';
     if (started !== session) throw new ApiError(401, 'Session expired');
-    if (refreshed && accessToken) {
+    if (outcome === 'renewed' && accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
       res = await fetchWithTimeout(path, { method, headers, body: jsonBody }, opts?.timeoutMs);
     } else {
-      onAuthFailure?.();
-      throw new ApiError(401, 'Session expired');
+      authFailed(outcome);
     }
   }
 
@@ -233,13 +253,12 @@ export async function requestRaw(path: string): Promise<Response> {
   const started = session;
   let res = await doFetch();
   if (res.status === 401 && !path.includes('/auth/')) {
-    const refreshed = started === session && (await tryRefresh());
+    const outcome = started === session ? await tryRefresh() : 'refused';
     if (started !== session) throw new ApiError(401, 'Session expired');
-    if (refreshed && accessToken) {
+    if (outcome === 'renewed' && accessToken) {
       res = await doFetch();
     } else {
-      onAuthFailure?.();
-      throw new ApiError(401, 'Session expired');
+      authFailed(outcome);
     }
   }
   return res;

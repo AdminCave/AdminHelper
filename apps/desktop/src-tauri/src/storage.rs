@@ -413,6 +413,8 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         restore_sessions,
         open_sessions: meta.map_or_else(Vec::new, |meta| meta.open_sessions.clone()),
         snippets: meta.and_then(|meta| meta.snippets.clone()),
+        probe_reachability: meta
+            .map_or(defaults.probe_reachability, |meta| meta.probe_reachability),
     }
 }
 
@@ -476,6 +478,7 @@ fn meta_with(
         favorite_connections: settings.favorite_connections.clone(),
         open_sessions: settings.open_sessions.clone(),
         snippets: settings.snippets.clone(),
+        probe_reachability: settings.probe_reachability,
         ..meta.clone()
     })
 }
@@ -1005,6 +1008,7 @@ mod settings_tests {
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
     }
 
@@ -1169,6 +1173,38 @@ mod settings_tests {
         let prefs = json_of(&base.join(PREFS_FILE));
         assert_eq!(prefs["language"], "en");
         assert!(prefs.get("favoriteConnections").is_none());
+    }
+
+    // R-1710: the probes of the connection list, on or off per workspace.
+    #[test]
+    fn the_reachability_probe_belongs_to_its_workspace_and_is_on_in_old_metas() {
+        let scratch = Scratch::new("settings-probe");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        // A workspace.json written before R-1710: no probeReachability.
+        let dir_b = workspace("b").data_dir(base);
+        fs::create_dir_all(&dir_b).unwrap();
+        let mut old = serde_json::to_value(meta(SyncMode::Local, None)).unwrap();
+        old.as_object_mut().unwrap().remove("probeReachability");
+        fs::write(dir_b.join("workspace.json"), old.to_string()).unwrap();
+        assert!(Settings::default().probe_reachability);
+        {
+            let _a = enter("a");
+            let process = SeenPrefs::new();
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            assert!(settings.probe_reachability, "on unless turned off");
+            settings.probe_reachability = false;
+            settings.language = Some("en".to_string());
+            save_settings_in(base, &process, &settings).unwrap();
+            assert!(!load_settings_in(base, None).unwrap().probe_reachability);
+        }
+        assert!(!meta_in(base, "a").probe_reachability);
+        let _b = enter("b");
+        assert!(load_settings_in(base, None).unwrap().probe_reachability);
+        // The device-wide half does not carry it.
+        let prefs = json_of(&base.join(PREFS_FILE));
+        assert_eq!(prefs["language"], "en");
+        assert!(prefs.get("probeReachability").is_none());
     }
 
     #[test]

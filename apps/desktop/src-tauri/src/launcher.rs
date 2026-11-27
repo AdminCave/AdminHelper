@@ -147,6 +147,7 @@ pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: defaults.probe_reachability,
         };
         return create(base, &mut registry, &meta);
     };
@@ -884,6 +885,7 @@ mod tests {
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
     }
 
@@ -1256,6 +1258,7 @@ mod tests {
                     favorite_connections: Vec::new(),
                     open_sessions: Vec::new(),
                     snippets: None,
+                    probe_reachability: true,
                 },
                 "{case}"
             );

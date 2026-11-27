@@ -434,6 +434,20 @@ fn identity_of(cert_pem: &str) -> Result<DeviceIdentity, AppError> {
     Ok(DeviceIdentity { name, not_after })
 }
 
+/// Whether the leaf of `cert_pem` has expired at `now` (seconds since the epoch). A leaf
+/// that does not parse is not called expired: the handshake will tell.
+fn leaf_expired_at(cert_pem: &str, now: i64) -> bool {
+    parse_leaf(cert_pem).is_ok_and(|leaf| leaf.not_after <= now)
+}
+
+/// Whether this workspace holds an identity whose leaf has expired at `now`. A login with
+/// it would only meet the gateway's certificate error page (R-1689).
+pub(crate) fn held_leaf_expired_at(now: i64) -> bool {
+    held_identity()
+        .and_then(|held| held.key.and(held.cert))
+        .is_some_and(|cert| leaf_expired_at(&cert, now))
+}
+
 /// Name and expiry of this device's enrolled certificate for the settings.
 /// `None` without key or cert (the rule of `is_enrolled`); an error when the
 /// stored cert does not parse or has no CN.
@@ -2623,6 +2637,24 @@ mod tests {
         let (_, key, _) = leaf();
         keyring_store::set(KEYRING_KEY, &key).unwrap();
         keyring_store::set(KEYRING_CERT, cert).unwrap();
+    }
+
+    #[test]
+    fn a_held_leaf_counts_as_expired_from_its_not_after_on() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let not_after = chrono::DateTime::parse_from_rfc3339("2027-01-13T00:00:00Z")
+            .unwrap()
+            .timestamp();
+        assert!(!held_leaf_expired_at(not_after), "not enrolled");
+
+        enrolled_with(&fullchain(Some("admin")));
+        reload_identity();
+
+        assert!(!held_leaf_expired_at(not_after - 1));
+        assert!(held_leaf_expired_at(not_after));
+        assert!(held_leaf_expired_at(not_after + 86_400));
+        assert!(!leaf_expired_at("not a certificate", not_after + 86_400));
     }
 
     #[test]

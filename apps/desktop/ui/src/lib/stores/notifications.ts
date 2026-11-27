@@ -66,7 +66,32 @@ export function setNewNotificationHandler(fn: ((items: NotificationItem[]) => vo
   onNew = fn;
 }
 
-export async function loadFeed(): Promise<void> {
+// The fetch in flight, and whether a call came in while it ran (R-1711): the running fetch may
+// have been answered before the change the call announces, so one follow-up runs after it,
+// however many calls came. One at a time, so an older answer never replaces a newer one.
+let feedRun: Promise<void> | null = null;
+let feedAgain = false;
+
+/** Reloads the bell's feed; a call while a fetch runs is folded into one follow-up. */
+export function loadFeed(): Promise<void> {
+  if (feedRun) {
+    feedAgain = true;
+    return feedRun;
+  }
+  feedRun = (async () => {
+    try {
+      do {
+        feedAgain = false;
+        await fetchFeedOnce();
+      } while (feedAgain);
+    } finally {
+      feedRun = null;
+    }
+  })();
+  return feedRun;
+}
+
+async function fetchFeedOnce(): Promise<void> {
   const session = currentSession();
   if (!session) return;
   try {

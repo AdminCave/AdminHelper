@@ -406,6 +406,7 @@ export const translations: Translations = {
     'tunnel.active': 'Tunnel aktiv',
     'tunnel.activeNamed': 'Tunnel: {name}',
     'tunnel.disconnected': 'Tunnel getrennt',
+    'tunnel.noContact': 'Tunnel: kein Kontakt zum Tunnel-Server',
     'tunnel.reconnect': 'Neu verbinden',
     'tunnel.inactive': 'Tunnel inaktiv',
     'footer.label': 'Statusleiste',
@@ -462,6 +463,7 @@ export const translations: Translations = {
     'settings.syncUrl': 'Sync-URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Intervall (Minuten)',
+    'settings.workspace.probeReachability': 'Erreichbarkeit der Verbindungen prüfen (Ping-Spalte)',
     'settings.allowSelfSigned': 'Selbstsignierte Zertifikate erlauben',
     'settings.resetCertPin': 'Gepinntes Zertifikat zurücksetzen',
     'settings.resetCertPin.hint':
@@ -674,6 +676,8 @@ export const translations: Translations = {
       'Die Geräte-Identität dieses Geräts wird gelöscht. Danach registrierst du das Gerät mit einem Einmal-Token vom Admin neu. Fortfahren?',
     'login.certRevoked.done':
       'Geräte-Identität zurückgesetzt. Registriere das Gerät jetzt mit einem Einmal-Token neu.',
+    'login.deviceCertInvalid':
+      'Das Zertifikat dieses Geräts ist abgelaufen oder wird nicht mehr angenommen. Setze die Geräte-Identität zurück und registriere das Gerät mit einem Einmal-Token vom Admin neu.',
     'login.resetDeviceId.localOnly':
       'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
     'login.enroll.token': 'Enrollment-Token',
@@ -2026,6 +2030,7 @@ export const translations: Translations = {
     'tunnel.active': 'Tunnel active',
     'tunnel.activeNamed': 'Tunnel: {name}',
     'tunnel.disconnected': 'Tunnel disconnected',
+    'tunnel.noContact': 'Tunnel: no contact with the tunnel server',
     'tunnel.reconnect': 'Reconnect',
     'tunnel.inactive': 'Tunnel inactive',
     'footer.label': 'Status bar',
@@ -2082,6 +2087,8 @@ export const translations: Translations = {
     'settings.syncUrl': 'Sync URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Interval (minutes)',
+    'settings.workspace.probeReachability':
+      'Check the reachability of the connections (ping column)',
     'settings.allowSelfSigned': 'Allow self-signed certificates',
     'settings.resetCertPin': 'Reset pinned certificate',
     'settings.resetCertPin.hint':
@@ -2292,6 +2299,8 @@ export const translations: Translations = {
       'The identity of this device will be deleted. Afterwards you register the device again with a one-time token from your administrator. Continue?',
     'login.certRevoked.done':
       'Device identity reset. Now register the device again with a one-time token.',
+    'login.deviceCertInvalid':
+      'The certificate of this device has expired or is no longer accepted. Reset the device identity and register the device again with a one-time token from your administrator.',
     'login.resetDeviceId.localOnly':
       'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
     'login.enroll.token': 'Enrollment token',

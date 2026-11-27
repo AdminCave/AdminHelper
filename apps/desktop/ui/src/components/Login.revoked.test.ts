@@ -134,6 +134,34 @@ describe('Login — device certificate no longer valid (ERR_CERT_REVOKED)', () =
   });
 });
 
+describe('Login — device certificate expired or refused (ERR_DEVICE_CERT_INVALID)', () => {
+  // What auth.rs reports for an expired leaf or the gateway's certificate error page.
+  const INVALID = new IpcError(
+    'ERR_DEVICE_CERT_INVALID: The device certificate has expired or is no longer accepted.',
+    'ERR_DEVICE_CERT_INVALID',
+  );
+
+  it('names the cause and offers the reset, without the code', async () => {
+    h.login.mockRejectedValueOnce(INVALID);
+    const { container } = render(Login);
+    await submitLogin(container);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-msg="cert-invalid"]')?.textContent).toContain(
+        'abgelaufen',
+      ),
+    );
+    expect(container.textContent).not.toContain('ERR_DEVICE_CERT_INVALID');
+    await fireEvent.click(await button(container, 'cert-invalid-reset'));
+
+    await waitFor(() => expect(h.resetDeviceIdentity).toHaveBeenCalledWith('https://srv.example'));
+    expect(h.confirmDialog).toHaveBeenCalledWith(tNow('login.certRevoked.confirm'), {
+      confirmLabel: tNow('login.resetDeviceId'),
+    });
+    await waitFor(() => expect(container.textContent).toContain('mit einem Einmal-Token neu'));
+  });
+});
+
 describe('Login — a reset the server could not take', () => {
   it('says the old certificate was deleted on this device only', async () => {
     h.login.mockRejectedValueOnce(MISMATCH);

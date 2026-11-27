@@ -48,6 +48,8 @@ import {
   favorites,
   toggleFavorite,
   reachability,
+  probesReachability,
+  clearReachability,
   probeVisible,
   startReachability,
   PROBE_INTERVAL_MS,
@@ -339,6 +341,34 @@ describe('reachability (R-1067)', () => {
     expect(get(reachability).g).toBe(10);
     await probeVisible([conn({ id: 'g', host: null })], new Set());
     expect(get(reachability).g).toBeUndefined();
+  });
+
+  // R-1710: the probe is a setting of the workspace, on unless turned off.
+  it('probes unless the workspace turned it off', () => {
+    expect(probesReachability(null)).toBe(true);
+    expect(probesReachability({})).toBe(true);
+    expect(probesReachability({ probeReachability: true })).toBe(true);
+    expect(probesReachability({ probeReachability: false })).toBe(false);
+  });
+
+  it('turned off, the column forgets what it measured', async () => {
+    await probeVisible([conn({ id: 'c', kind: 'ssh', host: 'srv.example', port: 22 })], new Set());
+    expect(get(reachability).c).toBe(10);
+    clearReachability();
+    expect(get(reachability)).toEqual({});
+  });
+
+  it('a probe that answers after the column was turned off writes nothing', async () => {
+    let answer!: (latencies: (number | null)[]) => void;
+    probe().mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    const running = probeVisible(
+      [conn({ id: 'c', kind: 'ssh', host: 'srv.example', port: 22 })],
+      new Set(),
+    );
+    clearReachability();
+    answer([7]);
+    await running;
+    expect(get(reachability)).toEqual({});
   });
 
   describe('startReachability', () => {

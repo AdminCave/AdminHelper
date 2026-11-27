@@ -13,6 +13,7 @@ export const translations: Translations = {
   de: {
     'error.generic': 'Fehler',
     'error.timeout': 'Zeitüberschreitung: Der Server hat nicht rechtzeitig geantwortet.',
+    'error.unreachable': 'Der Server ist gerade nicht erreichbar. Die Anmeldung bleibt bestehen.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
@@ -406,6 +407,7 @@ export const translations: Translations = {
   en: {
     'error.generic': 'Error',
     'error.timeout': 'Request timed out: the server did not answer in time.',
+    'error.unreachable': 'The server cannot be reached right now. You stay signed in.',
     // ── Login ──────────────────────────────────────────────────────────
     'login.username': 'Username',
     'login.password': 'Password',

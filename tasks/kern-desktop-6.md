@@ -1,0 +1,134 @@
+# Desktop-Zuverlaessigkeit: Sitzung, Zertifikat, Tunnel, RDP, SFTP, Ping, Feed — Task-Ledger
+Status: erledigt · Branch: feature/kern-desktop-6 · Review: pro Task
+Spec: docs/features/kern-desktop-6.md (Roadmap R-1709, R-1689, R-1691, R-1707, R-1708, R-1710, R-1711)
+Heavy: linux-full — Desktop-Journeys (Login, Tunnel, Verbindungen) und Web-Client-Auth; kein Stack-, PKI-Server- oder Install-Pfad geaendert
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+## Entscheidungen
+- Kevin 2026-11-27 (Notizen der sieben Zeilen): alle angenommen; R-1709 Transportfehler, 502, 503, 504 beenden die Sitzung nicht, 400/401/500 weiter; R-1710 Einstellung je Workspace, Standard an.
+- Plan: die eigene Frist der Erneuerung (Desktop 30 s) und ein Timeout beenden die Sitzung weiter, Desktop und Web gleich; der Grund (rotiertes Token) steht schon im Code und in der Doku, `a_renewal_past_the_deadline_ends_the_session` bleibt.
+- T1: ein TLS-Fehler beim Erneuern (rustls lehnt das Zertifikat ab) gilt als Ablehnung, nicht als „ohne Urteil“: ein nicht vertrautes Zertifikat ist kein Ausfall, den ein spaeterer Versuch ueberwindet; `without_self_signed_in_the_session_the_renewal_does_not_trust_on_first_use` haelt das fest. Ein Connect-Fehler samt Connect-Timeout (10 s) behaelt die Sitzung (das Token ging nie raus), nur ein Timeout nach dem Connect beendet sie (`transport_unanswered`, Reviewer T1). T2: das Web kann beide Timeouts nicht trennen (`AbortSignal.timeout` deckt die ganze Anfrage); ein Connect-Fehler ist dort ein fetch-TypeError und behaelt die Sitzung, ein Timeout beendet sie wie geplant.
+- Plan: R-1691 liest den Login-Zustand aus den frpc-Logzeilen (frp v0.72.0 client/service.go:369-389), nicht aus `/api/status` (kein Login-Zustand dort) und nicht per Bind-Probe.
+- T5: frpc schreibt „try to connect to server“ vor jedem Versuch, auch vor dem ersten und nach jedem Fehlschlag; die Zeile setzt darum nur ein angemeldetes frpc auf „verbindet“ (Login verloren), sonst bleibt der Zustand: „kein Kontakt“ steht bis zum naechsten Erfolg (Reviewer T5, `login_after`).
+- T6: solange frpc „verbindet“, fragt der Store alle 3 s den Status (`LOGIN_POLL_MS`), damit die Anzeige nach dem Start nicht bis zum naechsten Minuten-Tick steht; bei „kein Kontakt“ kein Polling und kein Knopf, frpc versucht selbst weiter.
+- T7: die Monitore melden ueber eine Rueckruf-Funktion (`RdpWatch.report`, `RdpReport`) statt direkt an den AppHandle, damit der Test die Ereignisse eines `sh -c`-Stellvertreters zaehlen kann; der Exit-Thread joint die Leser vor seiner Entscheidung, wie `wait_interactive`.
+- T8: russh-sftp 3.0.1 bietet kein `posix-rename@openssh.com` (nur hardlink, fsync, limits, statvfs); beim Ueberschreiben entfernt der Upload das Ziel erst nach dem vollstaendigen Teil-Upload und benennt dann um. Reisst die Verbindung, bleibt die versteckte `.<name>.ah-part` liegen; der naechste Upload derselben Datei leert sie (TRUNCATE). Beim Ueberschreiben behaelt die Datei ihre Rechte, und zwar schon die Teil-Datei vor dem ersten Byte (beim Oeffnen und per `setstat` fuer einen Rest aus einem Abbruch), ein Symlink am Ziel wird durchschrieben (`canonicalize`, die Teil-Datei liegt neben der echten Datei); Eigentuemer und Gruppe sind die des Hochladenden. Ein Name ab 247 Bytes passt mit `.ah-part` nicht mehr (ENAMETOOLONG), hingenommen. Ein Symlink, dessen Ziel fehlt, laesst den Upload mit Fehler enden (`canonicalize`), statt die Datei durch den Link anzulegen; selten, hingenommen.
+- Plan: R-1689 ein Code `ERR_DEVICE_CERT_INVALID` fuer beide Wege (lokal abgelaufen, nginx-495-Seite).
+- Kevin 2026-11-27: dritte Pruefrunde fuer T8 erlaubt (Rechte der Teil-Datei vor dem ersten Byte nachgebessert).
+
+### T1 — Erneuerung: Transportfehler und 502/503/504 behalten die Sitzung, Desktop (R-1709)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/auth.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @4529ad415 2026-11-27T08:49:37+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T1.verdict.json)
+Änderung: `try_refresh` unterscheidet einen Fehlschlag ohne Urteil des Servers (Transportfehler ausser Timeout, 502, 503, 504) von einer Ablehnung; `send_renewing` behält bei ersterem Slot und Generation, sendet kein Ablauf-Ereignis und gibt einen Verbindungsfehler zurück (nicht `SessionExpired`). Tests: 502/503/504 und ein nicht erreichbarer Server lassen die Sitzung stehen, ein spaeteres 401 mit gelungener Erneuerung wiederholt; `a_failed_renewal_ends_the_session` (400/401/500) und die Fristen-Tests bleiben.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session::
+Doku: → T12
+
+### T2 — Erneuerung: Netzfehler und 502/503/504 behalten die Sitzung, Web (R-1709)  [x]
+Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts, apps/web/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @3b8c10028 2026-11-27T08:51:35+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T2.verdict.json)
+Änderung: `tryRefresh` liefert drei Ausgaenge (erneuert, abgelehnt, nicht erreichbar); bei „nicht erreichbar“ (fetch-TypeError, 502, 503, 504) wirft `request` einen `ApiError` mit dem Status bzw. 503, ohne `onAuthFailure`; ein Timeout gilt als abgelehnt wie bisher. Tests in `client.test.ts` je Ausgang, der bestehende Fehlschlag-Test bleibt fuer 401/400/500.
+Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
+Doku: → T12
+
+### T3 — Abgelaufenes Geraete-Zertifikat: stabiler Code vor und nach dem Senden (R-1689)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/error.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e4af70c4c 2026-11-27T08:57:12+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T3.verdict.json)
+Änderung: neuer `AppError::DeviceCertInvalid` (`ERR_DEVICE_CERT_INVALID`); `login` prueft bei gehaltener Identitaet das Leaf (`not_after` <= jetzt, testbare Funktion mit `now`) und sendet dann nichts; `login_failure` erkennt 400 mit „The SSL certificate error“ (nginx 495). Tests: Leaf-Pruefung mit Zeit vor/nach Ablauf, `login_failure` fuer beide nginx-Seiten, Code-Tabelle in `error.rs`.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- auth::
+Doku: → T12
+
+### T4 — Login-Hinweis fuer ein ungueltiges Geraete-Zertifikat (R-1689)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Login.revoked.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @20cca7a1b 2026-11-27T09:03:22+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T4.verdict.json)
+Änderung: `ERR_DEVICE_CERT_INVALID` zeigt einen eigenen Hinweis (DE+EN) mit demselben Ausweg wie `ERR_CERT_REVOKED` (Identitaet zuruecksetzen, Token-Formular). Test im bestehenden Revoked-Test: Hinweis und Knopf erscheinen, der rohe Code nicht.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login.revoked.test.ts
+Doku: → T12
+Abhängt von: T3
+
+### T5 — Tunnel-Status traegt den frps-Login (R-1691)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/models.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @83ec5eb6c 2026-11-27T09:05:09+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T5.verdict.json)
+Änderung: der Log-Task setzt aus den Zeilen von frpc einen Login-Zustand im `FrpcState` (Start: verbindet; „login to server success“: angemeldet; „try to connect to server“ oder „connect to server error“: kein Kontakt), nur fuer die eigene Generation; `TunnelStatus` liefert ihn. Tests: Zeilen-Auswertung als reine Funktion mit den woertlichen v0.72.0-Zeilen, Generationswechsel setzt zurueck.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc::
+Doku: → T12
+
+### T6 — Tunnel-Anzeige: kein Kontakt zum Tunnel-Server (R-1691)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/components/TunnelIndicator.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/StatusFooter.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5a17de6a5 2026-11-27T09:12:53+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T6.verdict.json)
+Änderung: `TunnelStatus` im IPC-Typ um den Login-Zustand; der Store macht aus laufend + angemeldet „verbunden“, aus laufend + kein Kontakt einen neuen Zustand mit eigenem Text (DE+EN) im Indikator, laufend + verbindet bleibt „verbindet“. Tests im Store.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
+Doku: → T12
+Abhängt von: T5
+
+### T7 — xfreerdp mit Passwort: ein Ereignis je Versuch (R-1707)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/rdp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @3682541d6 2026-11-27T09:22:10+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T7.verdict.json)
+Änderung: der Exit-Thread wartet die Leser ab und entscheidet per `emitted.swap`, wie `wait_interactive`; die Entscheidung als testbare Funktion. Test mit einem Fake-Programm (`sh -c`), das vor der Frist ohne Fehlerzeile endet: genau ein Ereignis.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::rdp::
+Doku: keine (Fehlerverhalten ohne dokumentierte Beschreibung; CHANGELOG in T12)
+
+### T8 — SFTP-Upload ueber eine Teil-Datei (R-1708)  [~] (verschoben in kern-desktop-7: Pruefrunde 3 mit neuem wichtig-Fund am Oeffnen der Teil-Datei, keine weitere Runde)
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
+Änderung: Upload nach `.<name>.ah-part` im Zielordner, danach Umbenennen (Ueberschreiben: `posix-rename@openssh.com`, wenn russh-sftp es anbietet, sonst Ziel entfernen und umbenennen), bei jedem Fehler die Teil-Datei entfernen. Tests gegen OpenSSH-sftp-server: abgebrochener Upload laesst die alte Datei unveraendert und keine Teil-Datei; Ueberschreiben nur auf Wunsch bleibt.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
+Doku: → T12
+
+### T9 — Einstellung „Erreichbarkeit pruefen“ je Workspace, Backend (R-1710)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/migration.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @6f933c17f 2026-11-27T09:41:03+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T9.verdict.json)
+Änderung: `Settings.probe_reachability` (Default an) im Meta von `workspace.json` wie `favorite_connections`; alte Datei ohne Feld liest sich als an. Tests in `storage.rs`: Default, Speichern je Workspace, zwei Workspaces getrennt.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage::
+Doku: → T12
+
+### T10 — Ping-Spalte folgt der Einstellung (R-1710)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.test.ts, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/components/settings/WorkspaceSection.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Connections.test.ts, apps/desktop/ui/src/pages/Connections.load.test.ts, apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6963a20e9 2026-11-27T09:53:21+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T10.verdict.json)
+Änderung: Schalter in den Workspace-Einstellungen (DE+EN); ist er aus, startet die Seite keine Probe und die Spalte bleibt leer, ein Umschalten wirkt ohne Neustart. Tests im Store/der Seite.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.test.ts src/pages/Connections.test.ts src/pages/Connections.load.test.ts src/components/SettingsModal.save.test.ts src/components/SettingsModal.nav.test.ts src/components/SettingsModal.workspace.test.ts
+Doku: → T12
+Abhängt von: T9
+
+### T11 — Feed: ein Abruf zur Zeit, ein Nachlauf (R-1711)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.ts, apps/desktop/ui/src/lib/stores/notifications.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5c0a461bb 2026-11-27T09:58:39+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T11.verdict.json)
+Änderung: `loadFeed` haelt den laufenden Abruf; weitere Aufrufe waehrenddessen ergeben hoechstens einen Nachlauf, eine aeltere Antwort ueberschreibt keine neuere. Test: viele Ereignisse waehrend eines Abrufs ergeben zwei Abrufe.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
+Doku: keine (internes Verhalten ohne Doku-Stelle)
+
+### T12 — Doku DE+EN und CHANGELOG (alle Zeilen)  [x]
+Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-desktop-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d35e03093 2026-11-27T10:05:35+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: Erneuerung (was die Sitzung beendet), abgelaufenes Geraete-Zertifikat und sein Ausweg, Tunnel-Zustand „kein Kontakt“, Upload ueber Teil-Datei, Schalter der Ping-Spalte; Fragment umlautfrei.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/… DE+EN · changelog.d/kern-desktop-6.md
+Task-Review: am Ende
+
+### T13 — Doku-Funde der Abschlussprüfung: Ping-Schalter, Code der Erneuerung  [x]
+Komponente: scripts · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2a4cef399 2026-11-27T10:39:04+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: Nutzer-Doku der Spalte Ping DE+EN nennt den Schalter je Workspace (Standard an). Entwickler-Doku DE+EN: eine Erneuerung ohne Antwort scheitert nach einem Transportfehler mit `ERR_NETWORK`, nach 502/503/504 mit `ERR_CONNECTION`; welche Transportfehler die Sitzung halten (Verbindungsaufbau gescheitert oder Abbruch ohne Antwort), welche sie beenden (TLS-Ablehnung, Frist nach dem Verbindungsaufbau).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+Task-Review: am Ende
+
+### T14 — PR-CI: Meta-Test erwartet probeReachability (R-1710)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @3633055d3 2026-11-27T11:03:13+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T14.verdict.json)
+Beweis: PR #694 CI „Desktop-Backend (fmt + clippy + test)“: workspace::tests::the_meta_round_trips_under_its_wire_names FAILED, die geschriebene Meta traegt "probeReachability": true, die erwartete Wire-Form nicht (T9 verifizierte nur storage::).
+Änderung: Die erwartete Wire-Form im Test nennt `probeReachability`.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace::
+Doku: keine (Test)

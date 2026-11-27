@@ -120,6 +120,7 @@ impl Planned {
                 favorite_connections: Vec::new(),
                 open_sessions: Vec::new(),
                 snippets: None,
+                probe_reachability: true,
             },
             connections,
         })
@@ -674,6 +675,7 @@ mod tests {
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
             snippets: None,
+            probe_reachability: true,
         }
     }
 

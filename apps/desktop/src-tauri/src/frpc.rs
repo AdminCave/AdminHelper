@@ -33,7 +33,7 @@ fn write_secret(path: &Path, content: &[u8]) -> std::io::Result<()> {
 
 use crate::auth;
 use crate::error::AppError;
-use crate::models::{RefreshOutcome, TunnelRefresh, TunnelStatus, VisitorBinding};
+use crate::models::{RefreshOutcome, TunnelLogin, TunnelRefresh, TunnelStatus, VisitorBinding};
 use crate::port_registry::PortRegistry;
 use crate::session::{SessionState, SignedIn};
 
@@ -57,6 +57,8 @@ pub struct FrpcProcess {
     generation: u64,
     /// What the running frpc applied; `None` while none runs.
     applied: Option<Applied>,
+    /// The sign-in of the running frpc at frps, from its log; `None` while none runs.
+    login: Option<TunnelLogin>,
     /// Where the runtime files of the tunnel lie (`run/` of the workspace), from the first
     /// reconciliation of this process on; `None` before it, while nothing of ours lies there.
     run_dir: Option<PathBuf>,
@@ -117,6 +119,7 @@ impl FrpcProcess {
             connected_since: None,
             generation: 0,
             applied: None,
+            login: None,
             run_dir: None,
         }
     }
@@ -136,7 +139,19 @@ impl FrpcProcess {
         self.visitor_name = None;
         self.connected_since = None;
         self.applied = None;
+        self.login = None;
         true
+    }
+
+    /// Take a log line of the process spawned as `event_generation` into the sign-in state;
+    /// a line of a stopped or restarted-away process changes nothing.
+    fn observe_log(&mut self, event_generation: u64, line: &str) {
+        if !self.is_current(event_generation) {
+            return;
+        }
+        if let Some(login) = self.login {
+            self.login = Some(login_after(login, line));
+        }
     }
 
     /// Whether an event from the process spawned as `event_generation` belongs to the running
@@ -156,6 +171,7 @@ impl FrpcProcess {
         self.visitor_name = None;
         self.connected_since = None;
         self.applied = None;
+        self.login = None;
         self.child.take()
     }
 
@@ -956,10 +972,18 @@ fn start_frpc(
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    log::info!("[frpc stdout] {}", String::from_utf8_lossy(&line));
+                    let line = String::from_utf8_lossy(&line);
+                    log::info!("[frpc stdout] {line}");
+                    if let Ok(mut guard) = state_for_task.lock() {
+                        guard.observe_log(my_gen, &line);
+                    }
                 }
                 CommandEvent::Stderr(line) => {
-                    log::warn!("[frpc stderr] {}", String::from_utf8_lossy(&line));
+                    let line = String::from_utf8_lossy(&line);
+                    log::warn!("[frpc stderr] {line}");
+                    if let Ok(mut guard) = state_for_task.lock() {
+                        guard.observe_log(my_gen, &line);
+                    }
                 }
                 CommandEvent::Terminated(payload) => {
                     log::warn!("[frpc] Prozess beendet: {:?}", payload);
@@ -999,8 +1023,26 @@ fn start_frpc(
     guard.visitor_name = Some(applied.who.username.clone());
     guard.connected_since = Some(chrono::Utc::now().to_rfc3339());
     guard.applied = Some(applied);
+    guard.login = Some(TunnelLogin::Connecting);
 
     Ok(())
+}
+
+/// The sign-in after `line` of frpc's log, from `now`. The lines are those of frp v0.72.0's
+/// login loop (`client/service.go`, `loopLoginUntilSuccess`), no documented contract, so a
+/// test pins them. frpc writes "try to connect" before every attempt: after a failed one the
+/// state stays "no contact" until an attempt succeeds, and only a lost sign-in goes back to
+/// "connecting".
+fn login_after(now: TunnelLogin, line: &str) -> TunnelLogin {
+    if line.contains("login to server success") {
+        TunnelLogin::LoggedIn
+    } else if line.contains("connect to server error") {
+        TunnelLogin::NoContact
+    } else if line.contains("try to connect to server") && now == TunnelLogin::LoggedIn {
+        TunnelLogin::Connecting
+    } else {
+        now
+    }
 }
 
 /// Puts frpc (`pid`) into the job object of this process, so Windows ends frpc when this process
@@ -1097,6 +1139,7 @@ pub fn tunnel_status(state: &FrpcState) -> TunnelStatus {
         connected_since: guard.connected_since.clone(),
         visitors: guard.visitors(),
         bindings: guard.bindings(),
+        login: guard.login,
     }
 }
 
@@ -1524,7 +1567,7 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config,
+        bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, login_after,
         named_server_toml, plan_refresh, reconcile, remap_visitors, request_reload,
         rewrite_identity_paths, runtime_dir, stop_frpc, stop_left_behind, tunnel_status,
         validate_visitor_toml, visitor_names, with_local_head, write_visitor_config, Applied,
@@ -1533,7 +1576,7 @@ mod tests {
     };
     use crate::error::AppError;
     use crate::keyring_store;
-    use crate::models::RefreshOutcome;
+    use crate::models::{RefreshOutcome, TunnelLogin};
     use crate::port_registry::{PortRegistry, FALLBACK_PORTS};
     use crate::session::{SessionState, SignedIn};
 
@@ -2040,6 +2083,54 @@ bindPort = 6000
         );
         assert!(!dir.join(VISITOR_CONFIG).exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // The lines of frp v0.72.0's login loop (client/service.go:369, :380, :389), with the
+    // prefix frpc's console log puts before them.
+    const TRY: &str =
+        "2026-11-27 09:00:00.000 [I] [client/service.go:369] try to connect to server...";
+    const REFUSED: &str = "2026-11-27 09:00:00.100 [W] [client/service.go:380] connect to server error: dial tcp 192.0.2.1:7000: connect: connection refused";
+    const SUCCESS: &str = "2026-11-27 09:00:01.000 [I] [client/service.go:389] [3f2a] login to server success, get run id [3f2a]";
+
+    #[test]
+    fn the_log_of_frpc_tells_the_sign_in() {
+        use TunnelLogin::*;
+        let walk = |lines: &[&str]| lines.iter().fold(Connecting, |now, l| login_after(now, l));
+        assert_eq!(walk(&[TRY]), Connecting);
+        assert_eq!(walk(&[TRY, SUCCESS]), LoggedIn);
+        assert_eq!(walk(&[TRY, REFUSED]), NoContact);
+        // Every retry starts with "try to connect": no contact stays until one succeeds.
+        assert_eq!(walk(&[TRY, REFUSED, TRY]), NoContact);
+        assert_eq!(walk(&[TRY, REFUSED, TRY, SUCCESS]), LoggedIn);
+        // A lost sign-in: frpc logs in again.
+        assert_eq!(walk(&[TRY, SUCCESS, TRY]), Connecting);
+        assert_eq!(
+            walk(&[TRY, SUCCESS, "admin server listen on 127.0.0.1:7400"]),
+            LoggedIn
+        );
+    }
+
+    #[test]
+    fn only_the_log_of_the_current_frpc_counts() {
+        let mut p = FrpcProcess::new();
+        p.generation = 2;
+        p.login = Some(TunnelLogin::Connecting);
+        p.observe_log(1, SUCCESS);
+        assert_eq!(p.login, Some(TunnelLogin::Connecting), "stale generation");
+        p.observe_log(2, SUCCESS);
+        assert_eq!(p.login, Some(TunnelLogin::LoggedIn));
+
+        assert!(p.retire().is_none());
+        assert_eq!(p.login, None, "a stop forgets the sign-in");
+        p.observe_log(2, REFUSED);
+        assert_eq!(
+            p.login, None,
+            "the stopped frpc's last lines change nothing"
+        );
+
+        p.login = Some(TunnelLogin::LoggedIn);
+        assert!(p.reconcile_terminated(3));
+        assert_eq!(p.login, None);
     }
 
     #[test]

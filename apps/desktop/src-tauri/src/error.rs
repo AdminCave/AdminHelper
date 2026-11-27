@@ -81,6 +81,9 @@ pub enum AppError {
     /// The gateway refused a login without a device certificate under enforced mTLS
     /// (`auth::login_failure`).
     MtlsCertRequired,
+    /// The device certificate has expired (checked before a login sends anything) or the
+    /// gateway refused it (`auth::login_failure`): only a new enrollment helps.
+    DeviceCertInvalid,
     /// An upload found a file of this name in the remote folder and was not asked to replace
     /// it (sftp.rs).
     SftpExists(String),
@@ -141,6 +144,12 @@ impl std::fmt::Display for AppError {
                  enforced). Enroll this device with a one-time enrollment token from your \
                  administrator."
             ),
+            AppError::DeviceCertInvalid => write!(
+                f,
+                "ERR_DEVICE_CERT_INVALID: The device certificate has expired or is no longer \
+                 accepted. Reset the device identity and enroll again with a one-time \
+                 enrollment token from your administrator."
+            ),
             AppError::SftpExists(name) => write!(f, "{name} already exists on the server"),
             AppError::RdpOsClient(msg) => write!(f, "{msg}"),
             AppError::Http {
@@ -185,11 +194,12 @@ fn detail_text(body: &serde_json::Value) -> Option<String> {
 
 /// Codes only the client gives (a TLS failure, the gateway's no-certificate page): a
 /// server that sends one must not open the trust dialog or offer the pin reset.
-const CLIENT_CODES: [&str; 4] = [
+const CLIENT_CODES: [&str; 5] = [
     "ERR_TLS_UNKNOWN_ISSUER",
     "ERR_TOFU_PIN_MISMATCH",
     "ERR_CA_PIN_MISMATCH",
     "ERR_MTLS_CERT_REQUIRED",
+    "ERR_DEVICE_CERT_INVALID",
 ];
 
 /// The certificate codes a server before R-0664 writes only as prefix of `detail`
@@ -254,6 +264,7 @@ impl AppError {
             AppError::Json(_) => "ERR_JSON",
             AppError::SessionExpired => "ERR_SESSION_EXPIRED",
             AppError::MtlsCertRequired => "ERR_MTLS_CERT_REQUIRED",
+            AppError::DeviceCertInvalid => "ERR_DEVICE_CERT_INVALID",
             AppError::SftpExists(_) => "ERR_SFTP_EXISTS",
             AppError::RdpOsClient(_) => "ERR_RDP_OS_CLIENT",
             AppError::Http { code, .. } => code.as_deref().unwrap_or("ERR_HTTP"),
@@ -424,6 +435,7 @@ mod tests {
             (AppError::Json(json), "ERR_JSON"),
             (AppError::SessionExpired, "ERR_SESSION_EXPIRED"),
             (AppError::MtlsCertRequired, "ERR_MTLS_CERT_REQUIRED"),
+            (AppError::DeviceCertInvalid, "ERR_DEVICE_CERT_INVALID"),
             (AppError::SftpExists("a.txt".into()), "ERR_SFTP_EXISTS"),
             (AppError::RdpOsClient("gateway".into()), "ERR_RDP_OS_CLIENT"),
         ];
@@ -526,6 +538,7 @@ mod tests {
             "ERR_TOFU_PIN_MISMATCH",
             "ERR_CA_PIN_MISMATCH",
             "ERR_MTLS_CERT_REQUIRED",
+            "ERR_DEVICE_CERT_INVALID",
         ] {
             let body = serde_json::json!({ "detail": "x", "code": code }).to_string();
             assert_eq!(

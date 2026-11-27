@@ -433,6 +433,18 @@ describe('SettingsModal in a sync workspace', () => {
     expect(h.stopTunnel).not.toHaveBeenCalled();
     expect(h.logout).not.toHaveBeenCalled();
   });
+
+  it('saves the reachability check turned off as false', async () => {
+    const stored = settingsOf('sync', SYNC);
+    const container = open();
+    const probe = () => el(container, 'input[data-field="probe-reachability"]') as HTMLInputElement;
+    expect(probe().checked).toBe(true);
+
+    await fireEvent.click(probe());
+    await fireEvent.click(el(container, '[data-action="settings-save"]')!);
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenLastCalledWith({ ...stored, probeReachability: false });
+  });
 });
 
 describe('SettingsModal in a local workspace', () => {

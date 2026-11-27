@@ -126,6 +126,28 @@ describe('notifications store', () => {
     expect(get(unreadCount)).toBe(1);
   });
 
+  // R-1711: a burst of SSE frames during a fetch is one follow-up, not a fetch each, and an
+  // older answer never lands after a newer one.
+  it('loads once at a time: calls during a fetch make one follow-up', async () => {
+    let answer!: (items: NotificationItem[]) => void;
+    h.fetchFeed.mockImplementationOnce(
+      () => new Promise<NotificationItem[]>((resolve) => (answer = resolve)),
+    );
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 2 })]);
+    const first = loadFeed();
+    const during = [loadFeed(), loadFeed(), loadFeed(), loadFeed()];
+    expect(h.fetchFeed).toHaveBeenCalledTimes(1);
+    answer([item({ id: 1 })]);
+    await Promise.all([first, ...during]);
+    expect(h.fetchFeed).toHaveBeenCalledTimes(2);
+    expect(get(notificationItems).map((n) => n.id)).toEqual([2]);
+
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 3 })]);
+    await loadFeed();
+    expect(h.fetchFeed).toHaveBeenCalledTimes(3);
+    expect(get(notificationItems).map((n) => n.id)).toEqual([3]);
+  });
+
   it('takes the badge from the dedicated endpoint, not the 50-row list', async () => {
     // list shows 1 unread, but the server reports 60 (beyond the 50-row window)
     h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);

@@ -15,9 +15,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     mode: SyncMode;
     workspace: WorkspaceInfo | null;
     intervalMinutes: number;
+    probeReachability: boolean;
   }
 
-  let { mode, workspace, intervalMinutes = $bindable() }: Props = $props();
+  let {
+    mode,
+    workspace,
+    intervalMinutes = $bindable(),
+    probeReachability = $bindable(),
+  }: Props = $props();
 </script>
 
 <div class="sm-section" data-scope="workspace">
@@ -56,6 +62,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >
     </div>
   {/if}
+
+  <label class="field checkbox">
+    <input type="checkbox" data-field="probe-reachability" bind:checked={probeReachability} />
+    <span>{$t('settings.workspace.probeReachability')}</span>
+  </label>
 </div>
 
 <style>

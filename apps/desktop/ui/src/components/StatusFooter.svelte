@@ -45,6 +45,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const ui = $tunnel.ui;
     if (ui === 'connecting') return $t('tunnel.connecting');
     if (ui === 'connected') return $t('tunnel.active');
+    if (ui === 'noContact') return $t('tunnel.noContact');
     if (ui === 'disconnected') return $t('tunnel.disconnected');
     return $t('tunnel.inactive');
   });

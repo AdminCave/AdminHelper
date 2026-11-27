@@ -21,13 +21,12 @@ vi.mock('$lib/bridge', () => ({
   probeTargets: vi.fn(async () => []),
 }));
 vi.mock('$lib/stores/session', async () => {
-  const { writable } = await import('svelte/store');
-  return {
-    sessionStore: writable({
-      settings: { mode: 'server', url: null, allowSelfSignedCerts: false },
-      session: { serverUrl: 'https://srv.example', username: 'alice', isAdmin: false },
-    }),
-  };
+  const { derived, writable } = await import('svelte/store');
+  const sessionStore = writable({
+    settings: { mode: 'server', url: null, allowSelfSignedCerts: false },
+    session: { serverUrl: 'https://srv.example', username: 'alice', isAdmin: false },
+  });
+  return { sessionStore, settings: derived(sessionStore, (s) => s.settings) };
 });
 
 import { setLanguage, tNow } from '$lib/i18n';
