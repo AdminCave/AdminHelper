@@ -165,6 +165,10 @@ case "$*" in
   "compose pull"*)
     [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0
     [ -z "${AH_TEST_ENV_LOCK:-}" ] || : > "$AH_TEST_ENV_LOCK"
+    # AH_TEST_SNAP_SWAP=1 replaces the run's snapshot in backups/ with another archive.
+    if [ "${AH_TEST_SNAP_SWAP:-}" = 1 ]; then
+      for s in backups/runtime-prev-*.tar.gz; do "$AH_TEST_REAL_TAR" czf "$s" -C / dev/null 2>/dev/null; done
+    fi
     echo "stub: pull failed" >&2; exit 1 ;;
   "compose stop server "*)
     [ "${AH_TEST_STOP_FAIL:-}" != 1 ] || { echo "stub: stop failed" >&2; exit 1; }
@@ -271,14 +275,22 @@ exec "$AH_TEST_REAL_RM" "$@"
 EOF
 chmod +x "$BIN/rm"
 # --- a tar wrapper: real tar for everything, except that AH_TEST_TAR_FAIL=1 fails
-# the restore's unpack of the runtime snapshot (`xzf backups/runtime-prev-…`)
+# the restore's unpack of the runtime snapshot (`xzf <tmp>/runtime-prev.tar.gz`)
 # before it unpacks anything; writing the snapshot and unpacking the bundle or the
 # agent repo go through ---
 AH_TEST_REAL_TAR=$(command -v tar); export AH_TEST_REAL_TAR
+# --- an od wrapper: AH_TEST_OD_HEX fixes the random hex od reads from /dev/urandom ---
+AH_TEST_REAL_OD=$(command -v od); export AH_TEST_REAL_OD
+cat > "$BIN/od" <<'EOF'
+#!/usr/bin/env bash
+[ -z "${AH_TEST_OD_HEX:-}" ] || { echo " $AH_TEST_OD_HEX"; exit 0; }
+exec "$AH_TEST_REAL_OD" "$@"
+EOF
+chmod +x "$BIN/od"
 cat > "$BIN/tar" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
-  "xzf backups/runtime-prev-"*)
+  "xzf "*/runtime-prev.tar.gz)
     [ "${AH_TEST_TAR_FAIL:-}" != 1 ] || { echo "stub: tar failed" >&2; exit 1; } ;;
 esac
 exec "$AH_TEST_REAL_TAR" "$@"
@@ -687,6 +699,41 @@ grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt' <<<"$out" \
   && ok "pull failure message names the rollback" || bad "no rollback message"
 { grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up -d' "$DLOG"; } \
   && ok "pull failure recreated no container" || bad "pull failure: docker calls $(tr '\n' ';' < "$DLOG")"
+
+# ── 14b. the snapshot: built in the run's temp dir, kept in backups/ ─────────
+# The name is predictable: a link standing there is replaced, not written through,
+# and no working copy stays behind. A snapshot swapped in backups/ after the run
+# wrote it changes nothing: the rollback unpacks the one in the temp dir. A link on
+# the working name (AH_TEST_OD_HEX fixes it, as a racer who saw it would) stops the
+# run before anything changes, and the link's target keeps content and mode.
+INST="$WORK/inst14b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$INST/backups"; : > "$WORK/inst14b.victim"
+for s in $(seq 0 59); do
+  ln -s "$WORK/inst14b.victim" "$INST/backups/runtime-prev-$(date -u -d "+${s} seconds" +%Y%m%dT%H%M%SZ).tar.gz"
+done
+out=$(run_update "$INST" 2>&1); rc=$?
+snap=$(cd "$INST/backups" && find . -maxdepth 1 -type f -name 'runtime-prev-*.tar.gz' -printf '%f\n')
+{ [ $rc -eq 0 ] && [ ! -s "$WORK/inst14b.victim" ] && [ -n "$snap" ] \
+    && [ "$(stat -c %a "$INST/backups/$snap")" = 600 ] \
+    && [ -z "$(find "$INST/backups" -maxdepth 1 -name '.runtime-prev-*')" ]; } \
+  && ok "the snapshot replaces a link on its name, owner-only, no work dir left" \
+  || bad "snapshot write: rc=$rc snap=$snap victim=$(stat -c %s "$WORK/inst14b.victim")"
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst14c"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_PULL=1 AH_TEST_SNAP_SWAP=1 run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'zurueckgerollt' <<<"$out" && ! grep -q 'UNVOLLSTAENDIG' <<<"$out" \
+    && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
+  && ok "a snapshot swapped in backups/ does not reach the rollback" \
+  || bad "swapped snapshot: rc=$rc $out"
+INST2="$WORK/inst14d"; make_install 0.33.0 "$SRC_OLD" "$INST2"
+mkdir -p "$INST2/backups"; printf 'keep\n' > "$WORK/inst14d.victim"; chmod 644 "$WORK/inst14d.victim"
+ln -s "$WORK/inst14d.victim" "$INST2/backups/.runtime-prev-00112233445566ff"
+out=$(AH_TEST_OD_HEX=00112233445566ff run_update "$INST2" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Laufzeit-Snapshot fehlgeschlagen' <<<"$out" \
+    && [ "$(cat "$WORK/inst14d.victim")" = keep ] && [ "$(stat -c %a "$WORK/inst14d.victim")" = 644 ] \
+    && grep -q 'marker: 0.33.0' "$INST2/docker-compose.yml"; } \
+  && ok "a link on the snapshot's working name stops the run, its target untouched" \
+  || bad "link on the working name: rc=$rc victim=$(cat "$WORK/inst14d.victim") $out"
 
 # ── 15. ...and the next run tries the update again ──────────────────────────
 : > "$DLOG"

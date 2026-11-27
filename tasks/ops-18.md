@@ -13,9 +13,12 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - Kevin 2026-11-27: die Session merged ops-18 selbst (auch install.sh/update.sh).
 - Kevin 2026-11-27 R-1783: Rolle ah_backup über db_roles.setup (pg_read_all_data, CONNECT), Passwort BACKUP_DB_PASSWORD über init-secrets.sh, keine DB-Migration.
+- T1 (security T1): Der Snapshot entsteht in `$TMP` (0700, außerhalb jedes Container-Mounts), der Rollback entpackt nur ihn; die Kopie in `backups/` dient der Aufbewahrung, exklusiv angelegt (`dd conv=excl`) und per `mv -fT` umbenannt. Damit entfallen das `mktemp -d` unter `backups/` und der SHA-256-Vergleich der Änderung oben.
 
-### T1 — R-1782: update.sh legt den Laufzeit-Snapshot sicher an und prüft ihn vor dem Rollback  [ ]
+### T1 — R-1782: update.sh legt den Laufzeit-Snapshot sicher an und prüft ihn vor dem Rollback  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @faaf9e4b6 2026-11-27T13:07:59+01:00
+Review: approve (.ah-out/review/ops-18/T1.verdict.json)
 Änderung: Snapshot in einem eigenen `mktemp -d`-Verzeichnis unter `backups/` schreiben, dann per `mv -fT` unter seinen Namen; SHA-256 merken und vor `tar xzf "$SNAP"` im Rollback prüfen, sonst Rollback der Laufzeit-Dateien verweigern (laut, mit Weg). Tests: vorbelegter Name wird ersetzt, nicht beschrieben; getauschter Snapshot bricht den Rollback ab.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: → T6

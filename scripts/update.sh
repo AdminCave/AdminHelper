@@ -864,8 +864,20 @@ SNAP_FILES=(docker-compose.yml .env.example scripts)
 # backups/ perms) must abort — nothing is swapped yet, so aborting is clean. A
 # best-effort snapshot would let a later health-fail rollback restore nothing while
 # claiming success, leaving old images + new compose (2.41).
-tar czf "$SNAP" "${SNAP_FILES[@]}" || die "Laufzeit-Snapshot fehlgeschlagen — Abbruch (noch nichts veraendert)."
-chmod 600 "$SNAP" 2>/dev/null || true
+# Built in $TMP (0700, outside every container mount), which is what the rollback
+# unpacks (R-1782): backups/ is shared with containers, so nothing there is written
+# through or read back. The copy kept in backups/ is created under a fresh name that
+# must not exist yet (dd conv=excl: O_EXCL, refuses a link too), then renamed onto its
+# timestamped name, which replaces whatever stands there instead of writing through it.
+SNAP_TMP="${TMP}/runtime-prev.tar.gz"
+SNAP_KEEP="backups/.runtime-prev-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+ENV_TMPS+=("$SNAP_KEEP")   # an abort between dd and mv leaves it to the EXIT trap
+if ! { ( umask 077; tar czf "$SNAP_TMP" "${SNAP_FILES[@]}" \
+            && dd if="$SNAP_TMP" of="$SNAP_KEEP" conv=excl status=none ) \
+        && mv -fT -- "$SNAP_KEEP" "$SNAP"; }; then
+    rm -f -- "$SNAP_KEEP"
+    die "Laufzeit-Snapshot fehlgeschlagen (backups/ nicht beschreibbar?) — Abbruch (noch nichts veraendert)."
+fi
 log "Laufzeit-Snapshot: ${SNAP}"
 # Keep this run's snapshot and the two newest others (Kevin 2026-11-24, R-1714): the
 # names carry a UTC timestamp, so the glob's order is their age. $SNAP is the rollback's
@@ -901,12 +913,14 @@ cp -p .env "${TMP}/env.prev" || die "Kopie der .env fehlgeschlagen — Abbruch (
 # update created it. Every step runs; returns 1 if any of them failed.
 restore_snapshot() {
     local rel rc=0
+    # The snapshot in $TMP, not the copy in backups/ (R-1782).
+    [ -f "$SNAP_TMP" ] || { log "WARN: Snapshot ${SNAP_TMP} fehlt — nicht entpackt."; return 1; }
     while IFS= read -r rel; do
         [ -n "$rel" ] || continue
         rm -f "$rel" || rc=1
     done <<< "$ADDED_PATHS"
     if [ -d repo ]; then find repo -mindepth 1 -delete || rc=1; fi
-    tar xzf "$SNAP" || rc=1
+    tar xzf "$SNAP_TMP" || rc=1
     return "$rc"
 }
 
