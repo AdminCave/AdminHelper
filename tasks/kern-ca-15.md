@@ -30,10 +30,12 @@ Review: approve (.ah-out/review/kern-ca-15/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/enroll/
 Doku: → T5
 
-### T3 — R-1812: Desktop signiert den Renew  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+### T3 — R-1812: Desktop signiert den Renew  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @55dd7f73b 2026-11-27T15:04:05+01:00
+Review: approve (.ah-out/review/kern-ca-15/T3.verdict.json)
 Änderung: `RenewRequest` bekommt `proof`; `renew` signiert Präfix + CSR-DER mit dem behaltenen Schlüssel (rcgen `SigningKey::sign`). Test: der proof verifiziert gegen den Public Key des Schlüssels über dieselbe Nachricht.
-Verify: bash scripts/dev/verify.sh desktop --strict -- enrollment
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- enrollment
 Doku: → T5
 
 ### T4 — R-1813: Test für --no-proxy-headers im ca-issuer-Entrypoint  [ ]
