@@ -71,6 +71,24 @@ pub struct Renewed {
     pub refresh: String,
 }
 
+/// Why a renewal failed. `Unanswered`: the server gave no verdict on the refresh token (no
+/// connection, or a 502, 503 or 504 of the gateway), so the session stays and the next 401
+/// tries again. Every other failure is `Refused` and ends the session (R-1709, Kevin
+/// 2026-11-27).
+#[derive(Debug)]
+pub enum RenewalFailure {
+    Refused(AppError),
+    Unanswered(AppError),
+}
+
+impl std::fmt::Display for RenewalFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(e) | Self::Unanswered(e) => e.fmt(f),
+        }
+    }
+}
+
 /// Who hears that a failed renewal ended the session: in the app the webview, through the
 /// event `session-expired` (`main.rs`); in a test a counter.
 type ExpiryListener = Box<dyn Fn() + Send + Sync>;
@@ -246,10 +264,12 @@ pub fn no_session() -> AppError {
 /// with the session's certificate choice, and single-flight: under the lock only a request
 /// that still sees the generation it went out with renews, one behind it finds the new
 /// generation and only repeats. The server rotates the refresh token, so a second renewal
-/// with the old one would count as reuse and revoke the whole session. A renewal that fails
-/// or outlasts [`RENEWAL_DEADLINE`] ends the session with [`AppError::SessionExpired`] and
+/// with the old one would count as reuse and revoke the whole session. A renewal the server
+/// refuses ([`RenewalFailure::Refused`]) or one that outlasts [`RENEWAL_DEADLINE`] ends the
+/// session with [`AppError::SessionExpired`] and
 /// tells the listeners of [`SessionState::on_sign_in_change`] and [`SessionState::on_expiry`].
-/// Without a session nothing is sent.
+/// Without a session nothing is sent. One without a verdict
+/// ([`RenewalFailure::Unanswered`]) keeps the session and fails the request with its error.
 ///
 /// The answer comes with the user it was sent for; a caller that takes it over checks
 /// [`SessionState::ensure_signed_in`] first.
@@ -282,7 +302,7 @@ async fn send_renewing<B, R, F>(
 where
     B: Fn(&str, bool) -> Result<reqwest::RequestBuilder, AppError>,
     R: FnOnce(String, String, bool) -> F,
-    F: Future<Output = Result<Renewed, AppError>>,
+    F: Future<Output = Result<Renewed, RenewalFailure>>,
 {
     let seen = state.current().await.ok_or_else(no_session)?;
     let response = send(&build, &seen).await?;
@@ -309,10 +329,10 @@ where
         let renewed = tokio::time::timeout(deadline, renewal)
             .await
             .unwrap_or_else(|_| {
-                Err(AppError::Connection(format!(
+                Err(RenewalFailure::Refused(AppError::Connection(format!(
                     "no answer within {} s",
                     deadline.as_secs_f32()
-                )))
+                ))))
             });
         match renewed {
             Ok(renewed) => {
@@ -320,7 +340,11 @@ where
                 current.refresh = renewed.refresh;
                 current.generation = state.next_generation();
             }
-            Err(e) => {
+            Err(RenewalFailure::Unanswered(e)) => {
+                log::warn!("Session renewal got no verdict, the session stays: {e}");
+                return Err(e);
+            }
+            Err(RenewalFailure::Refused(e)) => {
                 log::warn!("Session renewal failed, the session ends: {e}");
                 *slot = None;
                 // Outside the lock: whoever hears it may ask the session at once.
@@ -454,7 +478,7 @@ mod tests {
         renewals: Renewals,
         url: String,
         refresh: String,
-    ) -> Result<Renewed, AppError> {
+    ) -> Result<Renewed, RenewalFailure> {
         renewals.lock().unwrap().push((url, refresh));
         // The renewal is under way while another request may meet its 401.
         tokio::task::yield_now().await;
@@ -469,9 +493,24 @@ mod tests {
         renewals: Renewals,
         url: String,
         refresh: String,
-    ) -> Result<Renewed, AppError> {
+    ) -> Result<Renewed, RenewalFailure> {
         renewals.lock().unwrap().push((url, refresh));
-        Err(AppError::Validation("Refresh fehlgeschlagen".to_string()))
+        Err(RenewalFailure::Refused(AppError::Validation(
+            "Refresh fehlgeschlagen".to_string(),
+        )))
+    }
+
+    /// A renewal that got no verdict: the server could not be reached, or the gateway
+    /// answered 502, 503 or 504.
+    async fn unanswered(
+        renewals: Renewals,
+        url: String,
+        refresh: String,
+    ) -> Result<Renewed, RenewalFailure> {
+        renewals.lock().unwrap().push((url, refresh));
+        Err(RenewalFailure::Unanswered(AppError::Validation(
+            "Refresh fehlgeschlagen (502 Bad Gateway)".to_string(),
+        )))
     }
 
     fn log_of(log: &StdMutex<Vec<String>>) -> Vec<String> {
@@ -575,6 +614,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_renewal_without_a_verdict_keeps_the_session_and_the_next_401_renews() {
+        let (server, log) = serve(|token| async move {
+            if token == "Bearer renewed" {
+                "200 OK"
+            } else {
+                "401 Unauthorized"
+            }
+        })
+        .await;
+        let state = signed_in(&server).await;
+        let before = state.current().await.unwrap().generation;
+        let expiries = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&expiries);
+        state.on_expiry(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
+        let renewals = Renewals::default();
+
+        let result = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| unanswered(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await;
+
+        // The request fails with the renewal's error, not as an ended session.
+        let error = result.err().expect("the request should have failed");
+        assert!(!matches!(error, AppError::SessionExpired), "{error:?}");
+        assert!(error.to_string().contains("502"), "{error}");
+        let kept = state
+            .current()
+            .await
+            .expect("the session should have stayed");
+        assert_eq!(
+            (kept.access.as_str(), kept.refresh.as_str(), kept.generation),
+            ("expired", "refresh", before)
+        );
+        assert_eq!(expiries.load(Ordering::SeqCst), 0);
+        assert_eq!(log_of(&log), ["Bearer expired"]);
+
+        // The next 401 renews with the same refresh token, and this time it is granted.
+        let (response, _) = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            *renewals.lock().unwrap(),
+            [
+                (server.clone(), "refresh".to_string()),
+                (server, "refresh".to_string())
+            ]
+        );
+        assert_eq!(
+            log_of(&log),
+            ["Bearer expired", "Bearer expired", "Bearer renewed"]
+        );
+    }
+
+    #[tokio::test]
     async fn a_renewal_past_the_deadline_ends_the_session() {
         let (server, log) = serve(|_| async { "401 Unauthorized" }).await;
         let state = signed_in(&server).await;
@@ -585,7 +689,7 @@ mod tests {
             send_renewing(
                 &state,
                 get,
-                |_, _, _| std::future::pending::<Result<Renewed, AppError>>(),
+                |_, _, _| std::future::pending::<Result<Renewed, RenewalFailure>>(),
                 Duration::from_millis(50),
             ),
         )

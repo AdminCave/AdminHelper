@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::keyring_store;
 use crate::models::AuthSession;
-use crate::session::{Renewed, SessionState, SignedIn};
+use crate::session::{RenewalFailure, Renewed, SessionState, SignedIn};
 
 /// Where earlier versions kept the session; it lives in the process now (R-0430), and the
 /// start removes these entries ([`forget_keyring_session`]).
@@ -126,33 +126,61 @@ async fn fetch_me(
     Ok(response.json().await?)
 }
 
+/// Whether a request that failed in transport leaves the refresh token without a verdict.
+/// A TLS refusal does not (a certificate the session does not trust is no outage a later try
+/// gets past); a connect failure does, its timeout included (the token never left); a
+/// timeout after the connect does not, the server may have rotated the token by then; any
+/// other transport failure does.
+fn transport_unanswered(connect: bool, timeout: bool, tls: bool) -> bool {
+    !tls && (connect || !timeout)
+}
+
 /// Exchanges the refresh token for new access and refresh tokens. Only the pair: the user
 /// stays the one who signed in, and a `/me` failing after the server has rotated would
 /// throw the new pair away. The error lands in the log (`session::authed_send`), so it names
 /// the status at most, never the answer.
+///
+/// No verdict on the token ([`RenewalFailure::Unanswered`]): the request did not get through
+/// ([`transport_unanswered`]), or the gateway answered 502, 503 or 504.
 pub async fn try_refresh(
     server_url: &str,
     refresh_token: &str,
     allow_self_signed: bool,
-) -> Result<Renewed, AppError> {
+) -> Result<Renewed, RenewalFailure> {
     let url = format!("{}/api/auth/refresh", server_url.trim_end_matches('/'));
-    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)
+        .map_err(RenewalFailure::Refused)?;
     let body = serde_json::json!({ "refresh_token": refresh_token });
 
-    let response = client.post(&url).json(&body).send().await?;
+    let response = match client.post(&url).json(&body).send().await {
+        Ok(response) => response,
+        Err(e) => {
+            let tls = crate::error::find_rustls(Some(&e), &|_| Some(())).is_some();
+            return Err(
+                if transport_unanswered(e.is_connect(), e.is_timeout(), tls) {
+                    RenewalFailure::Unanswered(e.into())
+                } else {
+                    RenewalFailure::Refused(e.into())
+                },
+            );
+        }
+    };
     let status = response.status();
     if !status.is_success() {
-        return Err(AppError::Validation(format!(
-            "Refresh fehlgeschlagen ({status})"
-        )));
+        let message = format!("Refresh fehlgeschlagen ({status})");
+        return Err(match status.as_u16() {
+            502..=504 => RenewalFailure::Unanswered(AppError::Connection(message)),
+            _ => RenewalFailure::Refused(AppError::Validation(message)),
+        });
     }
 
     // Not the decode error itself: serde quotes the value it could not take, and the answer
     // carries tokens.
-    let resp: RefreshResponse = response
-        .json()
-        .await
-        .map_err(|_| AppError::Validation("Refresh answer unreadable".to_string()))?;
+    let resp: RefreshResponse = response.json().await.map_err(|_| {
+        RenewalFailure::Refused(AppError::Validation(
+            "Refresh answer unreadable".to_string(),
+        ))
+    })?;
 
     Ok(Renewed {
         access: resp.access_token,
@@ -721,6 +749,61 @@ mod tests {
             (SERVER, "next")
         );
         assert!(session.ensure_signed_in(&user).await.is_err());
+    }
+
+    #[test]
+    fn a_transport_failure_is_unanswered_unless_tls_refused_or_timed_out_after_the_connect() {
+        // (connect, timeout, tls) -> unanswered
+        for (connect, timeout, tls, unanswered) in [
+            (true, false, false, true),  // refused or unreachable
+            (true, true, false, true),   // connect timeout: the token never left
+            (true, false, true, false),  // certificate not trusted
+            (false, true, false, false), // timeout after the connect: maybe rotated
+            (false, false, false, true), // connection lost otherwise
+            (false, false, true, false),
+        ] {
+            assert_eq!(
+                transport_unanswered(connect, timeout, tls),
+                unanswered,
+                "connect={connect} timeout={timeout} tls={tls}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn only_a_renewal_without_a_verdict_counts_as_unanswered() {
+        for (status, unanswered) in [
+            ("502 Bad Gateway", true),
+            ("503 Service Unavailable", true),
+            ("504 Gateway Timeout", true),
+            ("400 Bad Request", false),
+            ("401 Unauthorized", false),
+            ("500 Internal Server Error", false),
+        ] {
+            let (server, _log) = serve(move |_| reply(status, "")).await;
+
+            let result = try_refresh(&server, "refresh", false).await;
+
+            match result {
+                Err(RenewalFailure::Unanswered(_)) => assert!(unanswered, "{status}"),
+                Err(RenewalFailure::Refused(_)) => assert!(!unanswered, "{status}"),
+                Ok(_) => panic!("{status}: renewed"),
+            }
+        }
+
+        // Nobody listens on the port: the request never got through.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = format!("http://127.0.0.1:{}", closed.local_addr().unwrap().port());
+        drop(closed);
+        let result = try_refresh(&server, "refresh", false).await;
+        assert!(
+            matches!(
+                result,
+                Err(RenewalFailure::Unanswered(AppError::Network(_)))
+            ),
+            "{:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]

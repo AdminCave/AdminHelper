@@ -8,17 +8,20 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - Kevin 2026-11-27 (Notizen der sieben Zeilen): alle angenommen; R-1709 Transportfehler, 502, 503, 504 beenden die Sitzung nicht, 400/401/500 weiter; R-1710 Einstellung je Workspace, Standard an.
 - Plan: die eigene Frist der Erneuerung (Desktop 30 s) und ein Timeout beenden die Sitzung weiter, Desktop und Web gleich; der Grund (rotiertes Token) steht schon im Code und in der Doku, `a_renewal_past_the_deadline_ends_the_session` bleibt.
+- T1: ein TLS-Fehler beim Erneuern (rustls lehnt das Zertifikat ab) gilt als Ablehnung, nicht als „ohne Urteil“: ein nicht vertrautes Zertifikat ist kein Ausfall, den ein spaeterer Versuch ueberwindet; `without_self_signed_in_the_session_the_renewal_does_not_trust_on_first_use` haelt das fest.
 - Plan: R-1691 liest den Login-Zustand aus den frpc-Logzeilen (frp v0.72.0 client/service.go:369-389), nicht aus `/api/status` (kein Login-Zustand dort) und nicht per Bind-Probe.
 - Plan: R-1689 ein Code `ERR_DEVICE_CERT_INVALID` fuer beide Wege (lokal abgelaufen, nginx-495-Seite).
 
-### T1 — Erneuerung: Transportfehler und 502/503/504 behalten die Sitzung, Desktop (R-1709)  [ ]
+### T1 — Erneuerung: Transportfehler und 502/503/504 behalten die Sitzung, Desktop (R-1709)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/auth.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @4529ad415 2026-11-27T08:49:37+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T1.verdict.json)
 Änderung: `try_refresh` unterscheidet einen Fehlschlag ohne Urteil des Servers (Transportfehler ausser Timeout, 502, 503, 504) von einer Ablehnung; `send_renewing` behält bei ersterem Slot und Generation, sendet kein Ablauf-Ereignis und gibt einen Verbindungsfehler zurück (nicht `SessionExpired`). Tests: 502/503/504 und ein nicht erreichbarer Server lassen die Sitzung stehen, ein spaeteres 401 mit gelungener Erneuerung wiederholt; `a_failed_renewal_ends_the_session` (400/401/500) und die Fristen-Tests bleiben.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session::
 Doku: → T12
 
 ### T2 — Erneuerung: Netzfehler und 502/503/504 behalten die Sitzung, Web (R-1709)  [ ]
-Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts
+Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts, apps/web/src/lib/i18n/dictionaries.ts
 Änderung: `tryRefresh` liefert drei Ausgaenge (erneuert, abgelehnt, nicht erreichbar); bei „nicht erreichbar“ (fetch-TypeError, 502, 503, 504) wirft `request` einen `ApiError` mit dem Status bzw. 503, ohne `onAuthFailure`; ein Timeout gilt als abgelehnt wie bisher. Tests in `client.test.ts` je Ausgang, der bestehende Fehlschlag-Test bleibt fuer 401/400/500.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
 Doku: → T12
