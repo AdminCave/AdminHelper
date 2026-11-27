@@ -328,3 +328,36 @@ def composed_config(
         if entry not in entries:
             entries.append(entry)
     return {**config, key: sorted(entries, key=_entry_order)}
+
+
+def split_list(
+    kind: str, config: dict, template: dict | None, standing: list[MonitorException]
+) -> tuple[dict, list[str], list[MonitorException]]:
+    """Split the list of ``kind`` in ``config`` (R-1637): an entry the template gives
+    stays in the config, an entry a ``standing`` exception reads as is that exception's,
+    any other becomes the pattern of a new no_rating exception; an entry no exception
+    takes stays in the config (list_pattern). The config keeps the template's list as
+    the template has it, so an own entry does not make it an override, and loses the
+    key when the template has none and nothing stays. Returns the config to store, the
+    patterns for new exceptions and the standing exceptions the list leaves out."""
+    key = OBJECT_KINDS[kind].list_key
+    given = list_entries(kind, template.get(key, [])) if template is not None else []
+    seen: set[str] = set()
+    kept: list = []
+    patterns: list[str] = []
+    for entry in list_entries(kind, config[key]):
+        # Matched by how it reads, so a list sent back as read keeps a glob made elsewhere.
+        matching = [x for x in standing if list_entry(kind, x.object_pattern) == entry]
+        seen.update(x.id for x in matching)
+        pattern = list_pattern(kind, entry)
+        if entry in given or (not matching and pattern is None):
+            kept.append(entry)
+        elif not matching:
+            patterns.append(pattern)
+    left = [x for x in standing if x.id not in seen]
+    if template is not None and key in template:
+        if len(kept) == len(given) and all(entry in given for entry in kept):
+            return {**config, key: template[key]}, patterns, left
+    elif template is not None and not kept:
+        return {k: v for k, v in config.items() if k != key}, patterns, left
+    return {**config, key: kept}, patterns, left

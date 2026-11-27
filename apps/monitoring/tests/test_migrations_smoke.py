@@ -869,3 +869,64 @@ def test_object_exceptions_upgrade_and_downgrade_writes_back(monkeypatch):
         assert {"object_kind", "object_pattern"} <= {
             c["name"] for c in inspect(engine).get_columns("monitor_exceptions")
         }
+
+
+def test_the_exception_dry_run_migrates_in_a_transaction_it_rolls_back(monkeypatch):
+    # arch-monitoring-neu-p1c T11 (R-1637): the dry run upgrades the schema and migrates
+    # as the start does, in one transaction on the given database, and rolls it back:
+    # version, schema and data stay as they were, the report names what would change.
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    from app.exception_migration import dry_run
+
+    def snapshot(conn):
+        return (
+            conn.execute(text("SELECT version_num FROM alembic_version")).scalars().all(),
+            conn.execute(
+                text("SELECT id, config, overridden_fields, enabled FROM monitor_checks")
+            ).all(),
+            conn.execute(text("SELECT count(*) FROM monitor_exceptions")).scalar(),
+            conn.execute(text("SELECT slug FROM monitor_seed_state ORDER BY slug")).all(),
+        )
+
+    with scratch_db(monkeypatch, "dryrun") as (cfg, engine):
+        command.upgrade(cfg, "b6d8f0a2c4e6")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_checks (id, name, check_type, config, interval,"
+                    " severity, enabled) VALUES ('disks', 'disks', 'smart_health', :config,"
+                    " '5m', 'critical', false)"
+                ),
+                {"config": json.dumps({"ignore_devices": ["/dev/sdb"]})},
+            )
+        with engine.connect() as conn:
+            before = snapshot(conn)
+
+        result = dry_run(bind=engine)
+
+        assert result == {
+            "migrated": False,
+            "checks": [
+                {
+                    "check_id": "disks",
+                    "name": "disks",
+                    "server_id": None,
+                    "skip": True,
+                    "enabled": [False, True],
+                    "exceptions": [{"kind": "disk", "pattern": "/dev/sdb", "unstable": True}],
+                    "fallback": False,
+                    "config": {"ignore_devices": [["/dev/sdb"], []]},
+                }
+            ],
+        }
+        with engine.connect() as conn:
+            assert snapshot(conn) == before
+        assert "object_kind" not in {
+            c["name"] for c in inspect(engine).get_columns("monitor_exceptions")
+        }
+
+        # Nothing of the dry run is left in the way of the real upgrade.
+        command.upgrade(cfg, "head")
+        assert dry_run(bind=engine)["migrated"] is False

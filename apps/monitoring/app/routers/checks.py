@@ -42,13 +42,11 @@ from app.exception_scope import (
     OBJECT_KINDS,
     check_runs,
     composed_config,
-    list_entries,
-    list_entry,
-    list_pattern,
     load_list_exceptions,
     load_no_rating,
     load_skips,
     runs,
+    split_list,
 )
 from app.history import (
     build_series,
@@ -137,52 +135,35 @@ def _end(rows: list[MonitorException], actor: Actor) -> None:
 
 
 def _store_list(db: Session, check: MonitorCheck, config, actor: Actor):
-    """The config to store for one sent with the list of the check's type (R-1637):
-    an entry the template gives stays in it, any other becomes a no_rating exception
-    with the actor, and one in force that the list leaves out ends. The config holds
-    the template's list as the template has it, so an own entry does not make it an
-    override. An entry no exception takes stays in it (list_pattern). Without the
-    list the config is stored as sent and the exceptions stay."""
+    """The config to store for one sent with the list of the check's type (R-1637),
+    split by split_list: a new pattern becomes a no_rating exception with the actor,
+    and one in force that the list leaves out ends. Without the list the config is
+    stored as sent and the exceptions stay."""
     kind = KIND_OF_TYPE.get(check.check_type)
-    key = OBJECT_KINDS[kind].list_key if kind else None
-    if key is None or not isinstance(config, dict) or key not in config:
+    if kind is None or not isinstance(config, dict) or OBJECT_KINDS[kind].list_key not in config:
         return config
     values = resolve_template_check(db, check)
     template = values["config"] if values and isinstance(values.get("config"), dict) else None
-    given = list_entries(kind, template.get(key, [])) if template is not None else []
     standing = [x for x in load_no_rating(db, check.id) if x.object_kind == kind]
-    seen: set[str] = set()
-    kept = []
-    for entry in list_entries(kind, config[key]):
-        # Matched by how it reads, so a list sent back as read keeps a glob made elsewhere.
-        matching = [x for x in standing if list_entry(kind, x.object_pattern) == entry]
-        seen.update(x.id for x in matching)
-        pattern = list_pattern(kind, entry)
-        if entry in given or (not matching and pattern is None):
-            kept.append(entry)
-        elif not matching:
-            db.add(
-                MonitorException(
-                    id=str(uuid.uuid4()),
-                    scope_kind="object",
-                    check_id=check.id,
-                    server_id=check.server_id,
-                    object_kind=kind,
-                    object_pattern=pattern,
-                    effect="no_rating",
-                    duration_kind="permanent",
-                    origin="api",
-                    created_by=actor.name,
-                    created_by_id=actor.id,
-                )
+    stored, patterns, left = split_list(kind, config, template, standing)
+    for pattern in patterns:
+        db.add(
+            MonitorException(
+                id=str(uuid.uuid4()),
+                scope_kind="object",
+                check_id=check.id,
+                server_id=check.server_id,
+                object_kind=kind,
+                object_pattern=pattern,
+                effect="no_rating",
+                duration_kind="permanent",
+                origin="api",
+                created_by=actor.name,
+                created_by_id=actor.id,
             )
-    _end([x for x in standing if x.id not in seen], actor)
-    if template is not None and key in template:
-        if len(kept) == len(given) and all(entry in given for entry in kept):
-            return {**config, key: template[key]}
-    elif template is not None and not kept:
-        return {k: v for k, v in config.items() if k != key}
-    return {**config, key: kept}
+        )
+    _end(left, actor)
+    return stored
 
 
 def _serialize_status(db: Session, checks: list[MonitorCheck]) -> list[dict]:

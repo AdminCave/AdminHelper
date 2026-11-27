@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
     from app.checkers.agent import hydrate_agent_liveness
     from app.core.database import SessionLocal
     from app.core.victoria import victoria
+    from app.exception_migration import migrate_exceptions
     from app.module_sync import record_rule_layers, sync_catalog
     from app.scheduler import (
         load_all_checks,
@@ -61,6 +62,8 @@ async def lifespan(app: FastAPI):
     # restart made agent_ping report 'unknown' until the next push. Then seed
     # the built-in standard templates, mark once what users changed on template
     # checks before the update (before the first sync, which would overwrite it),
+    # move once what users switched off and listed into exceptions (R-1637; also
+    # before the first sync, which brings the template's values where a mark fell),
     # and move the unedited built-ins to the shipped version (tombstone-guarded,
     # best-effort — a seed failure must not keep the service down), give the module
     # checks their rule layers, then bring adopted module instances up to the shipped
@@ -81,6 +84,11 @@ async def lifespan(app: FastAPI):
         except Exception:
             db.rollback()
             logger.exception("Marking the changes made before the update failed")
+        try:
+            migrate_exceptions(db)
+        except Exception:
+            db.rollback()
+            logger.exception("Moving switched-off checks and ignore lists into exceptions failed")
         try:
             reconcile_builtin_templates(db)
         except Exception:
