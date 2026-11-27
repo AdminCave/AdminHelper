@@ -324,6 +324,7 @@
           "match_server_id": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
@@ -518,6 +519,7 @@
           "match_server_id": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
@@ -827,6 +829,7 @@
           "server_id": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
@@ -1049,6 +1052,7 @@
           "server_id": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
@@ -2085,6 +2089,7 @@
           "server_id": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
@@ -3232,6 +3237,7 @@
                 "type": "number"
               },
               {
+                "maxLength": 1024,
                 "type": "string"
               },
               {
@@ -3249,10 +3255,12 @@
                       "type": "number"
                     },
                     {
+                      "maxLength": 1024,
                       "type": "string"
                     }
                   ]
                 },
+                "maxItems": 32,
                 "type": "array"
               },
               {
@@ -3818,6 +3826,7 @@
             "type": "string"
           },
           "server_id": {
+            "maxLength": 255,
             "title": "Server Id",
             "type": "string"
           },

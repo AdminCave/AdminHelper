@@ -27,9 +27,11 @@ Beweis: main@6895f8eaf apps/monitoring/app/scheduler.py:61-79,105-112,152 · Ded
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_scheduler.py tests/test_scheduler_after_commit.py
 Doku: → T5
 
-### T3 — R-1792, R-1827: Internal-Key auf jeder Route, Längengrenzen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/tests/test_internal_key_routes.py, apps/monitoring/tests/test_schema_limits.py
-Änderung: Ein Test ruft jede Route aus `app.routes` (außer Agent-Routen mit eigener Auth und Health) ohne `X-Internal-Key` und erwartet 401. `server_id`/`match_server_id` und Regelwerte bekommen `max_length` 255, Regel-Listen `MAX_FIELDS`. Neue Tests mit SPDX-Header.
+### T3 — R-1792, R-1827: Internal-Key auf jeder Route, Längengrenzen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/tests/test_internal_key_routes.py, apps/monitoring/tests/test_schema_limits.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @12b26bd90 2026-11-27T21:15:02+01:00
+Review: approve (.ah-out/review/kern-monitoring-56/T3.verdict.json)
+Änderung: Ein Test ruft jede Route der App (außer `/health` und `/health/detail`) ohne Key und erwartet 401. `server_id`/`match_server_id` bekommen `max_length` 255, Texte in Regelwerten 1024, Regel-Listen `MAX_FIELDS`. Neue Tests mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_internal_key_routes.py tests/test_schema_limits.py tests/test_openapi_snapshot.py
 Doku: keine (Admin-API hinter dem Internal-Key, Grenze nur für unrealistische Werte); changelog.d/kern-monitoring-56.md → T5
 
@@ -48,4 +50,6 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - Kevin 2026-11-27: R-1690 Variante (a), R-1828 Ausnahme nur für probe.
-- Grenze 255 für Server-IDs und Regelwerte: Server-IDs sind heute UUIDs (36), 255 lässt Importe mit eigener ID zu.
+- Grenze 255 für Server-IDs: Server-IDs sind heute UUIDs (36), 255 lässt Importe mit eigener ID zu.
+- Texte in Regelwerten 1024 statt 255: ein Regelwert vergleicht auch mit Pfaden, und `catalog.model._ABS_PATH` lässt 1024 Zeichen zu (T3).
+- Agent-Routen erwarten ohne Key ebenfalls 401 (`require_agent`); offen bleibt nur `/health/detail`, das weder Gateway noch Server weiterreichen (T3).

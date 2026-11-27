@@ -21,7 +21,7 @@ from pydantic import (
 )
 
 from ah_common.bounds import BIGINT_MAX
-from app.catalog.model import LEVELS
+from app.catalog.model import LEVELS, MAX_FIELDS
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
@@ -43,8 +43,13 @@ def _no_control_characters(name: str | None) -> str | None:
     return name
 
 
+# A server's id as the server hands it out (a UUID today). The bound keeps an unbounded
+# string out of the tables and gives the published schema its maximum (R-1792).
+ServerId = Annotated[str, Field(max_length=255)]
+
+
 class CheckCreate(RequestModel):
-    server_id: str | None = None
+    server_id: ServerId | None = None
     name: str
     description: str | None = None
     check_type: str
@@ -73,7 +78,7 @@ class CheckCreate(RequestModel):
 
 
 class CheckUpdate(RequestModel):
-    server_id: str | None = None
+    server_id: ServerId | None = None
     name: str | None = None
     description: str | None = None
     check_type: str | None = None
@@ -102,7 +107,10 @@ class CheckUpdate(RequestModel):
 # A number in a rule as catalog.model.Rule takes it; the bound only gives the published
 # schema its maximum, the rule checks the rest.
 _RuleInt = Annotated[int, Field(strict=True, ge=-BIGINT_MAX - 1, le=BIGINT_MAX)]
-_RuleScalar = StrictBool | _RuleInt | StrictFloat | StrictStr
+# A text in a rule is compared with a field, a path up to 1024 characters among them
+# (catalog.model._ABS_PATH); a list holds at most what op 'in' takes (R-1827).
+_RuleStr = Annotated[StrictStr, Field(max_length=1024)]
+_RuleScalar = StrictBool | _RuleInt | StrictFloat | _RuleStr
 
 
 class RuleOverride(RequestModel):
@@ -111,7 +119,7 @@ class RuleOverride(RequestModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    value: _RuleScalar | list[_RuleScalar] | None = None
+    value: _RuleScalar | Annotated[list[_RuleScalar], Field(max_length=MAX_FIELDS)] | None = None
     clear: _RuleInt | StrictFloat | None = None
     level: Literal[LEVELS] | None = None
     enabled: StrictBool | None = None
@@ -135,7 +143,7 @@ class CheckRulesInput(RequestModel):
 class AlertRuleCreate(RequestModel):
     name: str
     match_severity: str | None = None
-    match_server_id: str | None = None
+    match_server_id: ServerId | None = None
     channel: str  # webhook, email
     channel_config: dict = {}
     cooldown_minutes: Annotated[IntColumn, Field(ge=0)] = 30
@@ -145,7 +153,7 @@ class AlertRuleCreate(RequestModel):
 class AlertRuleUpdate(RequestModel):
     name: str | None = None
     match_severity: str | None = None
-    match_server_id: str | None = None
+    match_server_id: ServerId | None = None
     channel: str | None = None
     channel_config: dict | None = None
     cooldown_minutes: Annotated[IntColumn, Field(ge=0)] | None = None
@@ -244,7 +252,7 @@ class TemplateUpdate(RequestModel):
 
 
 class TemplateAssign(RequestModel):
-    server_id: str
+    server_id: ServerId
     hostname: str
     server_name: str
 
@@ -323,7 +331,7 @@ class MaintenanceInput(RequestModel):
     required fields are enforced in the model validator; aware datetimes are
     normalized to the service's naive-UTC convention."""
 
-    server_id: str | None = None
+    server_id: ServerId | None = None
     note: str | None = None
     kind: str
     starts_at: datetime | None = None
