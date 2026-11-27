@@ -1,5 +1,5 @@
 # klein-ui-desktop-7 — Task-Ledger
-Status: aktiv · Branch: feature/klein-ui-desktop-7 · Review: pro Task
+Status: bereit · Branch: feature/klein-ui-desktop-7 · Review: pro Task
 Spec: docs/features/klein-ui-desktop-7.md (Roadmap R-0439, R-0783)
 Heavy: none — reine Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -24,8 +24,10 @@ Beweis: Roadmap R-0783 (connections.ts, Code-Lesung), Dedup-Key: idee:desktop-ui
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.reload.test.ts
 Doku: → T3
 
-### T3 — Changelog  [ ]
+### T3 — Changelog  [x]
 Komponente: desktop-ui · Dateien: changelog.d/klein-ui-desktop-7.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8200aed40 2026-11-27T12:52:13+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Fragment (umlautfrei) zu beiden Korrekturen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.reload.test.ts
 Doku: changelog.d/klein-ui-desktop-7.md
