@@ -1,5 +1,5 @@
 # klein-ui-desktop-7 — Task-Ledger
-Status: bereit · Branch: feature/klein-ui-desktop-7 · Review: pro Task
+Status: erledigt · Branch: feature/klein-ui-desktop-7 · Review: pro Task
 Spec: docs/features/klein-ui-desktop-7.md (Roadmap R-0439, R-0783)
 Heavy: none — reine Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
