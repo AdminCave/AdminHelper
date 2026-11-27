@@ -495,7 +495,18 @@ impl Channel {
                     gid: Some(gid),
                     ..FileAttributes::empty()
                 };
-                let _ = target.set_metadata(owner).await;
+                if target.set_metadata(owner).await.is_err() {
+                    // Only root gives a file away, but a member may still set the group. SFTP
+                    // sends uid and gid as one field, so the group goes with our own uid.
+                    if let Ok(Some(own)) = target.metadata().await.map(|m| m.uid) {
+                        let group = FileAttributes {
+                            uid: Some(own),
+                            gid: Some(gid),
+                            ..FileAttributes::empty()
+                        };
+                        let _ = target.set_metadata(group).await;
+                    }
+                }
             }
             if mode.is_some() {
                 target.set_metadata(attrs).await.map_err(remote)?;

@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T7 — R-1708: Gruppe auch bei fremdem Eigentümer übernehmen  [ ]
+### T7 — R-1708: Gruppe auch bei fremdem Eigentümer übernehmen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f1bf1f497 2026-11-27T20:16:01+01:00
+Review: am Ende (Branch-Review)
 Änderung: Scheitert das Setzen von uid und gid der alten Datei (sie gehört einem anderen Nutzer), versucht der Upload die Gruppe allein, mit der eigenen uid der Teil-Datei; best-effort wie vorher.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: keine (desktop.html sagt schon: Gruppe, wo der Server es erlaubt)
