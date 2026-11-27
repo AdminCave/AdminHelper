@@ -45,8 +45,10 @@ Doku: → T5
 Abhängt von: T2
 Test-Löschung: apps/monitoring/tests/test_probe_when.py::test_the_siblings_result_counts_in_the_evaluation_order — die Bewertung nach ID gilt nicht mehr (gewollte Verhaltensänderung); ersetzt im selben Commit durch einen Test, dass das Ergebnis des Geschwisters aus demselben Report unabhängig von den IDs zählt
 
-### T4 — `nextcloud-aio` Version 2: Check `status` auf `status.php` (R-1825)  [ ]
+### T4 — `nextcloud-aio` Version 2: Check `status` auf `status.php` (R-1825)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/nextcloud_aio.py, apps/monitoring/tests/test_catalog_nextcloud_aio.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e29f2cc81 2026-11-27T12:22:49+01:00
+Review: approve (.ah-out/review/arch-monitoring-aio-status/T4.verdict.json)
 Änderung: Version 2, Check `status`: Sensor `http`, Ziel `{"kind": "container", "container": "nextcloud-aio-apache", "port_hint": 8000, "scheme": "http"}`, `GET /status.php` mit `Host: localhost`, Intervall 300 (wie `aio`, beide laufen im selben Agent-Zyklus), Felder und Regeln wie im Modul `nextcloud` (`status_code` ≠ 200 critical, Wartungsmodus und ausstehendes DB-Upgrade warning), `when` `{"check": "aio", "field": "backup", "op": "eq", "value": false}`. Karte um `("status", "data.versionstring", "Version")`, Docstring („Not covered“ ohne status.php, Ruhen im Backup). Tests: Modul lädt mit drei Checks, die Bindung gibt `status` den Apache-Container und lässt ihn ohne diesen Container mit Grund aus, Bewertung von `status` mit ruhendem und bewertendem Backup-Feld, Karte mit vier Einträgen; ein bestehender Instanz-Bestand bekommt den Check über `sync_catalog` still und den Fund „changed“.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_nextcloud_aio.py tests/test_catalog.py tests/test_module_sync.py tests/test_check_when.py
 Doku: → T5

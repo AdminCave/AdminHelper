@@ -20,19 +20,27 @@ backup_age_s (the age of the marker, 0 without one); no name and no path leaves 
 stopped container outside a backup is critical, a backup running for more than six hours
 warns. configuration.json of the mastercontainer carries passwords and is never read.
 
-Not covered: status.php of the apache container (stopped in every backup window; a rule
-cannot look at the field of another check), port and TLS of the web server (APACHE_PORT is
-the admin's), which container stands (the host's container list shows it), and AIO on
-Windows or under another container runtime.
+status.php is asked as in the module nextcloud, with Host: localhost, at the apache container
+nextcloud-aio-apache on its port 8000 (Containers/apache/nextcloud.conf); the check binds only
+when the host's last scan saw that container (R-1825). Every backup stops apache, so the check
+rests as a whole while the view says a backup runs (ADR 0004 §6.4): it is ok, and its message
+names the backup and the run's outcome. A backup field that is missing or out of date
+rests nothing: the check rates as any other. The push rates aio before status, so the backup
+field of the same report counts.
+
+Not covered: port and TLS of the web server (APACHE_PORT is the admin's), which container
+stands (the host's container list shows it), and AIO on Windows or under another container
+runtime.
 """
 
 MODULE = {
     "id": "nextcloud-aio",
     "name": "Nextcloud All-in-One",
-    "version": 1,
+    "version": 2,
     "description": (
-        "Nextcloud All-in-One: the mastercontainer and whether the containers it keeps "
-        "running run, without an alarm while its backup stops them."
+        "Nextcloud All-in-One: the mastercontainer, whether the containers it keeps "
+        "running run, and status.php for maintenance mode and a pending database upgrade, "
+        "without an alarm while its backup stops them."
     ),
     "detect": {
         "container_images": ["ghcr.io/nextcloud-releases/all-in-one", "nextcloud/all-in-one"]
@@ -64,8 +72,36 @@ MODULE = {
                 {"field": "backup_age_s", "op": "gt", "value": 21600, "level": "warning"},
             ],
         },
+        {
+            "key": "status",
+            "name": "Status",
+            "sensor": "http",
+            "target": {
+                "kind": "container",
+                "container": "nextcloud-aio-apache",
+                "port_hint": 8000,
+                "scheme": "http",
+            },
+            "params": {"path": "/status.php", "host": "localhost"},
+            # As aio: both run in the same cycle of the agent.
+            "interval": 300,
+            "fields": [
+                "status_code",
+                "data.installed",
+                "data.maintenance",
+                "data.needsDbUpgrade",
+                "data.versionstring",
+            ],
+            "rules": [
+                {"field": "status_code", "op": "ne", "value": 200, "level": "critical"},
+                {"field": "data.maintenance", "op": "eq", "value": True, "level": "warning"},
+                {"field": "data.needsDbUpgrade", "op": "eq", "value": True, "level": "warning"},
+            ],
+            "when": {"check": "aio", "field": "backup", "op": "eq", "value": False},
+        },
     ],
     "card": [
+        {"check_key": "status", "field": "data.versionstring", "label": "Version"},
         {"check_key": "master", "field": "state", "label": "Mastercontainer"},
         {"check_key": "aio", "field": "stopped", "label": "Stopped containers"},
         {"check_key": "aio", "field": "backup", "label": "Backup running"},
