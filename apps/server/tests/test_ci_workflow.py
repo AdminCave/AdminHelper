@@ -544,3 +544,23 @@ def test_every_download_of_the_release_retries():
     assert [
         line for line in curls if "--retry " not in line or "--connect-timeout " not in line
     ] == []
+
+
+def _comment_above(lines: list[str], step_name: str) -> str:
+    at = lines.index(f"      - name: {step_name}")
+    block = []
+    for line in reversed(lines[:at]):
+        if not line.lstrip().startswith("#"):
+            break
+        block.append(line)
+    return " ".join(reversed(block))
+
+
+def test_each_release_step_carries_its_own_comment():
+    # The Windows update set step landed between the agent repo's comment and its step, so the
+    # repo step read as uncommented and the Windows step carried both blocks (R-1678).
+    lines = _CI.with_name("release.yml").read_text(encoding="utf-8").splitlines()
+    repo = _comment_above(lines, "Build signed agent repo (apt + rpm)")
+    windows = _comment_above(lines, "Build signed Windows update set")
+    assert "The agent package repo" in repo and "Windows" not in repo
+    assert "The Windows agent updates itself" in windows and "agent package repo" not in windows

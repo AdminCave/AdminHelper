@@ -530,13 +530,6 @@ jobs:
             FRPC_BINARY="$FRP_DIR/frp_${FRP_VERSION}_freebsd_amd64/frpc" OUT_DIR=pkg-out \
             PKG_REPO_KEY="$KEYDIR/key.pem" bash apps/agent/build-pkg.sh
           echo "=== FreeBSD pkg repo ==="; find pkg-out/freebsd -type f | sort
-      # The agent package repo (GPG-signed apt + rpm, plus the FreeBSD pkg repo of the
-      # step before) as ONE asset the updater drops into the gateway's ./repo. Built
-      # BEFORE "Flatten and checksum" so it lands in SHA256SUMS (and thus the minisign
-      # signature). Mandatory: a missing REPO_GPG_PRIVATE_KEY or one whose fingerprint is
-      # not the pinned one fails the release. Generate a PASSPHRASE-LESS key once, store
-      # `gpg --export-secret-keys --armor <KEYID> | base64 -w0` as the secret, and
-      # pin the public key in the docs + client setup snippet (docs/.../cicd).
       # The Windows agent updates itself from :8445/windows/ (R-1581): the agent and the frpc it
       # pins, VERSION and a minisign-signed SHA256SUMS whose trusted comment binds the version.
       # Same key as SHA256SUMS of the release, verified against the pin in scripts/update.sh,
@@ -559,6 +552,13 @@ jobs:
             AGENT_EXE=artifacts/agent/adminhelper-agent-windows-x86_64.exe \
             FRPC_EXE=artifacts/agent/frpc-windows-x86_64.exe \
             bash apps/agent/build-windows-update.sh
+      # The agent package repo (GPG-signed apt + rpm, plus the FreeBSD pkg repo of the
+      # step before) as ONE asset the updater drops into the gateway's ./repo. Built
+      # BEFORE "Flatten and checksum" so it lands in SHA256SUMS (and thus the minisign
+      # signature). Mandatory: a missing REPO_GPG_PRIVATE_KEY or one whose fingerprint is
+      # not the pinned one fails the release. Generate a PASSPHRASE-LESS key once, store
+      # `gpg --export-secret-keys --armor <KEYID> | base64 -w0` as the secret, and
+      # pin the public key in the docs + client setup snippet (docs/.../cicd).
       - name: Build signed agent repo (apt + rpm)
         env:
           REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
