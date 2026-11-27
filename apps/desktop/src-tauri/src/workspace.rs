@@ -1323,6 +1323,7 @@ mod tests {
                 "favoriteConnections": [],
                 "openSessions": [],
                 "snippets": null,
+                "probeReachability": true,
             })
         );
         assert_eq!(names_in(&dir), [META_FILE]);

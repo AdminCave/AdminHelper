@@ -1,5 +1,5 @@
 # Desktop-Zuverlaessigkeit: Sitzung, Zertifikat, Tunnel, RDP, SFTP, Ping, Feed — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-desktop-6 · Review: pro Task
 Spec: docs/features/kern-desktop-6.md (Roadmap R-1709, R-1689, R-1691, R-1707, R-1708, R-1710, R-1711)
 Heavy: linux-full — Desktop-Journeys (Login, Tunnel, Verbindungen) und Web-Client-Auth; kein Stack-, PKI-Server- oder Install-Pfad geaendert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -124,8 +124,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html
 Task-Review: am Ende
 
-### T14 — PR-CI: Meta-Test erwartet probeReachability (R-1710)  [ ]
+### T14 — PR-CI: Meta-Test erwartet probeReachability (R-1710)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @3633055d3 2026-11-27T11:03:13+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T14.verdict.json)
 Beweis: PR #694 CI „Desktop-Backend (fmt + clippy + test)“: workspace::tests::the_meta_round_trips_under_its_wire_names FAILED, die geschriebene Meta traegt "probeReachability": true, die erwartete Wire-Form nicht (T9 verifizierte nur storage::).
 Änderung: Die erwartete Wire-Form im Test nennt `probeReachability`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace::
