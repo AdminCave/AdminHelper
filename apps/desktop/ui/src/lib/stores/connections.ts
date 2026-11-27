@@ -83,7 +83,9 @@ export async function reloadForMode(
 ): Promise<void> {
   if (!settings) return load();
   const gen = ++loadGen;
-  _state.update((s) => ({ ...s, loading: true, error: null }));
+  // The error stays until the fetch succeeds: clearing it here made the banner blink off
+  // (and be announced again) at every poll of a failing sync.
+  _state.update((s) => ({ ...s, loading: true }));
   let source = 'file';
   try {
     let items: Connection[];

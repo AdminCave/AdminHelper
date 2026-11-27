@@ -15,8 +15,10 @@ Semantik: keine Stelle in docs/ — Tastaturbedienung der Prüfzeilen ist nicht 
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/MonCheckLine.test.ts
 Doku: keine (kein dokumentiertes Verhalten)
 
-### T2 — connections: Fehler-Banner bleibt während des Abrufs stehen (R-0783)  [ ]
+### T2 — connections: Fehler-Banner bleibt während des Abrufs stehen (R-0783)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connections.ts, apps/desktop/ui/src/lib/stores/connections.reload.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @16b889a21 2026-11-27T12:50:03+01:00
+Review: approve (.ah-out/review/klein-ui-desktop-7/T2.verdict.json)
 Änderung: `reloadForMode` setzt zu Beginn nur `loading: true` und löscht `error` erst im Erfolgsfall (dort schon `error: null`). Test: nach einem Fehlschlag bleibt `error` während des laufenden zweiten Abrufs gesetzt und verschwindet erst bei Erfolg. Rot zuerst.
 Beweis: Roadmap R-0783 (connections.ts, Code-Lesung), Dedup-Key: idee:desktop-ui:connections.ts:error-flicker
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connections.reload.test.ts
