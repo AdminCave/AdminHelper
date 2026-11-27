@@ -589,6 +589,10 @@ class MonitorMaintenance(Base):
         }
 
 
+# Object kinds whose name is no stable key of the object (ADR 0004 §4, §10).
+UNSTABLE_OBJECT_KINDS = ("disk", "container")
+
+
 class MonitorException(Base):
     """An exception in the sense of ADR 0004 §7 (R-1636), not a Python one: where it
     applies (scope), what it does (effect), for how long (duration), why, and who
@@ -596,13 +600,27 @@ class MonitorException(Base):
 
     scope_kind check: check_id, and server_id holds the check's server for listing and
     cleanup; check_type: every check of that type on every server; server: server_id;
-    all: every check. duration_kind permanent, or once and weekly with the fields and
-    rules of MonitorMaintenance. An ended row (ended_at set) no longer applies and is
-    kept for EXCEPTION_ENDED_RETENTION_DAYS. origin: api, maintenance (the /maintenance
-    facade) or migration (taken over from monitor_maintenance). The API checks which
-    columns belong to which scope; the database does not."""
+    all: every check; object (R-1637): the objects of check_id whose kind is object_kind
+    and whose name matches object_pattern (fnmatch, case-sensitive). effect no_notify;
+    skip (scope check, permanent): the check does not run; no_rating (scope object,
+    permanent): the object is collected, not rated. duration_kind permanent, or once
+    and weekly with the fields and rules of MonitorMaintenance. An ended row (ended_at
+    set) no longer applies and is kept for EXCEPTION_ENDED_RETENTION_DAYS. origin: api,
+    maintenance (the /maintenance facade) or migration (taken over from
+    monitor_maintenance). The API checks which columns belong to which scope; the
+    database does not."""
 
     __tablename__ = "monitor_exceptions"
+    # The engine loads the object exceptions in force of a check with every run.
+    __table_args__ = (
+        Index(
+            "ix_monitor_exceptions_object",
+            "check_id",
+            "object_kind",
+            "object_pattern",
+            postgresql_where=text("ended_at IS NULL"),
+        ),
+    )
 
     id = Column(String, primary_key=True)
     scope_kind = Column(String, nullable=False)
@@ -611,6 +629,8 @@ class MonitorException(Base):
         String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), nullable=True, index=True
     )
     check_type = Column(String, nullable=True)
+    object_kind = Column(String(20), nullable=True)
+    object_pattern = Column(String(255), nullable=True)
     effect = Column(String, nullable=False)
     duration_kind = Column(String, nullable=False)
     starts_at = Column(DateTime, nullable=True)
@@ -634,9 +654,11 @@ class MonitorException(Base):
 
     @property
     def scope_value(self) -> str | None:
-        """The one value the scope names: the check, the check type or the server."""
+        """The one value the scope names: the check (also of an object), the check type or
+        the server."""
         return {
             "check": self.check_id,
+            "object": self.check_id,
             "check_type": self.check_type,
             "server": self.server_id,
         }.get(self.scope_kind)
@@ -647,6 +669,11 @@ class MonitorException(Base):
             "scopeKind": self.scope_kind,
             "scopeValue": self.scope_value,
             "serverId": self.server_id,
+            "objectKind": self.object_kind,
+            "objectPattern": self.object_pattern,
+            # Keyed by device path or container name (ADR 0004 §4): a pattern on such a
+            # name can name another object after a reboot or a re-create.
+            "unstable": self.object_kind in UNSTABLE_OBJECT_KINDS,
             "effect": self.effect,
             "durationKind": self.duration_kind,
             "startsAt": iso_utc(self.starts_at),

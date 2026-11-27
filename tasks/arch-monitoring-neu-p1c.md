@@ -38,8 +38,10 @@ HEAD: 9704ac3f3
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py tests/test_object_state.py
 Doku: → T14
 
-### T2 — Ausnahme-Modell: Geltung Objekt, Wirkungen skip und no_rating, „läuft“ (R-1637)  [ ]
+### T2 — Ausnahme-Modell: Geltung Objekt, Wirkungen skip und no_rating, „läuft“ (R-1637)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/alembic/versions/c8e0a2b4d6f8_object_exceptions.py, apps/monitoring/app/exception_scope.py, apps/monitoring/tests/test_exception_scope.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/tests/test_alembic_builtin.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f2e591337 2026-11-27T12:18:33+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T2.verdict.json)
 Änderung:
 - **Modell** (`MonitorException`, `models.py:592`): Spalten `object_kind` (String(20)) und `object_pattern` (String(255)). `to_dict` ergänzt `objectKind`, `objectPattern` und `unstable` (wahr bei `disk` und `container`).
 - **Revision** `c8e0a2b4d6f8` (SPDX, nach `b6d8f0a2c4e6`): Spalten und ein Teilindex `(check_id, object_kind, object_pattern) WHERE ended_at IS NULL`. Der Downgrade schreibt zurück und entfernt danach Index, Zeilen (`scope_kind = 'object'` oder `effect = 'skip'`) und Spalten:
@@ -271,3 +273,7 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27: Ein per Ausnahme ausgenommenes Objekt bleibt `not_collected` mit Marke, wie in P1b; Kennzahlen für ausgenommene Objekte erst, wenn P2 sie zeigt.
 - Session 2026-11-27: „Läuft“ als Ausdruck über Spalte und Ausnahme, keine gespiegelte Spalte. Die Systemschreiber bleiben auf der Spalte, der Nutzer schreibt nur Ausnahmen.
 - Session 2026-11-27: Die Datenmigration ist ein Startschritt mit Einmal-Marke, keine SQL-Revision. Sie braucht die aufgelöste Vorlage (`resolve_template_check`); die Revision bleibt rein strukturell plus Rückschreiben im Downgrade.
+- Session 2026-11-27 T2: Das Downgrade setzt an Vorlagen- und Modul-Checks die Marke `config`, wenn es ihre Liste verlängert, und `enabled`, wenn es sie abschaltet (wie `mark_overrides`); sonst schriebe der nächste Vorlagen-Sync die zurückgeschriebenen Einträge über. Eigene Checks tragen keine Marken.
+- Session 2026-11-27 T2: Das Downgrade löscht die Marke `migration:exceptions-p1c` aus `monitor_seed_state`, damit ein späteres Upgrade die Listen erneut übernimmt. Ein Muster auf einer exakten Liste (kein maskierter Name) geht wörtlich zurück, damit der Admin es sieht; nur Gast-IDs aus Ziffern werden wieder Zahlen.
+- Session 2026-11-27 T2: Der bestehende Migrationstest von R-1636 fragt das ORM erst nach `upgrade head` ab: das Modell ist das des Kopfs, auf `f4b6d8a0c2e4` fehlen die neuen Spalten. Der Rohzeilen-Vergleich auf `f4b6d8a0c2e4` bleibt.
+- Session 2026-11-27 T2: Die Migrationstests laufen lokal nur mit Postgres in `DATABASE_URL` (Verify überspringt sie); gegen die Test-DB des Worktrees `test_migrations_smoke.py`, `test_alembic_builtin.py`, `test_exception_scope.py`, `test_models_timestamps.py`: 91 passed, die PR-CI fährt sie mit Postgres.

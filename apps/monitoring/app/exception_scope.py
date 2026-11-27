@@ -4,22 +4,87 @@
 
 """When an exception applies and which one wins (ADR 0004 §7, R-1636).
 
-Pure logic on MonitorException rows, like app.maintenance; load_no_notify is the one
-query the readers share. The time logic of once and weekly is app.maintenance's, so a
-window taken over from monitor_maintenance runs exactly when it ran before."""
+Pure logic on MonitorException rows, like app.maintenance, and the queries the readers
+share. The time logic of once and weekly is app.maintenance's, so a window taken over
+from monitor_maintenance runs exactly when it ran before.
+
+A check runs when its column is on and no skip is in force (R-1637): the column stays
+the switch of the system (module and template sync), the skip is the admin's."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
+from fnmatch import fnmatchcase
+from typing import NamedTuple
 
+from sqlalchemy import and_, exists
 from sqlalchemy.orm import Session
 
 from app.maintenance import duration_active
-from app.models import MonitorException
+from app.models import MonitorCheck, MonitorException
 
-# Narrowest first (ADR 0004 §7: check > check type > server); all is the global window.
-SCOPE_RANK = {"check": 0, "check_type": 1, "server": 2, "all": 3}
+# Narrowest first (ADR 0004 §7: object > check > check type > server); all is the global
+# window.
+SCOPE_RANK = {"object": 0, "check": 1, "check_type": 2, "server": 3, "all": 4}
+
+
+class ObjectKind(NamedTuple):
+    check_type: str
+    list_key: str
+
+
+# The kinds an object exception names: the check type whose objects they are and the
+# config list the exceptions took over (ADR 0004 §10). exclude_vmids holds numbers.
+OBJECT_KINDS = {
+    "mount": ObjectKind("agent_resources", "ignore_mounts"),
+    "disk": ObjectKind("smart_health", "ignore_devices"),
+    "container": ObjectKind("docker_health", "ignore_containers"),
+    "guest-backup": ObjectKind("proxmox_backup", "exclude_vmids"),
+    "service": ObjectKind("service_process", "ignore"),
+}
+
+# The rows that apply for as long as they stand: skip and no_rating are permanent only
+# (the API refuses another duration), so a timed row of them applies never.
+_STANDING = (
+    MonitorException.duration_kind == "permanent",
+    MonitorException.enabled.is_(True),
+    MonitorException.ended_at.is_(None),
+)
+_SKIP = (MonitorException.scope_kind == "check", MonitorException.effect == "skip", *_STANDING)
+
+# The SQL filter of the checks that run; check_runs answers the same for one loaded row.
+runs = and_(
+    MonitorCheck.enabled.is_(True),
+    ~exists().where(MonitorException.check_id == MonitorCheck.id, *_SKIP),
+)
+
+# Each character fnmatch reads as a wildcard, in the bracket that matches it alone.
+_MASKED = {"[[]": "[", "[*]": "*", "[?]": "?"}
+
+
+def mask(name: str) -> str:
+    """The fnmatch pattern that matches ``name`` and nothing else."""
+    return "".join(f"[{c}]" if c in "[*?" else c for c in name)
+
+
+def unmask(pattern: str) -> str | None:
+    """The one name a pattern of ``mask`` matches; None for a pattern with a wildcard."""
+    name = []
+    i = 0
+    while i < len(pattern):
+        if pattern[i] == "[":
+            char = _MASKED.get(pattern[i : i + 3])
+            if char is None:
+                return None
+            name.append(char)
+            i += 3
+        elif pattern[i] in "*?":
+            return None
+        else:
+            name.append(pattern[i])
+            i += 1
+    return "".join(name)
 
 
 def in_force(exc: MonitorException, now_utc: datetime) -> bool:
@@ -32,9 +97,23 @@ def in_force(exc: MonitorException, now_utc: datetime) -> bool:
 
 
 def covers(
-    exc: MonitorException, check_id: str | None, check_type: str | None, server_id: str | None
+    exc: MonitorException,
+    check_id: str | None,
+    check_type: str | None,
+    server_id: str | None,
+    obj: tuple[str, str] | None = None,
 ) -> bool:
-    """True when the scope of the exception takes in this check."""
+    """True when the scope of the exception takes in this check, or with ``obj`` (kind,
+    name) this object of it. An object exception takes in no whole check."""
+    if exc.scope_kind == "object":
+        return (
+            obj is not None
+            and exc.check_id is not None
+            and exc.check_id == check_id
+            and exc.object_kind == obj[0]
+            and exc.object_pattern is not None
+            and fnmatchcase(obj[1], exc.object_pattern)
+        )
     if exc.scope_kind == "check":
         return exc.check_id is not None and exc.check_id == check_id
     if exc.scope_kind == "check_type":
@@ -62,8 +141,10 @@ def narrowest(
     check_type: str | None,
     server_id: str | None,
     now_utc: datetime,
+    obj: tuple[str, str] | None = None,
 ) -> MonitorException | None:
-    """The narrowest exception in force that covers the check, or None.
+    """The narrowest exception in force that covers the check, or with ``obj`` (kind,
+    name) this object of it, or None.
 
     On the same scope a maintenance window wins over another exception, so the muted
     reason of a server in its window stays "maintenance window"; the id settles the
@@ -72,7 +153,7 @@ def narrowest(
         e
         for e in exceptions
         if e.scope_kind in SCOPE_RANK
-        and covers(e, check_id, check_type, server_id)
+        and covers(e, check_id, check_type, server_id, obj)
         and in_force(e, now_utc)
     ]
     if not applying:
@@ -93,5 +174,36 @@ def load_no_notify(db: Session) -> list[MonitorException]:
             MonitorException.enabled.is_(True),
             MonitorException.ended_at.is_(None),
         )
+        .all()
+    )
+
+
+def check_runs(db: Session, check: MonitorCheck) -> bool:
+    """``runs`` for one loaded check: its column on and no skip in force."""
+    if check.enabled is not True:
+        return False
+    return not db.query(exists().where(MonitorException.check_id == check.id, *_SKIP)).scalar()
+
+
+def load_skips(db: Session) -> dict[str, MonitorException]:
+    """The skip in force of each check that has one, by check id, for readers of many
+    checks. Of two on one check (the API refuses a second) the lower id answers."""
+    skips: dict[str, MonitorException] = {}
+    for row in db.query(MonitorException).filter(*_SKIP).order_by(MonitorException.id):
+        skips.setdefault(row.check_id, row)
+    return skips
+
+
+def load_no_rating(db: Session, check_id: str) -> list[MonitorException]:
+    """The no_rating exceptions in force on the objects of a check, by id."""
+    return (
+        db.query(MonitorException)
+        .filter(
+            MonitorException.check_id == check_id,
+            MonitorException.scope_kind == "object",
+            MonitorException.effect == "no_rating",
+            *_STANDING,
+        )
+        .order_by(MonitorException.id)
         .all()
     )

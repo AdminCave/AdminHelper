@@ -9,6 +9,7 @@ Postgres is available via DATABASE_URL (CI provides a service container; local
 runs skip). It builds a fresh database via `alembic upgrade head` and asserts
 the result matches the models exactly."""
 
+import json
 import os
 import uuid
 from contextlib import contextmanager
@@ -617,6 +618,8 @@ def test_exceptions_take_over_the_maintenance_windows(monkeypatch):
             )
             for row in old_rows
         ]
+        # The model is the head's: later revisions add columns it selects (R-1637).
+        command.upgrade(cfg, "head")
         db = sessionmaker(bind=engine)()
         new = {e.id: e for e in db.query(MonitorException).all()}
         # The facade answers as the old router did; enabled NULL is false now.
@@ -752,3 +755,117 @@ def test_the_rule_layer_upgrades_empty_and_downgrades(monkeypatch):
             assert conn.execute(text("SELECT id, config FROM monitor_checks")).all() == [
                 ("c1", '{"rules": []}')
             ]
+
+
+def test_object_exceptions_upgrade_and_downgrade_writes_back(monkeypatch):
+    # arch-monitoring-neu-p1c T2 (R-1637): the upgrade adds the object columns and their
+    # index only. The downgrade puts what stands back where the code before reads it: a
+    # skip turns the column off, a no_rating its name into the check's list, with the
+    # marks of a template check; then it drops the rows that code does not know.
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    def checks(conn):
+        rows = conn.execute(
+            text("SELECT id, config, overridden_fields, enabled FROM monitor_checks ORDER BY id")
+        ).all()
+        return {
+            r.id: (json.loads(r.config), json.loads(r.overridden_fields), r.enabled) for r in rows
+        }
+
+    with scratch_db(monkeypatch, "objexc") as (cfg, engine):
+        command.upgrade(cfg, "c8e0a2b4d6f8")
+        columns = {c["name"]: c for c in inspect(engine).get_columns("monitor_exceptions")}
+        assert columns["object_kind"]["nullable"] and columns["object_pattern"]["nullable"]
+        assert "ix_monitor_exceptions_object" in {
+            i["name"] for i in inspect(engine).get_indexes("monitor_exceptions")
+        }
+        with engine.begin() as conn:
+            for id, check_type, config, template in (
+                ("disks", "smart_health", {"ignore_devices": ["/dev/sdz"]}, "tpl"),
+                ("units", "service_process", {"ignore": "a.service, b.service"}, None),
+                ("guests", "proxmox_backup", {}, None),
+                ("tpl-off", "ping", {}, "tpl"),
+                ("own-off", "ping", {}, None),
+                ("was-off", "ping", {}, None),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks (id, name, check_type, config, interval,"
+                        " severity, enabled, template_id, template_def_id)"
+                        " VALUES (:id, :id, :type, :config, '5m', 'critical', true, :tpl, :tpl)"
+                    ),
+                    {"id": id, "type": check_type, "config": json.dumps(config), "tpl": template},
+                )
+            for id, scope, check_id, effect, kind, pattern, ended in (
+                (
+                    "e1",
+                    "object",
+                    "disks",
+                    "no_rating",
+                    "disk",
+                    "/dev/bus/0 [[]megaraid_disk_00]",
+                    False,
+                ),
+                ("e2", "object", "disks", "no_rating", "disk", "/dev/sdz", False),
+                ("e3", "object", "units", "no_rating", "service", "nginx*", False),
+                ("e4", "object", "guests", "no_rating", "guest-backup", "101", False),
+                ("e5", "object", "guests", "no_rating", "guest-backup", "102", True),
+                ("e6", "check", "tpl-off", "skip", None, None, False),
+                ("e7", "check", "own-off", "skip", None, None, False),
+                ("e8", "check", "was-off", "skip", None, None, True),
+                ("e9", "check", "disks", "no_notify", None, None, False),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_exceptions (id, scope_kind, check_id, effect,"
+                        " duration_kind, origin, object_kind, object_pattern, ended_at)"
+                        " VALUES (:id, :scope, :check_id, :effect, 'permanent', 'api', :kind,"
+                        " :pattern, CASE WHEN :ended THEN timezone('UTC', now()) END)"
+                    ),
+                    {
+                        "id": id,
+                        "scope": scope,
+                        "check_id": check_id,
+                        "effect": effect,
+                        "kind": kind,
+                        "pattern": pattern,
+                        "ended": ended,
+                    },
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_seed_state (slug)"
+                    " VALUES ('migration:exceptions-p1c'), ('linux-base')"
+                )
+            )
+
+        command.downgrade(cfg, "b6d8f0a2c4e6")
+        with engine.connect() as conn:
+            assert checks(conn) == {
+                "disks": (
+                    {"ignore_devices": ["/dev/sdz", "/dev/bus/0 [megaraid_disk_00]"]},
+                    ["config"],
+                    True,
+                ),
+                "units": ({"ignore": ["a.service", "b.service", "nginx*"]}, [], True),
+                "guests": ({"exclude_vmids": [101]}, [], True),
+                "tpl-off": ({}, ["enabled"], False),
+                "own-off": ({}, [], False),
+                "was-off": ({}, [], True),
+            }
+            assert conn.execute(text("SELECT id FROM monitor_exceptions")).scalars().all() == ["e9"]
+            assert conn.execute(text("SELECT slug FROM monitor_seed_state")).scalars().all() == [
+                "linux-base"
+            ]
+        assert {"object_kind", "object_pattern"}.isdisjoint(
+            c["name"] for c in inspect(engine).get_columns("monitor_exceptions")
+        )
+        assert "ix_monitor_exceptions_object" not in {
+            i["name"] for i in inspect(engine).get_indexes("monitor_exceptions")
+        }
+
+        command.upgrade(cfg, "head")
+        assert {"object_kind", "object_pattern"} <= {
+            c["name"] for c in inspect(engine).get_columns("monitor_exceptions")
+        }
