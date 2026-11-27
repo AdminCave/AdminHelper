@@ -75,7 +75,7 @@ Review: approve (.ah-out/review/kern-desktop-6/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- connection::rdp::
 Doku: keine (Fehlerverhalten ohne dokumentierte Beschreibung; CHANGELOG in T12)
 
-### T8 — SFTP-Upload ueber eine Teil-Datei (R-1708)  [ ]
+### T8 — SFTP-Upload ueber eine Teil-Datei (R-1708)  [~] (verschoben in kern-desktop-7: Pruefrunde 3 mit neuem wichtig-Fund am Oeffnen der Teil-Datei, keine weitere Runde)
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
 Änderung: Upload nach `.<name>.ah-part` im Zielordner, danach Umbenennen (Ueberschreiben: `posix-rename@openssh.com`, wenn russh-sftp es anbietet, sonst Ziel entfernen und umbenennen), bei jedem Fehler die Teil-Datei entfernen. Tests gegen OpenSSH-sftp-server: abgebrochener Upload laesst die alte Datei unveraendert und keine Teil-Datei; Ueberschreiben nur auf Wunsch bleibt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
