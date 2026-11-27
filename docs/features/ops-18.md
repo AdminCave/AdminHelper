@@ -11,9 +11,8 @@ merged selbst („du darfst alles mergen“), obwohl der Zug `scripts/install.sh
 ## Problem je Zeile
 
 - **R-1782** `scripts/update.sh`: Laufzeit-Snapshot und Rollback robuster machen. Ziel: Der Snapshot
-  entsteht in einem Verzeichnis, das nur dieser Lauf anlegt, und erhält dann seinen Namen, so wie es `backup.sh`
-  schon macht. Vor dem Auspacken prüft der Rollback, ob der Snapshot noch der ist, den dieser Lauf geschrieben hat.
-  Einzelheiten stehen nur in `tasks/private/`.
+  entsteht in einem privaten Temp-Ordner dieses Laufs, und der Rollback spielt nur ihn zurück; die Kopie in
+  `backups/` dient der Aufbewahrung (Entscheidung T1 im Ledger). Einzelheiten stehen nur in `tasks/private/`.
 - **R-1786** `scripts/restore.sh`: Restore prüft die Herkunft des Archivs. Ziel (Kevin 2026-11-27): Abgelehnt wird ein Archiv,
   - das weder dem Aufrufer noch root gehört,
   - das für Gruppe oder andere beschreibbar ist,

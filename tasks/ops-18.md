@@ -67,3 +67,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Seiten
 Task-Review: am Ende
+
+### T7 — Doku: ah_backup in README und Entwickler-Doku (Abschlussprüfung)  [x]
+Komponente: scripts · Dateien: README.md, docs/developer/index.html, docs/en/developer/index.html, docs/features/ops-18.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @42c46dcdb 2026-11-27T14:40:55+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: README: init-secrets füllt fünf Rollen-Passwörter samt `BACKUP_DB_PASSWORD`, Rollenliste mit `ah_backup`; Abschnitt „Datenbank-Rollen“ DE+EN nennt `ah_backup` (nur lesend, CONNECT auf beide DBs, Default-Privilegien, pg-backup dumpt als sie); Spec R-1782 auf Entscheidung T1.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: diese Task
+Task-Review: am Ende
