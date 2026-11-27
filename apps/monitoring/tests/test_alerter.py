@@ -47,6 +47,7 @@ from ._helpers import (
     make_msg,
     make_rule,
     no_env_proxy,
+    standing_skip,
 )
 
 _NOW = datetime(2026, 10, 20, 12, 0)
@@ -1102,6 +1103,25 @@ class TestHostPingRankOrder:
         assert alerter.muted_reason(db, host_ping, _NOW) is None
         assert alerter.muted_reason(db, heartbeat, _NOW) is None
         assert alerter.muted_reason(db, resources, _NOW) == "host down"
+
+    def test_a_skipped_signal_mutes_nothing(self, db):
+        # A skipped check keeps its last status: its critical says nothing about the host now.
+        _, heartbeat, resources = self._server(db, host_ping="critical", heartbeat="critical")
+        db.add(standing_skip("hp"))
+        db.commit()
+
+        assert alerter.muted_reason(db, heartbeat, _NOW) is None
+        assert alerter.muted_reason(db, resources, _NOW) == "host down"
+        assert alerter.muted_reasons(db, [heartbeat, resources], _NOW) == {
+            "hb": None,
+            "res": "host down",
+        }
+
+        db.add(standing_skip("hb"))
+        db.commit()
+
+        assert alerter.muted_reason(db, resources, _NOW) is None
+        assert alerter.muted_reasons(db, [resources], _NOW) == {"res": None}
 
     def test_both_critical_only_the_host_ping_reports(self, db, monkeypatch):
         checks = self._server(db, host_ping="critical", heartbeat="critical")

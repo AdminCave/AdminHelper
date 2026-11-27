@@ -543,6 +543,7 @@ def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, mo
     import app.core.database as database_mod
     from app import alerter
     from app.bell_catch_up import catch_up_bell, lag_target
+    from app.exception_scope import check_runs
     from app.models import MonitorState
 
     posts = []
@@ -566,7 +567,7 @@ def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, mo
     adopt(db, finding.id, catalog=V1, now=NOW)
 
     assert not web.enabled
-    assert lag_target(web, db.get(MonitorState, web.id)) == "ok"
+    assert lag_target(web, db.get(MonitorState, web.id), check_runs(db, web)) == "ok"
     catch_up_bell()
     assert posts == ["ok"]
 
@@ -719,10 +720,19 @@ def test_a_dropped_check_stays_and_reopens(db, actions):
     assert broker.id not in result.enabled
 
 
-def test_a_dropped_check_the_admin_switched_off_does_not_reopen(db, actions):
-    finding = _adopted(db, actions)
-    _checks(db, finding)["broker"].enabled = False
+def _switch_off(db, check, off):
+    """Take the check out: by its column or by a skip in force."""
+    if off == "skipped":
+        db.add(standing_skip(check.id))
+    else:
+        check.enabled = False
     db.commit()
+
+
+@pytest.mark.parametrize("off", ["switched off", "skipped"])
+def test_a_dropped_check_the_admin_switched_off_does_not_reopen(db, actions, off):
+    finding = _adopted(db, actions)
+    _switch_off(db, _checks(db, finding)["broker"], off)
 
     assert sync_catalog(db, catalog=WITHOUT_BROKER) == 0
     assert (finding.status, finding.catalog_version) == ("adopted", WITHOUT_BROKER.version)
@@ -1250,11 +1260,10 @@ def test_an_admin_edit_is_no_catalog_update(db, actions):
     assert (finding.status, finding.kind) == ("adopted", "new")
 
 
-def test_a_changed_definition_of_a_switched_off_check_does_not_reopen(db, actions):
+@pytest.mark.parametrize("off", ["switched off", "skipped"])
+def test_a_changed_definition_of_a_switched_off_check_does_not_reopen(db, actions, off):
     finding = _adopted(db, actions)
-    web = _checks(db, finding)["web"]
-    web.enabled = False
-    db.commit()
+    _switch_off(db, _checks(db, finding)["web"], off)
 
     assert sync_catalog(db, catalog=WEB_CHANGED) == 0
     assert (finding.status, finding.catalog_version) == ("adopted", WEB_CHANGED.version)

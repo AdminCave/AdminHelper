@@ -79,8 +79,10 @@ Die Schreiber in `module_sync.py` und `template_sync.py` bleiben auf der Spalte.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_scheduler.py tests/test_check_engine.py tests/test_check_engine_context.py tests/test_agent_report.py tests/test_health.py tests/test_template_sync.py tests/test_checks_crud.py tests/test_status_info.py tests/test_module_sync.py
 Doku: → T14
 
-### T4 — „Läuft“ im Melde-Pfad: Alerter, Bündel, Glocke, Verlauf, Discovery, Modulplan (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/app/alert_bundle.py, apps/monitoring/app/bell_catch_up.py, apps/monitoring/app/history.py, apps/monitoring/app/discovery.py, apps/monitoring/app/module_plan.py, apps/monitoring/tests/test_alerter.py, apps/monitoring/tests/test_alert_bundle.py, apps/monitoring/tests/test_bell_catch_up.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_module_sync.py
+### T4 — „Läuft“ im Melde-Pfad: Alerter, Bündel, Glocke, Verlauf, Discovery, Modulplan (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/app/alert_bundle.py, apps/monitoring/app/bell_catch_up.py, apps/monitoring/app/history.py, apps/monitoring/app/discovery.py, apps/monitoring/app/module_plan.py, apps/monitoring/tests/test_alerter.py, apps/monitoring/tests/test_alert_bundle.py, apps/monitoring/tests/test_bell_catch_up.py, apps/monitoring/tests/test_status_history.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_agent_plan.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @46eb0b053 2026-11-27T12:42:25+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T4.verdict.json)
 Abhängt von: T2
 Änderung: Auf „läuft“ wechseln:
 - `alerter.py:445`, `:476`;
@@ -90,7 +92,7 @@ Abhängt von: T2
 - `module_plan.py:66`.
 
 `discovery.py:682` wählt die Spalte aus: Meint der Abgleich den Systemwert, bleibt sie, mit Kommentar; die Entscheidung kommt nach `## Entscheidungen`. Tests: je Leser ein Fall mit geltender `skip`-Zeile. 12 Dateien, weil der Melde-Pfad dieselbe Invariante teilt.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py tests/test_alert_bundle.py tests/test_bell_catch_up.py tests/test_status_history.py tests/test_discovery_match.py tests/test_module_sync.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py tests/test_alert_bundle.py tests/test_bell_catch_up.py tests/test_status_history.py tests/test_discovery_match.py tests/test_module_sync.py tests/test_agent_plan.py
 Doku: → T14
 
 ### T5 — Abschalten als Ausnahme: toggle und PUT enabled (R-1637)  [ ]
@@ -282,3 +284,5 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27 T3: Die Planer-Aktion beim Übernehmen in `module_sync.py` (`_adopt`, nach `row.silent = False`) ist ein Leser und fragt „läuft“; das Verify nimmt dafür `test_module_sync.py` auf, dazu `test_check_engine_context.py`, `test_health.py` und `test_status_info.py`, wo die Fälle von Partner, Plattenregeln, Planer-Verzug und Summary schon stehen.
 - Session 2026-11-27 T3: Einordnung der übrigen `.enabled`-Treffer. `sync_catalog` (`dropped`/`changed`) fragt „beobachtet“ wie `discovery.py:682` und geht nach T4. Schreiber, die auf der Spalte bleiben: `module_sync.py` „gone“ und Tag-Wechsel (ihr `remove` ist für einen übersprungenen Check folgenlos), die Anlage neuer Zeilen, `routers/checks.py` Anlage, Update und Toggle (T5). `to_dict` geht nach T5. `alerter`, `alert_bundle`, `template_sync` (Regeln), `routers/findings.py` (`AdoptResult`) und die Wartungs-, Ausnahme- und Regel-Router meinen andere Tabellen.
 - Session 2026-11-27 T3 → T5: Der Planer-Verzug in `main.py` zählt ab `updated_at`; endet ein Skip, setzt T5 `updated_at` des Checks neu, sonst zählt der Verzug ab dem letzten Lauf vor dem Skip.
+- Session 2026-11-27 T4: `discovery._update_findings` (`watched`) und `sync_catalog` (`dropped`/`changed`) fragen „läuft“ (Spalte an, kein Skip aus `load_skips`). Bisher schrieb das Abschalten des Admins die Spalte, ab T5 einen Skip: Eine Instanz, deren Checks der Admin abgeschaltet hat, beobachtet weiter nichts, und ein abgeschalteter Check öffnet sie beim Katalog-Update nicht wieder. Das Abschalten beim Übernehmen von „gone“ schreibt weiter die Spalte.
+- Session 2026-11-27 T4: `lag_target` bekommt `running` vom Aufrufer (`check_runs` in `_catch_up_one`) und bleibt ohne Datenbank. Die Entwarnung eines übersprungenen Checks heißt weiter „check disabled“, weil das Abschalten ab T5 ein Skip ist. Das Verify nimmt `test_agent_plan.py` auf, wo der Fall von `module_plan._probes` steht.

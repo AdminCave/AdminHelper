@@ -8,8 +8,8 @@ Catch-up of the bell (docs/features/kern-monitoring-47.md, R-1572).
 process_alert commits the claim before the hub POST (at most once); a POST the hub
 does not accept hands back only the bell's slot, and the next evaluation of the
 check finds nothing new to report. catch_up_bell, the job system:bell-catch-up,
-sends what the bell lags behind: for an enabled check the status last reported,
-for a disabled one the all-clear of the problem the bell still shows. At most
+sends what the bell lags behind: for a running check the status last reported,
+for one switched off or skipped the all-clear of the problem the bell still shows. At most
 CATCH_UP_MAX checks per run, oldest first; the outbox (R-1561) replaces it later.
 """
 
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app import alerter
 from app.core import database
 from app.core.time import utcnow_naive
+from app.exception_scope import check_runs
 from app.models import MonitorCheck, MonitorState
 
 logger = logging.getLogger(__name__)
@@ -79,13 +80,14 @@ def send_all_clears(clears: list[AllClear]) -> None:
             )
 
 
-def lag_target(check: MonitorCheck, state: MonitorState) -> str | None:
+def lag_target(check: MonitorCheck, state: MonitorState, running: bool) -> str | None:
     """The status the bell still has to get of the check, None when it shows what
-    it should. An enabled check: the status last reported, when the normal dispatch
-    has nothing open (``status`` reports as ``notified_status``), the bell would
-    show it and shows a problem where none was reported or none where one was, or
-    critical where warning was. A disabled one: ok while the bell shows a problem."""
-    if not check.enabled:
+    it should. A running check (``running``: check_runs): the status last reported,
+    when the normal dispatch has nothing open (``status`` reports as
+    ``notified_status``), the bell would show it and shows a problem where none was
+    reported or none where one was, or critical where warning was. One switched off
+    or skipped: ok while the bell shows a problem."""
+    if not running:
         return "ok" if state.hub_status in _PROBLEMS else None
     notified = state.notified_status
     if notified not in ("ok", *_PROBLEMS) or alerter.alert_status(state.status) != notified:
@@ -132,7 +134,8 @@ def _catch_up_one(db: Session, check_id: str) -> bool:
     if state is None or check is None:
         db.rollback()
         return False
-    target = lag_target(check, state)
+    running = check_runs(db, check)
+    target = lag_target(check, state, running)
     now = utcnow_naive()
     if target is None or alerter.muted_reason(db, check, now) is not None:
         db.rollback()
@@ -140,7 +143,7 @@ def _catch_up_one(db: Session, check_id: str) -> bool:
 
     old = alerter.alert_status(alerter.reported_status(state.hub_status))
     severity = alerter.bell_severity(state.hub_status, old, target, check.severity)
-    if not check.enabled:
+    if not running:
         msg = closed_message(check, "disabled")
     else:
         msg = alerter.build_message(db, check, old, target)

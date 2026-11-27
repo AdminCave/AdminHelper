@@ -30,7 +30,7 @@ from app.catalog.model import Alternative, Check, Module, Rule, rule_problems
 from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
 from app.core.time import iso_utc, utcnow_naive
 from app.discovery import MAX_CONTAINER_PORTS, image_matches, image_repo, image_tag
-from app.exception_scope import check_runs
+from app.exception_scope import check_runs, load_skips
 from app.models import (
     MonitorCheck,
     MonitorDiscovery,
@@ -850,6 +850,11 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         )
         .all()
     )
+    skips = load_skips(db)
+
+    def running(row: MonitorCheck) -> bool:
+        return row.enabled is True and row.id not in skips
+
     for finding in findings:
         module = catalog.modules.get(finding.module_id)
         if module is None:
@@ -857,8 +862,8 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         checks = instance_checks(db, finding)
         have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
         keys = {check.key for check in module.checks}
-        dropped = any(row.enabled and row.module_check_key not in keys for row in checks)
-        changed = any(row.enabled for row in updatable_checks(checks, module))
+        dropped = any(running(row) and row.module_check_key not in keys for row in checks)
+        changed = any(running(row) for row in updatable_checks(checks, module))
         summary = _summary(finding)
         containers, sockets = _scan(db, finding.server_id)
         created = False

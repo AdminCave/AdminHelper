@@ -40,6 +40,7 @@ from app.catalog.model import VHOST_APPS, Module
 from app.checkers.agent import agent_number
 from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.core.time import utcnow_naive
+from app.exception_scope import load_skips
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding
 
 logger = logging.getLogger(__name__)
@@ -676,13 +677,16 @@ def _update_findings(
     }
     watched: set[tuple[str, str]] = set()
     silent: set[tuple[str, str]] = set()
-    for module_id, instance, enabled, is_silent in db.query(
+    # Watched: a check of it runs. One the admin switched off watches nothing.
+    skips = load_skips(db)
+    for check_id, module_id, instance, enabled, is_silent in db.query(
+        MonitorCheck.id,
         MonitorCheck.module_id,
         MonitorCheck.module_instance,
         MonitorCheck.enabled,
         MonitorCheck.silent,
     ).filter(MonitorCheck.server_id == server_id, MonitorCheck.module_id.isnot(None)):
-        if enabled:
+        if enabled and check_id not in skips:
             watched.add((module_id, instance))
         if is_silent:
             silent.add((module_id, instance))

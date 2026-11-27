@@ -17,7 +17,7 @@ from app.models import (
     MonitorStatusChange,
 )
 
-from ._helpers import maintenance_window
+from ._helpers import maintenance_window, standing_skip
 
 NOW = 1_799_999_970  # 30 s before a minute: the grid ends at the full minute after
 END = 1_800_000_000
@@ -246,6 +246,10 @@ def test_thresholds_default_to_the_checkers(history):
 
 def test_thresholds_come_from_the_enabled_agent_resources_check(history):
     _add_check(history.factory, "a-off", '{"cpu_warn": 1}', enabled=False)
+    _add_check(history.factory, "a-skip", '{"cpu_warn": 3}')
+    with history.factory() as db:
+        db.add(standing_skip("a-skip"))
+        db.commit()
     _add_check(history.factory, "b-ping", '{"cpu_warn": 2}', check_type="ping")
     _add_check(
         history.factory,
