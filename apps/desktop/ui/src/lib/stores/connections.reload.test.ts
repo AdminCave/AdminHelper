@@ -150,4 +150,25 @@ describe('connections store — reloadForMode after a failed fetch', () => {
     expect(ids()).toEqual(['a']);
     expect(get(connectionsStore).loading).toBe(false);
   });
+
+  it('keeps the error showing while the next fetch is pending and clears it on success', async () => {
+    // R-0783: a failing sync polled in a cycle must not blink its banner off at each fetch.
+    h.fetchJwt.mockRejectedValueOnce(new Error('offline'));
+    await reloadForMode(settings({ mode: 'server' }), sess('alice'));
+    expect(get(connectionsStore).error).toBe('offline');
+    let done: (items: unknown[]) => void = () => {};
+    h.fetchJwt.mockImplementationOnce(
+      () =>
+        new Promise<unknown[]>((resolve) => {
+          done = resolve;
+        }),
+    );
+    const pending = reloadForMode(settings({ mode: 'server' }), sess('alice'));
+    expect(get(connectionsStore).loading).toBe(true);
+    expect(get(connectionsStore).error).toBe('offline');
+    done([A]);
+    await pending;
+    expect(get(connectionsStore).error).toBeNull();
+    expect(ids()).toEqual(['a']);
+  });
 });
