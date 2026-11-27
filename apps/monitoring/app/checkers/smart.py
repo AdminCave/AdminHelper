@@ -306,8 +306,11 @@ class SmartHealthChecker:
             device = entry_text(disk, "device", "?")
             if device in ignore:
                 # Asleep the agent sends the device path alone (smart.go), no key of the disk:
-                # then it is no object, rather than a second one under the path.
-                if disk.get("standby") is not True:
+                # then it is no object, rather than a second one under the path, and the
+                # result is incomplete, so the object it named awake does not turn gone.
+                if disk.get("standby") is True:
+                    complete = False
+                else:
                     unrated = _disk_object(disk, device, NOT_COLLECTED, [])
                     objects.append(excluded_object(unrated, "ignore_devices"))
                 continue

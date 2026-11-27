@@ -10,14 +10,16 @@ temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
-from app.check_engine import NOT_COLLECTED
+from app.check_engine import NOT_COLLECTED, apply_result
 from app.checkers import smart
 from app.checkers.agent import MAX_REPORT_ENTRIES
 from app.checkers.smart import SmartHealthChecker
+from app.models import MonitorCheck, MonitorObjectState, MonitorState
 from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
@@ -204,10 +206,49 @@ def test_an_ignored_disk_asleep_is_no_object():
     report = _report(asleep, _disk(device="/dev/sdb"))
     _, _, metrics = CHECKER.evaluate({"ignore_devices": ["/dev/sda"]}, report)
     complete, items = _objects(metrics)
-    assert (complete, [item["id"] for item in items]) == (True, ["/dev/sdb"])
+    # Incomplete (R-1793): the excluded object it named awake must not turn gone.
+    assert (complete, [item["id"] for item in items]) == (False, ["/dev/sdb"])
     # Paired: not ignored, the sleeping disk is an object under its path.
     _, _, metrics = CHECKER.evaluate({}, report)
     assert [item["id"] for item in _objects(metrics)[1]] == ["/dev/sda", "/dev/sdb"]
+
+
+def test_an_ignored_disk_falling_asleep_keeps_its_object(db_engine):
+    """R-1793: awake the excluded disk is an object; asleep it sends no key to name it by, and
+    the next result must not mark the object gone, or it flickers with every standby."""
+    factory = sessionmaker(bind=db_engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                server_id="srv-1",
+                name="disks",
+                check_type="smart_health",
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+                consecutive_oks=1,
+            )
+        )
+        db.commit()
+    cfg = {"ignore_devices": ["/dev/sda"]}
+    sdb = _disk(device="/dev/sdb", model="Y")
+    awake = _disk(wwn="0x5000c500a1b2c3d4")
+    asleep = {"device": "/dev/sda", "standby": True}
+    start = datetime(2026, 11, 19, 4, 0, 0)
+    for minute, sda in enumerate((awake, asleep)):
+        status, message, metrics = CHECKER.evaluate(cfg, _report(sda, sdb))
+        with factory() as db:
+            check = db.get(MonitorCheck, "c1")
+            state = db.query(MonitorState).filter_by(check_id="c1").first()
+            at = start + timedelta(minutes=minute)
+            apply_result(
+                db, check, state, status, message, metrics, at, objects=metrics["_objects"]
+            )
+            db.commit()
+    with factory() as db:
+        gone = {row.name: row.gone_at for row in db.query(MonitorObjectState).all()}
+    assert gone == {"/dev/sda (X)": None, "/dev/sdb (Y)": None}
 
 
 def test_disk_list_is_capped():

@@ -27,8 +27,10 @@ mit anderen Monitoring-Zügen (`schemas.py`, `checks.py`, Checker, Alembic-Kopf)
 hereinmergen und `scripts/dev/overlap.sh` fahren; wer zweiter merged, hängt seine Revision um. Belegte Fehler
 außerhalb des Auftrags werden Roadmap-Zeilen (`roadmap.py add`).
 
-### T1 — SMART: ausgenommene Platte im Standby macht das Ergebnis unvollständig (R-1793)  [ ]
+### T1 — SMART: ausgenommene Platte im Standby macht das Ergebnis unvollständig (R-1793)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/tests/test_smart_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ecb8841a4 2026-11-27T12:07:46+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T1.verdict.json)
 Beweis: reviewer arch-monitoring-neu-p1b T5 2026-11-25 an feature/arch-monitoring-neu-p1b@4208ad2bd, Code-Lesung `apps/monitoring/app/checkers/smart.py:310` (heute `:307`: eine per `ignore_devices` ausgenommene Platte im Standby endet in `continue`, `complete` aus `:303` bleibt wahr, `apply_objects` setzt `gone_at`); der erste Test der Task zeigt es dreimal rot
 Dedup-Key: bug:monitoring:smart.py:excluded-standby-flicker
 HEAD: 9704ac3f3
