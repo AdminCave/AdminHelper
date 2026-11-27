@@ -31,8 +31,10 @@ Review: approve (.ah-out/review/ops-18/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: → T6
 
-### T3 — R-1821: check_env_templates lehnt einen leeren Schlüssel sauber ab  [ ]
+### T3 — R-1821: check_env_templates lehnt einen leeren Schlüssel sauber ab  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/install.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @66dcee79c 2026-11-27T13:55:36+01:00
+Review: approve (.ah-out/review/ops-18/T3.verdict.json)
 Änderung: Nach dem Trimmen ist ein leerer Schlüssel ein ungültiger (dieselbe Meldung mit Zeilennummer), bevor `ENV_SEEN` ihn sieht; beide Kopien gleich. Test zuerst rot: die Funktionskopie ohne erkanntes C.UTF-8 (wie update_test.sh:1234) mit `export <U+2003>=wert` endet mit der Ablehnung, nicht mit `bad array subscript`.
 Beweis: Roadmap R-1821 (security-Nit kern-update-env-1 @a63b0bf60, Probe unter de_DE.UTF-8 rc=1)
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test install_test

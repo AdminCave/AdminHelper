@@ -1290,6 +1290,25 @@ if grep -q 'probe=xx' "$KEY_FN" && . "$KEY_FN"; then
 else
   bad "env_key_ok could not be taken from update.sh with its probe turned off"
 fi
+# Such a key may still be blanks only: trimmed, it is empty, and the check refuses it
+# like any bad key instead of using it as an array index (R-1821). The whole .env check
+# runs from a copy with the probe turned off, under C.UTF-8: only there [[:space:]] knows
+# U+2003, whatever the caller's locale. Without C.UTF-8 the test ends with 75.
+BLANK_SKIP=""
+CHECK_FN="$WORK/env_check.sh"; CHECK_DIR="$WORK/env-check-blank"; mkdir -p "$CHECK_DIR"
+sed -n '/^# >>> env check/,/^# <<< env check$/p' "$REAL_UPDATE" | sed "s/probe=\\$'\\\\xc3\\\\x84'/probe=xx/" > "$CHECK_FN"
+printf 'A=1\nexport \xe2\x80\x83=zz9v\n' > "$CHECK_DIR/.env"
+if [ "$(LC_ALL=C.UTF-8 locale charmap 2>/dev/null)" != UTF-8 ]; then
+  BLANK_SKIP="the case of a key of blanks only needs the locale C.UTF-8, this system has none"
+  echo "  SKIP $BLANK_SKIP"
+elif grep -q 'probe=xx' "$CHECK_FN"; then
+  # shellcheck disable=SC1090
+  out=$( export LC_ALL=C.UTF-8 && cd "$CHECK_DIR" && die() { echo "FEHLER: $*"; exit 1; } && . "$CHECK_FN" && check_env_templates 2>&1 ); rc=$?
+  { [ "$rc" -ne 0 ] && grep -qF "the entry in line 2 has a key docker compose rejects" <<<"$out" && ! grep -q zz9 <<<"$out"; } \
+    && ok "with the UTF-8 probe off a key of blanks only is refused with its line" || bad "probe off: a key of blanks only rc=$rc out=[$out]"
+else
+  bad "the .env check could not be taken from update.sh with its probe turned off"
+fi
 
 # ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
 # Only the re-pin had a test: an init-secrets.sh that fails, or a key check whose
@@ -2152,6 +2171,7 @@ echo "────────────────────────�
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ] || exit 1
 [ -z "$LOCALE_SKIP" ] || echo "SKIP: $LOCALE_SKIP"
+[ -z "$BLANK_SKIP" ] || echo "SKIP: $BLANK_SKIP"
 [ -z "$RIGHTS_SKIP" ] || echo "SKIP: $RIGHTS_SKIP"
 [ -z "$TTY_SKIP" ] || echo "SKIP: $TTY_SKIP"
-[ -z "$LOCALE_SKIP$RIGHTS_SKIP$TTY_SKIP" ] || exit 75
+[ -z "$LOCALE_SKIP$BLANK_SKIP$RIGHTS_SKIP$TTY_SKIP" ] || exit 75

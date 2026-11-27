@@ -300,7 +300,11 @@ check_env_templates() {
                 die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank, not empty), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
             fi
             [ "$key" != "$line" ] || break
-            key=${key%"${key##*[![:space:]]}"}; name=${name:-$key}
+            key=${key%"${key##*[![:space:]]}"}
+            # Without a UTF-8 locale a key of blanks beyond ASCII passes env_key_ok and is
+            # empty once trimmed; it must not become an array index.
+            [ -n "$key" ] || die ".env: the entry in line ${n} has a key docker compose rejects (allowed: letters, digits and _ . - [ ], no blank, not empty), which makes every compose call fail. Fix the key or comment the line out with '#'. Aborting (nothing changed)."
+            name=${name:-$key}
             trim_blanks "${line#*[=:]}" value; val=$TRIMMED
             rest=""
             case $val in
