@@ -85,11 +85,11 @@ Nur `apps/monitoring`, kein Server-, Gateway-, PKI-, Agent- oder Client-Pfad.
 | `app/catalog/model.py` | `Rule` (`:142`) mit `key`, `clear`, `when`; neues `Condition`; Serializer (`:158`) lässt sie ungesetzt weg; Prüfungen in `Rule`, `Check` (`:203`) und `Module` (`:371`, `when.check` gegen die Geschwister); `rule_problems` |
 | `app/checkers/probe.py` | `_rate` (`:168`) mit Hysterese und Bedingung über Schlüsselwort-Argumente; `evaluate` (`:215`) trägt `firing` weiter und schreibt `resting` |
 | `app/routers/agent.py` | `_evaluate_push_check` (`:437`) gibt einer Probe, deren Regeln einen anderen Check lesen, die Ergebnisse ihrer Geschwister mit (`config["_siblings"]`, wie `_check_id` `:458`) |
-| `app/rule_layer.py` (neu) | `rule_key`, `effective`, `overrides_from` (Übersetzung eines Regelsatzes in Overrides), `merge` (Drei-Wege), Lesen/Schreiben der Spalte, `record_rule_layers` (Umwandlung beim Start) |
+| `app/rule_layer.py` (neu) | `rule_key`, `effective`, `overrides_from` (Übersetzung eines Regelsatzes in Overrides), `merge` (Drei-Wege), `convert` (exakte Umwandlung), Lesen/Schreiben der Spalte (`read_layer`, `store_layer`) |
 | `app/models.py` | `MonitorCheck` (`:118`) bekommt `rule_layer` (Text, NULL) |
 | `alembic/versions/b6d8f0a2c4e6_rule_layer.py` (neu) | Spalte anlegen und entfernen, `down_revision = "f4b6d8a0c2e4"` |
 | `app/main.py` | `record_rule_layers` nach `reconcile_builtin_templates` (`:85`), vor `sync_catalog` (`:90`), eigener try/except wie die Nachbarn |
-| `app/module_sync.py` | `_create` (`:482`) schreibt die Schicht; `_update` (`:517`) führt zusammen statt zu überspringen; `mark_module_overrides` (`:147`) spiegelt bei Zeilen mit Schicht die Marke `config` aus den Overrides |
+| `app/module_sync.py` | `record_rule_layers` (Umwandlung beim Start; hier, weil es `definition_hash` und den Katalog braucht und `module_sync` `rule_layer` importiert); `_create` (`:482`) schreibt die Schicht; `_update` (`:517`) führt zusammen statt zu überspringen; `mark_module_overrides` (`:147`) spiegelt bei Zeilen mit Schicht die Marke `config` aus den Overrides |
 | `app/routers/checks.py` | `GET/PUT /checks/{id}/rules`; `update_check` (`:418`) übersetzt `config.rules` |
 | `app/schemas.py` | `RuleOverride`, `RuleConflict`, `CheckRulesOut`, `CheckRulesInput` |
 | `tests/…` | neue Tests je Task, `tests/openapi.snapshot.json` |
@@ -205,7 +205,8 @@ Text mit JSON, `NULL` für Checks ohne Regelsatz (alle außer Probe-Checks) und 
   - Das Log nennt die Zählung, etwa `Rule layers: 12 recorded, 3 converted, 1 frozen (the admin's rules stay)`, und
     je eingefrorene Zeile die Check-ID mit dem Grund (Debug).
   - **Vor `sync_catalog`:** `sync_catalog` gibt Zeilen ohne Hash den heutigen Hash als Stand (`module_sync.py:700`).
-    Die Umwandlung soll eine solche markierte Zeile beim ersten Start nicht für aktuell halten.
+    Die Umwandlung soll eine solche markierte Zeile beim ersten Start nicht für aktuell halten. Einer markierten Zeile
+    ohne Schicht gibt `sync_catalog` deshalb gar keinen Hash mehr: sie bleibt auch bei späteren Starts eingefroren.
 
 ### API (`routers/checks.py`, Präfix `checks`, `require_internal`)
 
