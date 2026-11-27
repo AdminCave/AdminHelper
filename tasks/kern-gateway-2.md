@@ -18,8 +18,10 @@ Beweis: Code-Lesung main@6895f8eaf nginx.conf:50-60,114,187-188; der Container-T
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: keine (internes Verhalten ohne Doku-Stelle)
 
-### T2 — Gateway: Webhook-Trigger auf :8444 (R-1687)  [ ]
+### T2 — Gateway: Webhook-Trigger auf :8444 (R-1687)  [x]
 Komponente: server · Dateien: apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py, scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7bfd0bc16 2026-11-27T11:35:57+01:00
+Review: approve (.ah-out/review/kern-gateway-2/T2.verdict.json)
 Änderung: Zone `hooks`; auf :8444 `location = /api/hooks/trigger` und `location ~ ^/api/hooks/trigger/[^/]+$`, nur POST,
 `limit_req zone=hooks`, `client_max_body_size 1m`, Identitäts-Header geleert, `proxy_pass http://app`. Tests: aus nginx.conf
 (Zone, Locations, geleerte Header); im Container gehen beide Pfade auf :8444 an den Server, `/api/hooks` und andere
