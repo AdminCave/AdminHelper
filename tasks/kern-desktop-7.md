@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-desktop-7 — Desktop: SFTP-Upload über eine Teil-Datei, Feed nach dem Abmelden — Task-Ledger
-Status: bereit · Branch: feature/kern-desktop-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-desktop-7 · Review: am Ende
 Spec: docs/features/kern-desktop-7.md (Roadmap R-1708, R-1830)
 Heavy: linux-full — Desktop (SFTP-Datenpfad, Benachrichtigungen); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,6 +13,8 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - Kevin 2026-11-27: R-1708 und R-1830 angenommen (Notizen der Zeilen).
 - Plan: T1 baut auf dem Stand aus kern-desktop-6 T8 (Prüfrunde 3) auf. Neu ist dabei: `remove_file(part)`, danach `WRITE|CREATE|EXCLUDE`.
+- Aus kern-desktop-6 übernommen (dort entschieden): russh-sftp 3.0.1 kennt kein `posix-rename@openssh.com`, darum entfernt der Upload beim Überschreiben das Ziel unmittelbar vor dem Umbenennen. Ein Link am Ziel wird aufgelöst und durchgeschrieben, die Datei, auf die er zeigt, wird ersetzt; der Link bleibt. Die Angaben `posix-rename` und „Symlink am Ziel wird ersetzt“ in T1 beschreiben den Plan, nicht den Bau.
+- Kevin 2026-11-27: Beim Überschreiben übernimmt der Upload Eigentümer und Gruppe der alten Datei best-effort (scheitert das `SETSTAT`, bleiben sie die des Hochladenden). Hardlinks, ACLs und eine beschreibbare Datei in einem schreibgeschützten Ordner sind hingenommen und dokumentiert.
 
 ### T1 — R-1708: SFTP-Upload über `.<name>.ah-part`  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
@@ -46,6 +48,25 @@ Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/d
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @764052404 2026-11-27T15:46:48+01:00
 Review: am Ende (Branch-Review)
 Änderung: Der SFTP-Absatz beschreibt den Upload über die Teil-Datei, das Umbenennen und das Aufräumen. Der Changelog-Eintrag nennt beide Fixes.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: diese Task
+Task-Review: am Ende
+
+### T4 — R-1708: Eigentümer best-effort, Abbruch-Test, der fällt  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs
+Änderung: Beim Überschreiben setzt der Upload uid/gid der alten Datei auf die Teil-Datei, vor dem Modus, Fehler ignoriert. Der Abbruch-Test tötet den sftp-server nach dem ersten Fortschritt (vorher scheiterte er schon am INIT und fiel ohne den Fix nicht). Ein Test zeigt, dass eine Gruppe des Hochladenden erhalten bleibt. Ein Testname beschreibt nicht mehr das alte Abschneiden.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
+Doku: → T6
+
+### T5 — R-1830: Test für Abmelden während `fetchUnreadCount`  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/notifications.test.ts
+Änderung: Ein Test hält `fetchUnreadCount` an, meldet ab und zeigt, dass die späte Antwort weder Liste noch Badge füllt.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/notifications.test.ts
+Doku: keine (nur Test)
+
+### T6 — Doku und Spec an den Bau angleichen  [ ]
+Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/features/kern-desktop-7.md, changelog.d/kern-desktop-7.md
+Änderung: Der SFTP-Absatz sagt, dass eine abgebrochene Verbindung die Teil-Datei bis zum nächsten Upload liegen lässt, nennt die Übernahme des Eigentümers und die hingenommenen Folgen (Hardlinks, ACLs, schreibgeschützter Ordner). Die Spec beschreibt den Umbenenn-Weg ohne `posix-rename` und die Risiken.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
