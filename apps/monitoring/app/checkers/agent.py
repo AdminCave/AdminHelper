@@ -607,9 +607,8 @@ def _resource_objects(
 ) -> dict:
     """The object result of agent_resources (R-1559): cpu with the load, memory with the swap,
     a mount per path, one ignore_mounts or an exception matches excluded (R-1636, R-1637), a
-    sensor per name. Load
-    shedding is part of none: an object the gate leaves unmeasured is never a problem
-    (ADR 0004 §2).
+    sensor per name. Load shedding is part of none: an object the gate leaves unmeasured is
+    never a problem (ADR 0004 §2).
 
     Complete only with CPU, RAM and the whole disk list: the agent leaves the list out when
     it cannot read the partitions, and a reading that is missing must not mark an object gone.

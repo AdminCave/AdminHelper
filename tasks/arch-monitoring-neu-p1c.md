@@ -161,8 +161,10 @@ Abhängt von: T2
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_check_engine_context.py tests/test_agent_resources_checker.py tests/test_service_process_checker.py tests/test_checker_forecast.py
 Doku: → T14
 
-### T8 — SMART, Docker und Proxmox-Backup mit Mustern (R-1637)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_smart_checker.py, apps/monitoring/tests/test_plugin_checkers.py
+### T8 — SMART, Docker und Proxmox-Backup mit Mustern (R-1637)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_smart_checker.py, apps/monitoring/tests/test_plugin_checkers.py, apps/monitoring/app/checkers/agent.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @00a07c8f0 2026-11-27T13:46:49+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1c/T8.verdict.json)
 Abhängt von: T1, T7
 Änderung:
 - **SMART:** `ignore_devices` (`smart.py:289`, `:307`, `_disk_metrics` `:160`).
@@ -303,3 +305,4 @@ Doku: docs/developer/monitoring.html, docs/developer/api-reference.html, docs/ad
 - Session 2026-11-27 T6: PUT lässt den Effekt stehen, und Skip und no_rating behalten ihren Check (422); no_notify darf den Geltungsbereich weiter wechseln (R-1636, `test_a_new_scope_clears_the_old_one`). So bleibt die Spur einer Skip an einem Check, und der Router muss beim Umwidmen nicht zwei Checks schalten.
 - Session 2026-11-27 T6: `check_switch` teilt `stopped` (Entwarnung) und `started` (frischer Zustand, `updated_at` für den Planer-Verzug) aus `stop_check`/`start_check` heraus; `/exceptions` vergleicht „läuft“ vor und nach der Änderung einer Skip und ruft das passende auf, der Planer folgt nach dem Commit. `_schedule` bleibt in `routers/checks.py` (die Tests patchen dort `add_check`), `routers/exceptions.py` hat dieselben drei Zeilen in `_after_commit`.
 - Session 2026-11-27 T7: Die Muster lädt der Push-Pfad (`routers/agent.py` `_evaluate_push_check`), nicht `_load_run`: die fünf Typen mit Listen sind push-only, `_load_run` gibt für sie `None` zurück. Er setzt `config["_no_rating"]` für jeden der fünf Typen, auch leer, und überschreibt damit einen gespeicherten Schlüssel; `_load_disk_rules` lädt die Ausnahmen des resources-Checks für die Prognose selbst. Trifft ein Objekt Einstellung und Ausnahme, nennt `excluded` die Einstellung: Sie hält es auch nach dem Ende der Ausnahme draußen. Grund „Excluded by exception“, die ID löst T9 auf.
+- Session 2026-11-27 T8: `exclude_vmids` gleicht die VMID dezimal gegen `mask(str(vmid))` ab, nur für Zahlen (`check_configs` nimmt auch Strings an, die schon vorher keine VMID trafen; das bleibt so, ein Test hält es fest). Ein Gast ohne VMID wird von keinem Muster getroffen, auch nicht von `*`. SMART vergleicht den Gerätepfad, auch in `_disk_metrics` (keine Reihe für eine ausgenommene Platte); Docker den Namen. Der Nit aus der T7-Prüfung (Umbruch im Docstring von `_resource_objects`) ist hier mit behoben.
