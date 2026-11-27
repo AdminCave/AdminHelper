@@ -29,7 +29,7 @@ const (
 // following a reparse point and checks the open handle, so a swap between the check and the read
 // does not count. It shares delete access, so a Set that replaces the file meanwhile does not fail.
 func readPrivate(path string) ([]byte, error) {
-	h, err := openForRead(path)
+	h, err := openWhenFree(path)
 	if err != nil {
 		// A PathError keeps errors.Is(err, fs.ErrNotExist) working for a missing file.
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
@@ -54,6 +54,27 @@ func readPrivate(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s is larger than %d bytes", path, maxFileBytes)
 	}
 	return data, nil
+}
+
+// openWhenFree opens path for reading. Just after a replace, a virus scanner or an indexer may hold
+// the file without sharing read access (ERROR_SHARING_VIOLATION), or the file it replaced may still
+// be pending deletion (ERROR_ACCESS_DENIED); it tries again until replaceWait has passed, as replace
+// does and as the Go toolchain's robustio does for reads. A missing file is reported at once.
+func openWhenFree(path string) (windows.Handle, error) {
+	deadline := time.Now().Add(replaceWait)
+	pause := time.Millisecond
+	for {
+		h, err := openForRead(path)
+		if err == nil || !transient(err) || !time.Now().Add(pause).Before(deadline) {
+			return h, err
+		}
+		time.Sleep(pause)
+		pause = min(2*pause, 100*time.Millisecond)
+	}
+}
+
+func transient(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }
 
 // openForRead opens the file at path for reading and for its security, without following a reparse
@@ -115,7 +136,7 @@ func daclPrivate(dacl *windows.ACL) bool {
 	return true
 }
 
-// replaceWait is how long replace keeps trying; tests shorten it.
+// replaceWait is how long replace and openWhenFree keep trying; tests shorten it.
 var replaceWait = 2 * time.Second
 
 // replace moves the file from, in the directory of path, to path, replacing what is there. os.Rename
@@ -135,7 +156,7 @@ func replace(from, path string) error {
 	pause := time.Millisecond
 	for {
 		err = root.Rename(filepath.Base(from), filepath.Base(path))
-		if err == nil || !(errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)) ||
+		if err == nil || !transient(err) ||
 			!time.Now().Add(pause).Before(deadline) {
 			return err
 		}
