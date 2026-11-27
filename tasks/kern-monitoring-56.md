@@ -35,10 +35,12 @@ Review: approve (.ah-out/review/kern-monitoring-56/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_internal_key_routes.py tests/test_schema_limits.py tests/test_openapi_snapshot.py
 Doku: keine (Admin-API hinter dem Internal-Key, Grenze nur für unrealistische Werte); changelog.d/kern-monitoring-56.md → T5
 
-### T4 — R-1827, R-1828: record_rule_layers friert ein statt abzubrechen; sync_catalog-Ausnahme nur für probe  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+### T4 — R-1827, R-1828: record_rule_layers friert ein statt abzubrechen; sync_catalog-Ausnahme nur für probe  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_rule_layer_db.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f141f7a23 2026-11-27T21:19:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-56/T4.verdict.json)
 Änderung: Wirft `store_layer` bei einer Zeile `ValueError`, bleibt sie eingefroren (Warnung), der Durchgang läuft weiter. `sync_catalog` überspringt eine markierte Zeile ohne Schicht nur bei `check_type == "probe"`; zentrale Modul-Checks bekommen Hash und Update-Angebot. Tests erst rot.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_rule_layer_db.py
 Doku: → T5
 
 ### T5 — Doku und Changelog  [ ]
