@@ -37,7 +37,19 @@ from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import escape_label_value, victoria
-from app.exception_scope import check_runs, load_skips, runs
+from app.exception_scope import (
+    KIND_OF_TYPE,
+    OBJECT_KINDS,
+    check_runs,
+    composed_config,
+    list_entries,
+    list_entry,
+    list_pattern,
+    load_list_exceptions,
+    load_no_rating,
+    load_skips,
+    runs,
+)
 from app.history import (
     build_series,
     compare_query,
@@ -52,6 +64,7 @@ from app.models import (
     MonitorAgentKey,
     MonitorAgentLiveness,
     MonitorCheck,
+    MonitorException,
     MonitorServiceInventory,
     MonitorServiceLog,
     MonitorState,
@@ -101,10 +114,75 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
         else {}
     )
     skips = load_skips(db)
-    return [
-        c.to_dict(state=states.get(c.id), running=c.enabled is True and c.id not in skips)
-        for c in checks
-    ]
+    lists = load_list_exceptions(db, check_ids)
+    rows = []
+    for c in checks:
+        row = c.to_dict(state=states.get(c.id), running=c.enabled is True and c.id not in skips)
+        row["config"] = composed_config(c.check_type, row["config"], lists.get(c.id, []))
+        rows.append(row)
+    return rows
+
+
+def _check_out(db: Session, check: MonitorCheck, state, *, running: bool) -> dict:
+    """One check as the API answers it: its lists composed with the exceptions (R-1637)."""
+    row = check.to_dict(state=state, running=running)
+    row["config"] = composed_config(check.check_type, row["config"], load_no_rating(db, check.id))
+    return row
+
+
+def _end(rows: list[MonitorException], actor: Actor) -> None:
+    now = utcnow_naive()
+    for row in rows:
+        row.ended_at, row.ended_by, row.ended_by_id = now, actor.name, actor.id
+
+
+def _store_list(db: Session, check: MonitorCheck, config, actor: Actor):
+    """The config to store for one sent with the list of the check's type (R-1637):
+    an entry the template gives stays in it, any other becomes a no_rating exception
+    with the actor, and one in force that the list leaves out ends. The config holds
+    the template's list as the template has it, so an own entry does not make it an
+    override. An entry no exception takes stays in it (list_pattern). Without the
+    list the config is stored as sent and the exceptions stay."""
+    kind = KIND_OF_TYPE.get(check.check_type)
+    key = OBJECT_KINDS[kind].list_key if kind else None
+    if key is None or not isinstance(config, dict) or key not in config:
+        return config
+    values = resolve_template_check(db, check)
+    template = values["config"] if values and isinstance(values.get("config"), dict) else None
+    given = list_entries(kind, template.get(key, [])) if template is not None else []
+    standing = [x for x in load_no_rating(db, check.id) if x.object_kind == kind]
+    seen: set[str] = set()
+    kept = []
+    for entry in list_entries(kind, config[key]):
+        # Matched by how it reads, so a list sent back as read keeps a glob made elsewhere.
+        matching = [x for x in standing if list_entry(kind, x.object_pattern) == entry]
+        seen.update(x.id for x in matching)
+        pattern = list_pattern(kind, entry)
+        if entry in given or (not matching and pattern is None):
+            kept.append(entry)
+        elif not matching:
+            db.add(
+                MonitorException(
+                    id=str(uuid.uuid4()),
+                    scope_kind="object",
+                    check_id=check.id,
+                    server_id=check.server_id,
+                    object_kind=kind,
+                    object_pattern=pattern,
+                    effect="no_rating",
+                    duration_kind="permanent",
+                    origin="api",
+                    created_by=actor.name,
+                    created_by_id=actor.id,
+                )
+            )
+    _end([x for x in standing if x.id not in seen], actor)
+    if template is not None and key in template:
+        if len(kept) == len(given) and all(entry in given for entry in kept):
+            return {**config, key: template[key]}
+    elif template is not None and not kept:
+        return {k: v for k, v in config.items() if k != key}
+    return {**config, key: kept}
 
 
 def _serialize_status(db: Session, checks: list[MonitorCheck]) -> list[dict]:
@@ -393,6 +471,7 @@ def create_check(
         consecutive_oks=data.consecutive_oks,
     )
     db.add(check)
+    check.config = json.dumps(_store_list(db, check, data.config, actor))
 
     state = MonitorState(check_id=check.id, status="pending")
     db.add(state)
@@ -405,7 +484,7 @@ def create_check(
 
     _schedule(db, check)
 
-    return check.to_dict(state=state, running=data.enabled)
+    return _check_out(db, check, state, running=data.enabled)
 
 
 @router.get(
@@ -420,7 +499,7 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state, running=check_runs(db, check))
+    return _check_out(db, check, state, running=check_runs(db, check))
 
 
 @router.put(
@@ -462,6 +541,7 @@ def update_check(
     # type switch that keeps the old config must fail here, not surface as a
     # permanently-unknown check at runtime (see app/check_configs.py). The
     # schema can't do this: CheckUpdate doesn't know the stored type.
+    unchanged = False
     if "config" in sent or "check_type" in sent:
         effective_type = data.check_type if "check_type" in sent else check.check_type
         if "config" in sent:
@@ -479,11 +559,15 @@ def update_check(
         # resends the stored config on every edit, so re-validating it would
         # make a legacy check with a formerly-valid extra key permanently
         # uneditable (interval/severity edits included). Any actual config or
-        # type change still validates strictly (T40).
+        # type change still validates strictly (T40). Unchanged is the config as GET
+        # shows it, with the lists composed (R-1637).
         unchanged = (
             effective_type == check.check_type
             and stored_config is not None
-            and _same_config(effective_config, stored_config)
+            and _same_config(
+                effective_config,
+                composed_config(check.check_type, stored_config, load_no_rating(db, check.id)),
+            )
         )
         if not unchanged:
             try:
@@ -537,12 +621,20 @@ def update_check(
     ]:
         if field in sent:
             setattr(check, field, getattr(data, field))
+    config = data.config
     if "config" in sent:
-        check.config = json.dumps(data.config)
+        # Sent back as read, the stored config stays: its lists hold the exceptions too.
+        config = stored_config if unchanged else _store_list(db, check, data.config, actor)
+        check.config = json.dumps(config)
     if layer is not None:
         store_layer(check, layer["catalog"], overrides, layer["conflicts"])
-    # enabled is the admin's switch, a skip (R-1637), no field to compare with the template.
-    mark_overrides(db, check, {field: getattr(data, field) for field in sent - {"enabled"}})
+    # enabled is the admin's switch, a skip (R-1637), no field to compare with the template;
+    # the config compares as stored, without the exceptions.
+    mark_overrides(
+        db,
+        check,
+        {f: config if f == "config" else getattr(data, f) for f in sent - {"enabled"}},
+    )
     mark_module_overrides(check, old_config=old_config if "config" in sent else None)
     clear = None
     # An explicit null leaves the switch as it is, like a key left out.
@@ -560,7 +652,7 @@ def update_check(
     if clear is not None:
         background_tasks.add_task(send_all_clear, clear)
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state, running=check_runs(db, check))
+    return _check_out(db, check, state, running=check_runs(db, check))
 
 
 def _stored_rules(check: MonitorCheck) -> list:
@@ -704,7 +796,7 @@ def toggle_check(
     if clear is not None:
         background_tasks.add_task(send_all_clear, clear)
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state, running=check_runs(db, check))
+    return _check_out(db, check, state, running=check_runs(db, check))
 
 
 @router.post(
@@ -739,15 +831,17 @@ def reset_check(
     for field, value in template_values.items():
         setattr(check, field, json.dumps(value) if field == "config" else value)
     check.overridden_fields = "[]"
-    # The admin's off went with the template's enabled before it became a skip (R-1637).
+    # The admin's off went with the template's enabled before it became a skip (R-1637),
+    # the own list entries with its config.
     end_skips(db, check, actor)
+    _end(load_no_rating(db, check.id), actor)
     db.commit()
     db.refresh(check)
 
     _schedule(db, check)
 
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state, running=check_runs(db, check))
+    return _check_out(db, check, state, running=check_runs(db, check))
 
 
 @router.post(
@@ -786,7 +880,7 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    return check.to_dict(state=state, running=check_runs(db, check))
+    return _check_out(db, check, state, running=check_runs(db, check))
 
 
 @router.post(
@@ -820,7 +914,7 @@ def rebaseline_check(check_id: str, db: Session = Depends(get_db)):
         del details["baseline"]
         state.details = json.dumps(details)
         db.commit()
-    return check.to_dict(state=state, running=check_runs(db, check))
+    return _check_out(db, check, state, running=check_runs(db, check))
 
 
 # ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from app.models import MonitorCheck, MonitorException, MonitorState
 from app.rule_layer import effective, read_layer, store_layer
 from app.template_sync import read_overrides
 
-from ._helpers import standing_skip
+from ._helpers import no_rating, standing_skip
 
 
 def _payload(**over):
@@ -786,3 +786,145 @@ def test_a_central_check_of_no_module_may_change_its_host(client_db):
     r = client.put(f"/checks/{cid}", json={"config": {**_CENTRAL, "host": "other.example.org"}})
 
     assert r.status_code == 200, r.text
+
+
+# --- the lists are exceptions, the API field stays (R-1637) -----------------------------
+# GET composes the list of the check type from the config and the no_rating exceptions in
+# force; PUT and POST with the list make and end exceptions with the actor.
+
+
+def _list_rows(factory, cid):
+    """(kind, pattern, origin, created by, ended by) of each no_rating exception on the
+    check, by pattern."""
+    with factory() as db:
+        return sorted(
+            (row.object_kind, row.object_pattern, row.origin, row.created_by, row.ended_by)
+            for row in db.query(MonitorException).filter_by(check_id=cid, effect="no_rating")
+        )
+
+
+def _stored_config(factory, cid):
+    with factory() as db:
+        return json.loads(db.get(MonitorCheck, cid).config)
+
+
+def _post_check(client, check_type, config, headers=None):
+    r = client.post("/checks", json=_payload(check_type=check_type, config=config), headers=headers)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_a_list_sent_becomes_exceptions_and_reads_back_sorted(client_db, monkeypatch):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    config = {"cpu_warn": 85, "ignore_mounts": ["/srv/b", "/mnt/[x]", "/boot"]}
+
+    out = _post_check(client, "agent_resources", config, _ALICE)
+
+    shown = {**config, "ignore_mounts": ["/boot", "/mnt/[x]", "/srv/b"]}
+    assert out["config"] == shown
+    cid = out["id"]
+    assert _stored_config(factory, cid) == {"cpu_warn": 85, "ignore_mounts": []}
+    # The path with a bracket is masked: the exception matches it and not /mnt/x.
+    assert _list_rows(factory, cid) == [
+        ("mount", "/boot", "api", "alice", None),
+        ("mount", "/mnt/[[]x]", "api", "alice", None),
+        ("mount", "/srv/b", "api", "alice", None),
+    ]
+    assert client.get(f"/checks/{cid}").json()["config"] == shown
+    assert [c["config"] for c in client.get("/checks").json() if c["id"] == cid] == [shown]
+
+
+def test_an_entry_left_out_ends_its_exception_and_a_list_sent_back_changes_nothing(
+    client_db, monkeypatch
+):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    out = _post_check(client, "agent_resources", {"ignore_mounts": ["/a", "/b"]}, _ALICE)
+    cid = out["id"]
+
+    r = client.put(
+        f"/checks/{cid}", json={"config": out["config"], "interval": "15m"}, headers=_BOB
+    )
+
+    assert r.status_code == 200, r.text
+    assert _list_rows(factory, cid) == [
+        ("mount", "/a", "api", "alice", None),
+        ("mount", "/b", "api", "alice", None),
+    ]
+
+    r = client.put(f"/checks/{cid}", json={"config": {"ignore_mounts": ["/b", "/c"]}}, headers=_BOB)
+
+    assert r.json()["config"] == {"ignore_mounts": ["/b", "/c"]}
+    assert _list_rows(factory, cid) == [
+        ("mount", "/a", "api", "alice", "bob"),
+        ("mount", "/b", "api", "alice", None),
+        ("mount", "/c", "api", "bob", None),
+    ]
+
+    # A config without the list leaves the exceptions as they are.
+    r = client.put(f"/checks/{cid}", json={"config": {"cpu_warn": 85}}, headers=_BOB)
+
+    assert r.json()["config"] == {"cpu_warn": 85, "ignore_mounts": ["/b", "/c"]}
+    assert [row[4] for row in _list_rows(factory, cid)] == ["bob", None, None]
+
+
+def test_a_service_list_reads_back_as_an_older_desktop_sends_it(client_db, monkeypatch):
+    # The desktop before R-1637 sends ignore as it read it plus one name. A CSV entry
+    # reads as its names, and a service entry stays the glob it was.
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    out = _post_check(client, "service_process", {"mode": "auto", "ignore": "nginx.service, cron*"})
+    assert out["config"] == {"mode": "auto", "ignore": ["cron*", "nginx.service"]}
+    cid = out["id"]
+
+    sent = {"mode": "auto", "ignore": [*out["config"]["ignore"], "foo[1].service"]}
+    r = client.put(f"/checks/{cid}", json={"config": sent})
+
+    names = ["cron*", "foo[1].service", "nginx.service"]
+    assert r.json()["config"] == {"mode": "auto", "ignore": names}
+    assert [(row[0], row[1]) for row in _list_rows(factory, cid)] == [
+        ("service", name) for name in names
+    ]
+    assert _stored_config(factory, cid) == {"mode": "auto", "ignore": []}
+
+
+def test_vmids_read_back_as_numbers_and_one_given_as_a_string_stays_in_the_config(
+    client_db, monkeypatch
+):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+
+    out = _post_check(client, "proxmox_backup", {"exclude_vmids": ["300", 101, 100]})
+
+    assert out["config"]["exclude_vmids"] == [100, 101, "300"]
+    assert _stored_config(factory, out["id"])["exclude_vmids"] == ["300"]
+    assert [(row[0], row[1]) for row in _list_rows(factory, out["id"])] == [
+        ("guest-backup", "100"),
+        ("guest-backup", "101"),
+    ]
+
+
+def test_a_glob_made_elsewhere_reads_as_it_is_and_stays_when_the_list_comes_back(
+    client_db, monkeypatch
+):
+    _scheduler_calls(monkeypatch)
+    client, factory = client_db
+    # Longer than any pattern: no exception takes it, the config keeps it.
+    long = "/" + "x" * 300
+    cid = _post_check(client, "agent_resources", {"ignore_mounts": [long]})["id"]
+    with factory() as db:
+        db.add(no_rating(cid, "/srv/*", kind="mount", id="exc-glob"))
+        db.commit()
+    shown = client.get(f"/checks/{cid}").json()["config"]
+    assert shown == {"ignore_mounts": ["/srv/*", long]}
+
+    sent = {"ignore_mounts": [*shown["ignore_mounts"], "/mnt/a"]}
+    r = client.put(f"/checks/{cid}", json={"config": sent})
+
+    assert r.json()["config"] == {"ignore_mounts": ["/mnt/a", "/srv/*", long]}
+    assert _stored_config(factory, cid) == {"ignore_mounts": [long]}
+    assert [(row[1], row[4]) for row in _list_rows(factory, cid)] == [
+        ("/mnt/a", None),
+        ("/srv/*", None),
+    ]

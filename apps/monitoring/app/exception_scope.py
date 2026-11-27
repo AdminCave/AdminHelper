@@ -43,6 +43,12 @@ OBJECT_KINDS = {
     "guest-backup": ObjectKind("proxmox_backup", "exclude_vmids"),
     "service": ObjectKind("service_process", "ignore"),
 }
+KIND_OF_TYPE = {k.check_type: kind for kind, k in OBJECT_KINDS.items()}
+
+# The column object_pattern and ExceptionInput hold no longer pattern.
+PATTERN_MAX = 255
+# The VMIDs exclude_vmids takes as a number (check_configs, qm(1)).
+_VMIDS = range(100, 1_000_000_000)
 
 # The rows that apply for as long as they stand: skip and no_rating are permanent only
 # (the API refuses another duration), so a timed row of them applies never.
@@ -216,3 +222,109 @@ def load_no_rating(db: Session, check_id: str) -> list[MonitorException]:
         .order_by(MonitorException.id)
         .all()
     )
+
+
+def load_list_exceptions(db: Session, check_ids: list[str]) -> dict[str, list[MonitorException]]:
+    """load_no_rating for many checks: the rows of each check that has one, by check id."""
+    if not check_ids:
+        return {}
+    rows: dict[str, list[MonitorException]] = {}
+    for row in (
+        db.query(MonitorException)
+        .filter(
+            MonitorException.check_id.in_(check_ids),
+            MonitorException.scope_kind == "object",
+            MonitorException.effect == "no_rating",
+            *_STANDING,
+        )
+        .order_by(MonitorException.id)
+    ):
+        rows.setdefault(row.check_id, []).append(row)
+    return rows
+
+
+def list_entries(kind: str, raw: object) -> list:
+    """The entries of a config list of ``kind``, each once, in order. ignore of the
+    service checks is also a CSV string and an entry of it a CSV too, as the checker
+    reads it (ServiceProcessChecker._parse_ignore)."""
+    if kind == "service":
+        items = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+        raw = [
+            part.strip()
+            for item in items
+            if isinstance(item, str)
+            for part in item.split(",")
+            if part.strip()
+        ]
+    if not isinstance(raw, list):
+        return []
+    entries: list = []
+    for entry in raw:
+        if entry not in entries:
+            entries.append(entry)
+    return entries
+
+
+def list_pattern(kind: str, entry: object) -> str | None:
+    """The pattern of the exception a list entry becomes (R-1637): a service entry
+    stays the glob it is, any other matches the entry alone. None for an entry no
+    exception takes (a VMID as a string, no name, a pattern too long): it stays in the
+    config."""
+    if kind == "guest-backup":
+        if isinstance(entry, int) and not isinstance(entry, bool) and entry in _VMIDS:
+            return mask(str(entry))
+        return None
+    if not isinstance(entry, str) or not entry:
+        return None
+    pattern = entry if kind == "service" else mask(entry)
+    return pattern if len(pattern) <= PATTERN_MAX else None
+
+
+def list_entry(kind: str, pattern: str) -> object:
+    """The list entry an exception of ``kind`` reads as: the name a masked pattern
+    stands for, a VMID as a number, any other pattern as it is."""
+    if kind == "service":
+        return pattern
+    name = unmask(pattern)
+    if name is None:
+        return pattern
+    if (
+        kind == "guest-backup"
+        and name.isascii()
+        and name.isdigit()
+        and str(int(name)) == name
+        and int(name) in _VMIDS
+    ):
+        return int(name)
+    return name
+
+
+def _entry_order(entry: object) -> tuple:
+    # Numbers first, by value; the rest by text (a list may mix both, exclude_vmids).
+    if isinstance(entry, int) and not isinstance(entry, bool):
+        return (0, entry, "")
+    return (1, 0, str(entry))
+
+
+def composed_config(
+    check_type: str, config: object, exceptions: Iterable[MonitorException]
+) -> object:
+    """The config as the API shows it (R-1637): the list of the check type holds the
+    entries of the config and those of the no_rating exceptions in force, sorted, since
+    the order of the exceptions says nothing. Without one the config keeps its form."""
+    kind = KIND_OF_TYPE.get(check_type)
+    if kind is None or not isinstance(config, dict):
+        return config
+    shown = [
+        list_entry(kind, x.object_pattern)
+        for x in exceptions
+        if x.object_kind == kind and x.object_pattern
+    ]
+    if not shown:
+        return config
+    key = OBJECT_KINDS[kind].list_key
+    entries = list_entries(kind, config.get(key, []))
+    for entry in shown:
+        if entry not in entries:
+            entries.append(entry)
+    return {**config, key: sorted(entries, key=_entry_order)}
