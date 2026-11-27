@@ -41,13 +41,21 @@ struct MeResponse {
 /// against the running stack (A8 enforcement, 2026-06-12); not re-checked since.
 const NGINX_NO_CLIENT_CERT: &str = "No required SSL certificate was sent";
 
-/// The error a failed login reports. The gateway's no-certificate page becomes a
-/// stable code the login screen keys its hint off (ERR_* pattern, Login.svelte,
+/// What the gateway answers a client whose certificate fails verification (expired,
+/// unknown issuer): nginx's error 495 page, also status 400 (`ngx_http_error_495_page`,
+/// same file). Read at nginx master; not checked against the running stack.
+const NGINX_CLIENT_CERT_ERROR: &str = "The SSL certificate error";
+
+/// The error a failed login reports. The gateway's no-certificate and certificate-error
+/// pages become stable codes the login screen keys its hint off (ERR_* pattern, Login.svelte,
 /// like ERR_TLS_UNKNOWN_ISSUER in error.rs): the prose may change, the code must
 /// not (R-0222). Any other answer is the server's refusal (`AppError::http`).
 fn login_failure(status: reqwest::StatusCode, body: &str) -> AppError {
     if status == reqwest::StatusCode::BAD_REQUEST && body.contains(NGINX_NO_CLIENT_CERT) {
         return AppError::MtlsCertRequired;
+    }
+    if status == reqwest::StatusCode::BAD_REQUEST && body.contains(NGINX_CLIENT_CERT_ERROR) {
+        return AppError::DeviceCertInvalid;
     }
     AppError::http(status.as_u16(), body)
 }
@@ -63,6 +71,11 @@ pub async fn login(
     password: &str,
     allow_self_signed: bool,
 ) -> Result<AuthSession, AppError> {
+    // An expired leaf would only meet the gateway's 495 page: nothing is sent, and the login
+    // screen offers the way out (R-1689).
+    if crate::enrollment::held_leaf_expired_at(chrono::Utc::now().timestamp()) {
+        return Err(AppError::DeviceCertInvalid);
+    }
     let url = format!("{}/api/auth/login", server_url.trim_end_matches('/'));
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({
@@ -272,6 +285,23 @@ mod tests {
         assert!(
             !msg.contains("<html>"),
             "the page leaks into the message: {msg}"
+        );
+    }
+
+    /// The body nginx sends for its error 495, as in ngx_http_special_response.c.
+    const NGINX_495_PAGE: &str = "<html>\r\n<head><title>400 The SSL certificate error</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>The SSL certificate error</center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n";
+
+    #[test]
+    fn the_gateway_certificate_error_page_becomes_the_stable_code() {
+        let err = login_failure(StatusCode::BAD_REQUEST, NGINX_495_PAGE);
+        assert_eq!(err.code(), "ERR_DEVICE_CERT_INVALID");
+        let msg = err.to_string();
+        assert!(msg.starts_with("ERR_DEVICE_CERT_INVALID: "), "{msg}");
+        assert!(!msg.contains("<html>"), "{msg}");
+        // Only the gateway's page, not a server detail that happens to say so.
+        assert_eq!(
+            login_failure(StatusCode::UNAUTHORIZED, NGINX_495_PAGE).code(),
+            "ERR_HTTP"
         );
     }
 

@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/kern-desktop-6/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/client.test.ts
 Doku: → T12
 
-### T3 — Abgelaufenes Geraete-Zertifikat: stabiler Code vor und nach dem Senden (R-1689)  [ ]
+### T3 — Abgelaufenes Geraete-Zertifikat: stabiler Code vor und nach dem Senden (R-1689)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/error.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e4af70c4c 2026-11-27T08:57:12+01:00
+Review: approve (.ah-out/review/kern-desktop-6/T3.verdict.json)
 Änderung: neuer `AppError::DeviceCertInvalid` (`ERR_DEVICE_CERT_INVALID`); `login` prueft bei gehaltener Identitaet das Leaf (`not_after` <= jetzt, testbare Funktion mit `now`) und sendet dann nichts; `login_failure` erkennt 400 mit „The SSL certificate error“ (nginx 495). Tests: Leaf-Pruefung mit Zeit vor/nach Ablauf, `login_failure` fuer beide nginx-Seiten, Code-Tabelle in `error.rs`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- auth::
 Doku: → T12
