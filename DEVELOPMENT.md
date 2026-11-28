@@ -894,6 +894,14 @@ als der Audit prueft. Ebenso muss der Default von `GO_VERSION` in
 SHA-256 zieht beim Heben mit. Das Python der Test-Boxen (`PY_VERSION` dort) traegt
 die Minor jedes `FROM python:X.Y` in `Dockerfile` und `apps/*/Dockerfile`, und jedes
 `python3.N` in `bootstrap_linux.sh` und `scripts/tests/run.sh` ist dieselbe.
+Was `bootstrap_linux.sh` sonst laedt, ist ebenfalls gepinnt: frpc und oasdiff per
+SHA-256, rustup-init aus `static.rust-lang.org/rustup/archive/<RUSTUP_VERSION>/`
+per SHA-256, die Apt-Schluessel von Docker und nodesource per Fingerprint
+(`DOCKER_KEY_FPR`, `NODESOURCE_KEY_FPR`; deren Pakete signiert das Repo). Das
+nodesource-Setup-Skript laeuft nicht mehr: die Box schreibt Schluessel, deb822-Quelle
+und Apt-Pin selbst. Wechselt ein Upstream seinen Schluessel, bricht der Bake mit
+`key ...: fingerprint ..., want ...` ab; den neuen Fingerprint vor dem Heben an der
+Quelle pruefen.
 
 ---
 

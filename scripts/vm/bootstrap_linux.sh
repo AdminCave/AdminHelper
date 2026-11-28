@@ -48,6 +48,13 @@ OASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-5b2050787cfee2a9a3ba7b25cb50fe2
 PY_VERSION="${AH_PY_VERSION:-3.14.10}"
 PY_PBS_RELEASE="${AH_PY_PBS_RELEASE:-20261124}"
 PY_SHA256_LINUX_AMD64="${AH_PY_SHA256:-bfa2f9fe1691f14a98c37e206641058ad7116db117ac924fdcab744987107ad8}"
+# TLS alone vouched for the Docker key, the nodesource setup script and sh.rustup.rs
+# (R-1800). The two apt keys are checked by fingerprint (both repos sign their
+# packages, so apt does the rest), rustup-init by version and sha256 from its archive.
+DOCKER_KEY_FPR="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+NODESOURCE_KEY_FPR="6F71F525282841EEDAF851B42F59B5F99B1BE0B4"
+RUSTUP_VERSION="${AH_RUSTUP_VERSION:-1.29.3}"
+RUSTUP_SHA256_LINUX_AMD64="${AH_RUSTUP_SHA256:-b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Profile: full (default — everything, for the single-box run.sh incl. desktop GUI
 # E2E) | server (docker stack only) | agent (Go agent + packaging). server/agent
@@ -63,6 +70,18 @@ log() { printf '\n\033[1m[bootstrap] %s\033[0m\n' "$*"; }
 # run (R-1798). A speed floor, not --max-time: a slow but moving download stays.
 # Always to a file (-o): a retry after a partial body would append the whole
 # body again behind it on a pipe, and `| bash` would run that.
+# Downloads land in a directory of our own: a fixed name under /tmp is one
+# another user of the box could plant first.
+DL="$(mktemp -d)"
+trap 'rm -rf "$DL"' EXIT
+# Exactly one key, with the pinned primary fingerprint; a temporary GNUPGHOME
+# keeps the box user's keyring out of it.
+key_has_fpr() {
+  local fprs
+  fprs="$(GNUPGHOME="$(mktemp -d -p "$DL")" gpg --batch --show-keys --with-colons "$1" | awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }')"
+  [ "$fprs" = "$2" ] || { echo "key $1: fingerprint ${fprs:-none}, want $2" >&2; return 1; }
+}
+
 dl() {
   curl -fsSL --retry 5 --retry-connrefused --retry-all-errors \
     --connect-timeout 30 --speed-limit 1024 --speed-time 60 "$@"
@@ -74,7 +93,7 @@ pip_install() {
   for i in 1 2 3; do
     $SUDO pip3 install --break-system-packages -q --retries 10 --timeout 60 "$@" && return 0
     log "pip3 install $* failed (attempt $i/3)"
-    sleep $((i * 10))
+    if [ "$i" -lt 3 ]; then sleep $((i * 10)); fi
   done
   return 1
 }
@@ -184,13 +203,13 @@ $SUDO update-locale LANG=en_US.UTF-8 >/dev/null
 log "python ${PY_VERSION} from python-build-standalone ${PY_PBS_RELEASE} (the Dockerfiles' Python, for run.sh's venv)"
 if [ "$(python3.14 -c 'import ensurepip, platform; print(platform.python_version())' 2>/dev/null || true)" != "$PY_VERSION" ]; then
   py_dir="/opt/ah-python/${PY_VERSION}"
-  dl -o /tmp/ah-python.tgz \
+  dl -o "$DL/python.tgz" \
     "https://github.com/astral-sh/python-build-standalone/releases/download/${PY_PBS_RELEASE}/cpython-${PY_VERSION}%2B${PY_PBS_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz"
-  echo "${PY_SHA256_LINUX_AMD64}  /tmp/ah-python.tgz" | sha256sum -c --quiet -
+  echo "${PY_SHA256_LINUX_AMD64}  $DL/python.tgz" | sha256sum -c --quiet -
   $SUDO rm -rf "$py_dir"
   $SUDO mkdir -p "$py_dir"
-  $SUDO tar -xzf /tmp/ah-python.tgz -C "$py_dir" --strip-components=1
-  rm -f /tmp/ah-python.tgz
+  $SUDO tar -xzf "$DL/python.tgz" -C "$py_dir" --strip-components=1
+  rm -f "$DL/python.tgz"
   $SUDO ln -sfn "$py_dir/bin/python3.14" /usr/local/bin/python3.14
   python3.14 -c 'import ensurepip, ssl, sqlite3, venv' \
     || { echo "python ${PY_VERSION} from ${PY_PBS_RELEASE} does not import ensurepip/ssl/sqlite3/venv" >&2; exit 1; }
@@ -206,25 +225,24 @@ pip_install "ruff==$RUFF_VERSION" \
 log "pytest $PYTEST_VERSION (used by run.sh unit's vm-pytest step)"
 pip_install "pytest==$PYTEST_VERSION" \
   || pipx install "pytest==$PYTEST_VERSION"
-# Every profile, like pytest: the bake warms each template with `run.sh unit`,
-# and that runs the scripts block. The version is read into a variable, not piped
+# Every profile, like pytest: a lease runs the scripts block, `run.sh unit` or
+# `--only scripts` (the bake's warm-up leaves it out, vm.py WARMUP_EXCLUDE). The version is read into a variable, not piped
 # into grep -q: under pipefail an early grep exit can fail the pipe.
 log "oasdiff ${OASDIFF_VERSION} (used by run.sh's scripts block)"
 if [ "$(oasdiff --version 2>/dev/null || true)" != "oasdiff version ${OASDIFF_VERSION}" ]; then
-  dl -o /tmp/oasdiff.tgz \
+  dl -o "$DL/oasdiff.tgz" \
     "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
-  echo "${OASDIFF_SHA256_LINUX_AMD64}  /tmp/oasdiff.tgz" | sha256sum -c -
-  tar -C /tmp -xzf /tmp/oasdiff.tgz oasdiff
-  $SUDO install -m 0755 /tmp/oasdiff /usr/local/bin/oasdiff
+  echo "${OASDIFF_SHA256_LINUX_AMD64}  $DL/oasdiff.tgz" | sha256sum -c -
+  tar -C "$DL" -xzf "$DL/oasdiff.tgz" oasdiff
+  $SUDO install -m 0755 "$DL/oasdiff" /usr/local/bin/oasdiff
 fi
 
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then
   $SUDO install -m 0755 -d /etc/apt/keyrings
-  key="$(mktemp)"
-  dl -o "$key" https://download.docker.com/linux/ubuntu/gpg
-  $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg "$key"
-  rm -f "$key"
+  dl -o "$DL/docker.asc" https://download.docker.com/linux/ubuntu/gpg
+  key_has_fpr "$DL/docker.asc" "$DOCKER_KEY_FPR"
+  $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg "$DL/docker.asc"
   $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
   . /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
@@ -241,19 +259,27 @@ $SUDO usermod -aG docker "${SUDO_USER:-$USER}"   # effective on next login/sessi
 
 log "Go ${GO_VERSION}"
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -q "$GO_VERSION"; then
-  dl -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
-  echo "${GO_SHA256_LINUX_AMD64}  /tmp/go.tgz" | sha256sum -c -
-  $SUDO rm -rf /usr/local/go && $SUDO tar -C /usr/local -xzf /tmp/go.tgz
+  dl -o "$DL/go.tgz" "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  echo "${GO_SHA256_LINUX_AMD64}  $DL/go.tgz" | sha256sum -c -
+  $SUDO rm -rf /usr/local/go && $SUDO tar -C /usr/local -xzf "$DL/go.tgz"
   echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | $SUDO tee /etc/profile.d/go.sh >/dev/null
 fi
 export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
 
 log "Node ${NODE_MAJOR}.x"
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | grep -oE '[0-9]+' | head -1)" != "$NODE_MAJOR" ]; then
-  setup="$(mktemp)"
-  dl -o "$setup" "https://deb.nodesource.com/setup_${NODE_MAJOR}.x"
-  $SUDO -E bash "$setup"
-  rm -f "$setup"
+  # What setup_${NODE_MAJOR}.x writes, without running it: key, deb822 source, and
+  # the pin that keeps Ubuntu's own nodejs from winning.
+  dl -o "$DL/nodesource.asc" https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+  key_has_fpr "$DL/nodesource.asc" "$NODESOURCE_KEY_FPR"
+  $SUDO gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg "$DL/nodesource.asc"
+  $SUDO chmod a+r /usr/share/keyrings/nodesource.gpg
+  printf 'Types: deb\nURIs: https://deb.nodesource.com/node_%s.x\nSuites: nodistro\nComponents: main\nArchitectures: %s\nSigned-By: /usr/share/keyrings/nodesource.gpg\n' \
+    "$NODE_MAJOR" "$(dpkg --print-architecture)" | $SUDO tee /etc/apt/sources.list.d/nodesource.sources >/dev/null
+  printf 'Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n' \
+    | $SUDO tee /etc/apt/preferences.d/nodejs >/dev/null
+  wait_apt_lock
+  $SUDO apt-get update -qq
   wait_apt_lock
   $SUDO apt-get install -y nodejs
 fi
@@ -261,10 +287,10 @@ fi
 if [ "$PROFILE" = full ]; then
   log "Rust (rustup stable) + rustfmt + clippy  [full profile only]"
   if ! command -v cargo >/dev/null 2>&1; then
-    rustup_init="$(mktemp)"
-    dl -o "$rustup_init" https://sh.rustup.rs
-    sh "$rustup_init" -y --profile minimal
-    rm -f "$rustup_init"
+    dl -o "$DL/rustup-init" "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
+    echo "${RUSTUP_SHA256_LINUX_AMD64}  $DL/rustup-init" | sha256sum -c -
+    chmod +x "$DL/rustup-init"
+    "$DL/rustup-init" -y --profile minimal
   fi
   # shellcheck disable=SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
@@ -290,12 +316,12 @@ else
 fi
 
 log "frpc sidecar v${FRP_VERSION} (externalBin must resolve for the Tauri build)"
-dl -o /tmp/frpc.tgz \
+dl -o "$DL/frpc.tgz" \
   "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
-echo "${FRP_SHA256_LINUX_AMD64}  /tmp/frpc.tgz" | sha256sum -c -
-tar -C /tmp -xzf /tmp/frpc.tgz
+echo "${FRP_SHA256_LINUX_AMD64}  $DL/frpc.tgz" | sha256sum -c -
+tar -C "$DL" -xzf "$DL/frpc.tgz"
 mkdir -p "$ROOT/apps/desktop/src-tauri/binaries"
-cp "/tmp/frp_${FRP_VERSION}_linux_amd64/frpc" "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
+cp "$DL/frp_${FRP_VERSION}_linux_amd64/frpc" "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 chmod +x "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 
 log "done — verify with: bash scripts/tests/run.sh lint"

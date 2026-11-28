@@ -1118,6 +1118,7 @@ def create_vm(
     key: str,
     ciuser: str | None = None,
     upgrade: bool = False,
+    disk_grow: dict | None = None,
 ) -> None:
     """Clone, tag, key and start one VM — and leave nothing behind if it fails.
 
@@ -1163,6 +1164,14 @@ def create_vm(
         if ciuser:
             config["ciuser"] = ciuser
         api.request("PUT", "/nodes/%s/qemu/%d/config" % (node, newid), body=config, lock_retry=True)
+        if disk_grow:
+            # Before the first boot: growfs runs only then (rc.d KEYWORD firstboot)
+            # and takes the root partition up to the end of the bigger disk (R-1853).
+            api.task(
+                "PUT",
+                "/nodes/%s/qemu/%d/resize" % (node, newid),
+                body={"disk": disk_grow["disk"], "size": disk_grow["by"]},
+            )
         api.task("POST", "/nodes/%s/qemu/%d/status/start" % (node, newid))
     except BaseException as exc:
         # BaseException, not VmError: a Ctrl-C between the clone and the tags
@@ -1893,6 +1902,8 @@ CLOUD_INIT_LIMIT = 1800  # the first-boot upgrade of a base image months behind 
 BOOTSTRAP_LIMIT = 2700
 WARMUP_LIMIT = 1800
 # run.sh step ids of the unit layer that only test: the warm-up leaves them out.
+# The python ones install the venv's packages, so the template keeps an empty
+# venv and a lease's first python step installs them.
 WARMUP_EXCLUDE = (
     "monitoring-pytest",
     "ca-issuer-pytest",
@@ -2032,11 +2043,14 @@ OPNSENSE_PATH = "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/b
 OPNSENSE_CHECK = OPNSENSE_PATH + (
     """
 fail() { echo "check: $*" >&2; exit 1; }
+# The sshd that serves the firewall is the openssh-portable package's, not the
+# base one first on PATH; its -T writes the keywords in mixed case.
+SSHD=/usr/local/sbin/sshd
 [ "$(opnsense-version -a)" = %(release)s ] || fail "not OPNsense %(release)s: $(opnsense-version)"
 for p in os-qemu-guest-agent rsync sudo; do pkg info -e "$p" || fail "package $p is missing"; done
 sudo -n true || fail "no passwordless sudo"
-sudo -n sshd -T | grep -qx 'passwordauthentication no' || fail "sshd takes passwords"
-sudo -n sshd -T | grep -qx 'permitrootlogin no' || fail "sshd takes root"
+sudo -n $SSHD -T | grep -qix 'passwordauthentication no' || fail "sshd takes passwords"
+sudo -n $SSHD -T | grep -qix 'permitrootlogin no' || fail "sshd takes root"
 sudo -n pfctl -s info | grep -q '^Status: Enabled' || fail "pf is not enabled"
 df -h /
 """
@@ -2049,7 +2063,11 @@ df -h /
 # would rewrite it). /etc/rc makes a new hostid, the ssh plugin new host keys
 # under /conf/sshd. forget-webgui-cert.php drops the web GUI certificate of the
 # first boot, so each lease makes its own key; the config backups carry it too.
-# Both values are shell-quoted at the call.
+# base-freebsd's /etc/rc.conf lines go as well: the firewall configures its
+# services, interfaces and hostname itself (rc.conf.d), and a probe lease came up
+# with guest agent, address and sshd without them.
+# user and forget are shell-quoted at the call; rc_conf is joined unquoted from
+# the fixed names in OPNSENSE_DROP_RC_CONF, so it must never take a variable value.
 OPNSENSE_FORGET_CERT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "opnsense", "forget-webgui-cert.php"
 )
@@ -2058,9 +2076,24 @@ OPNSENSE_CLEAN = OPNSENSE_PATH + (
     "sudo -n sh -c 'rm -f /conf/backup/config-*.xml' && "
     "if id %(user)s >/dev/null 2>&1; then sudo -n pw userdel -n %(user)s -r; fi && "
     "sudo -n pkg clean -ay && "
+    "sudo -n sysrc -x %(rc_conf)s && "
     "sudo -n rm -rf /var/cache/nuageinit /tmp/opnsense-bootstrap && "
     "sudo -n rm -f /conf/sshd/ssh_host_* /etc/hostid /var/db/dhclient.leases.* "
-    "/var/log/nuageinit.log /usr/local/etc/sudoers.d/90-nuageinit-users /firstboot"
+    "/var/log/nuageinit.log /usr/local/etc/sudoers.d/90-nuageinit-users /firstboot "
+    "/etc/rc.conf.d/firstboot_pkg_upgrade"
+)
+# What base-freebsd's image and import (seed_user_data) put into /etc/rc.conf.
+OPNSENSE_DROP_RC_CONF = (
+    "hostname",
+    "firstboot_pkg_upgrade_enable",
+    "firstboot_pkg_upgrade_repos",
+    "growfs_enable",
+    "sshd_enable",
+    "sshd_rsa_enable",
+    "nuageinit_enable",
+    "dumpdev",
+    "ifconfig_DEFAULT",
+    "qemu_guest_agent_enable",
 )
 
 
@@ -2069,7 +2102,11 @@ def opnsense_clean(user: str) -> str:
     inline (`php -r` takes no opening tag): the checkout goes with that user."""
     with open(OPNSENSE_FORGET_CERT, encoding="utf-8") as f:
         php = f.read().split("\n", 1)[1]
-    return OPNSENSE_CLEAN % {"user": shlex.quote(user), "forget": shlex.quote(php)}
+    return OPNSENSE_CLEAN % {
+        "user": shlex.quote(user),
+        "forget": shlex.quote(php),
+        "rc_conf": " ".join(OPNSENSE_DROP_RC_CONF),
+    }
 
 
 def bake_opnsense(cfg: Config, api: Api, newid: int, key: str) -> None:
@@ -2193,6 +2230,7 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         # boots without an upgrade of its own. OPNsense deletes every package
         # of the base image anyway.
         upgrade=not opnsense,
+        disk_grow=meta.get("disk_grow"),
     )
     print("baking %s from %d in VM %d" % (args.profile, source["vmid"], newid))
 

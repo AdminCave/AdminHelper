@@ -222,6 +222,31 @@ DOCKER_PY="$(sed -n 's/^FROM python:\([0-9]*\.[0-9]*\)-.*/\1/p' "$ROOT"/apps/*/D
   && ok "box python $BOX_PY has the Dockerfiles' minor $DOCKER_PY" \
   || bad "box python '$BOX_PY', Dockerfiles FROM python: $(tr '\n' ' ' <<<"$DOCKER_PY")"
 
+# A fixed name under /tmp is one another user of the box can plant before the
+# bootstrap writes or runs it (R-1796): downloads go to its own mktemp -d.
+TMP_PATHS=$(grep -v '^[[:space:]]*#' "$BOOT" | grep -c '/tmp/' || true)
+[ "$TMP_PATHS" -eq 0 ] && ok "bootstrap_linux.sh uses no fixed /tmp/ path" \
+  || bad "bootstrap_linux.sh still uses a fixed /tmp/ path ($TMP_PATHS lines)"
+
+# The Docker key, nodesource and rustup came over TLS alone (R-1800): the apt
+# keys are checked against a pinned fingerprint, rustup-init against a sha256,
+# and no downloaded script is run.
+for v in DOCKER_KEY_FPR NODESOURCE_KEY_FPR; do
+  fpr="$(sed -n "s/^$v=\"\([0123456789ABCDEF]*\)\"$/\1/p" "$BOOT")"
+  n_check=$(grep -v '^[[:space:]]*#' "$BOOT" | grep -c "key_has_fpr .*\"\\\$$v\"" || true)
+  { [ "${#fpr}" -eq 40 ] && [ "$n_check" -eq 1 ]; } && ok "bootstrap_linux.sh checks its key against $v" \
+    || bad "bootstrap_linux.sh $v: pin '$fpr', $n_check key_has_fpr calls"
+done
+RUSTUP_V="$(sed -n 's/^RUSTUP_VERSION="${AH_RUSTUP_VERSION:-\([0-9.]*\)}"$/\1/p' "$BOOT")"
+RUSTUP_SHA="$(sed -n 's/^RUSTUP_SHA256_LINUX_AMD64="${AH_RUSTUP_SHA256:-\([0-9a-f]*\)}"$/\1/p' "$BOOT")"
+{ [ "${#RUSTUP_SHA}" -eq 64 ] && [[ "$RUSTUP_V" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]] \
+  && grep -qF 'RUSTUP_SHA256_LINUX_AMD64}  $DL/rustup-init" | sha256sum -c -' "$BOOT"; } \
+  && ok "bootstrap_linux.sh pins rustup-init $RUSTUP_V with a SHA-256" \
+  || bad "bootstrap_linux.sh rustup pin: version '$RUSTUP_V', sha256 '$RUSTUP_SHA', or no sha256sum -c"
+RUN_DL=$(grep -v '^[[:space:]]*#' "$BOOT" | grep -cE 'sh\.rustup\.rs|deb\.nodesource\.com/setup_|(^|[[:space:]])(ba)?sh "\$' || true)
+[ "$RUN_DL" -eq 0 ] && ok "bootstrap_linux.sh runs no downloaded script" \
+  || bad "bootstrap_linux.sh runs a downloaded script ($RUN_DL lines)"
+
 echo "── box downloads ──"
 # A single upstream blip failed whole bakes (R-1795, R-1797); every download of
 # the bootstrap goes through dl(), which retries and bounds a stalled transfer.

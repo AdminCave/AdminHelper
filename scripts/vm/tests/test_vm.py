@@ -2933,6 +2933,12 @@ def opnsense_bakeable(http):
             },
         ]
     )
+    http.add(
+        "PUT",
+        "/qemu/3900/resize",
+        body={"data": "UPID:<node>:0029D902:20A10218:6AAA7A38:qmresize:3900:<user>@pve!<tokenid>:"},
+    )
+    http.add("GET", "qmresize", "task_ok")
     return bakeable(http, template_vmid=3901, extra=[source], final={"body": done["body"]})
 
 
@@ -2951,6 +2957,36 @@ def test_an_opnsense_bake_starts_from_base_freebsd_with_its_user(
     assert capsys.readouterr().out.splitlines()[-1] == (
         "3900 ah-tpl-base-opnsense-%s ah-tpl-base-opnsense;built-%s" % (day, day)
     )
+
+
+def test_an_opnsense_bake_grows_its_disk_before_the_first_boot(keyed, api, http, clock, shell):
+    # The FreeBSD image's disk is too small for the upgrade plus OPNsense
+    # (R-1853); growfs takes the space only on the first boot.
+    opnsense_bakeable(http)
+    assert verb("bake", keyed, api, "--profile", "base-opnsense") == 0
+    paths = http.paths()
+    resize = next(c for c in http.calls if c.path.endswith("/qemu/3900/resize"))
+    assert resize.method == "PUT"
+    assert resize.body == {"disk": "virtio0", "size": "+16G"}
+    assert paths.index(resize.path) < paths.index(
+        next(p for p in paths if p.endswith("/qemu/3900/status/start"))
+    )
+
+
+def test_a_linux_bake_leaves_the_disk_alone(keyed, api, http, clock, shell):
+    bakeable(http)
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    assert not [c for c in http.calls if "/resize" in c.path]
+
+
+def test_a_disk_grow_only_adds_to_a_disk_the_api_knows():
+    # PVE takes `+<n><unit>` as growth and a bare size as absolute; shrinking is
+    # refused, so only growth belongs here.
+    for name, meta in vm.load_profiles()["profiles"].items():
+        grow = meta.get("disk_grow")
+        if grow:
+            assert re.fullmatch(r"(virtio|scsi|sata|ide)\d+", grow["disk"]), name
+            assert re.fullmatch(r"\+\d+G", grow["by"]), name
 
 
 def test_the_opnsense_clean_quotes_the_user_and_carries_the_cert_php_whole():
@@ -2987,6 +3023,14 @@ def test_an_opnsense_bake_reboots_into_our_user_before_it_checks_and_cleans(
     # the first boot's web GUI certificate goes before the user and its checkout
     assert commands[5].index("sudo -n php -r ") < commands[5].index("pw userdel")
     assert "/conf/backup/config-*.xml" in commands[5]
+    # base-freebsd's rc.conf, which the firewall does not read for its services
+    assert "sudo -n sysrc -x hostname firstboot_pkg_upgrade_enable " in commands[5]
+    assert " qemu_guest_agent_enable && " in commands[5]
+    assert "/etc/rc.conf.d/firstboot_pkg_upgrade" in commands[5]
+    # the firewall's sshd, whose -T output is mixed case
+    assert "SSHD=/usr/local/sbin/sshd" in commands[4]
+    assert "sudo -n $SSHD -T | grep -qix 'passwordauthentication no'" in commands[4]
+    assert "sudo -n sshd -T" not in commands[4]
     assert not any("bash" in c for c in commands)  # the firewall has none
     assert [r["timeout"] for r in ssh[1:3]] == [vm.CLOUD_INIT_LIMIT, vm.BOOTSTRAP_LIMIT]
     assert [r["timeout"] for r in ssh[4:]] == [120, vm.CLEAN_LIMIT]
