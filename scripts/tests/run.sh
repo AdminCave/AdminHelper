@@ -820,10 +820,12 @@ layer_unit() {
     run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && pip_dev && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/monitoring-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip monitoring-pytest "monitoring pytest" "python3 not installed"; fi
 
-  # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
+  # ca-issuer pytest — PKI logic plus the token-store tests against the test database; the
+  # CI job ca-issuer runs the same suite. Only the pins of requirements.txt: a bare install
+  # would test other versions than the image ships.
   if ! only ca-issuer; then skip ca-issuer-pytest "ca-issuer pytest" "AH_ONLY"
   elif have python3 && [ -d apps/ca-issuer/tests ]; then
-    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { pip_dev 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/ca-issuer-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && pip_dev && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/ca-issuer-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip ca-issuer-pytest "ca-issuer pytest" "python3 missing or no tests"; fi
 
   # Server pytest — needs a Postgres: testcontainers (docker) or an injected

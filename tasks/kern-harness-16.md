@@ -21,11 +21,13 @@ Tests: ein Tag mit dem Branch-Namen auf einem fremden Commit; ein gestubbter Mou
 Verify: bash scripts/dev/verify.sh scripts --strict -- worktree_setup_test
 Doku: keine (Harness-Interna)
 
-### T2 — ca-issuer-Schritt nur mit Pins, Kommentar aktuell (R-1785, R-1822)  [ ]
-Komponente: ca-issuer · Dateien: scripts/tests/run.sh
+### T2 — ca-issuer-Schritt nur mit Pins, Kommentar aktuell (R-1785, R-1822)  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @977bf2d9c 2026-11-28T05:39:55+01:00
+Review: approve (.ah-out/review/kern-harness-16/T2.verdict.json)
 Änderung: Der Schritt ca-issuer pytest ruft `pip_dev` ohne Fallback und ohne `2>/dev/null` auf. Der Kommentar
 nennt den CI-Job ca-issuer und die Datenbanktests der Suite.
-Verify: bash scripts/dev/verify.sh ca-issuer --strict
+Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (Harness-Interna)
 
 ### T3 — verify.sh, filtered, task-close: keine geerbten oder alten Zustände (R-1819 1–3)  [ ]

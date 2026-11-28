@@ -532,6 +532,17 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
   && ok "a failed install fails the schemathesis step and runs no suite" \
   || bad "schemathesis install failure: rc=$rc $(grep -m1 -E '^  (SKIP|FAIL|PASS)' <<<"$OUT") calls: $(tr '\n' '|' < "$CALLS")"
 
+# The ca-issuer step installs only through pip_dev: no unpinned fallback, and a
+# failed install fails the step before pytest starts (R-1822).
+: > "$CALLS"
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
+      SHIM_SKIP="" SHIM_CALL_LOG="$CALLS" SHIM_PIP_RC=1 \
+      "$PYSHIM/bash" "$RUN" unit --step "ca-issuer pytest" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -qE '^  FAIL  ca-issuer pytest' <<<"$OUT" \
+  && [ "$(grep -c -- '-m pip install' "$CALLS")" -eq 1 ] && [ "$(grep -c -- '-m pytest' "$CALLS")" -eq 0 ] \
+  && ok "a failed install fails the ca-issuer step, with no unpinned retry and no suite" \
+  || bad "ca-issuer install failure: rc=$rc $(grep -m1 -E '^  (SKIP|FAIL|PASS)' <<<"$OUT") calls: $(tr '\n' '|' < "$CALLS")"
+
 # A targeted run (verify.sh … -- <test> exports AH_ARGS) leaves the fuzz suite to the
 # PR CI: the step SKIPs as AH_ARGS and, like an AH_ONLY skip, does not strict-fail,
 # while the suite the caller asked for still runs (R-0380). The check below shows the
