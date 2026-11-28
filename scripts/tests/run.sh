@@ -651,7 +651,8 @@ export -f npm_ci_if_stale  # the run_step `bash -c` subshells need it in their e
 filtered() {
   local kind="$1" out rc=0; shift
   [ -n "${AH_ARGS:-}" ] || { "$@"; return; }
-  out="$(mktemp)" || return 1
+  # Under AH_OUT_DIR, which is this run's: the shared temp directory is not (R-1819).
+  mkdir -p "$AH_OUT_DIR" && out="$(mktemp -p "$AH_OUT_DIR")" || return 1
   "$@" 2>&1 | tee "$out"; rc=${PIPESTATUS[0]}
   if [ "$rc" = 0 ] && ! tests_ran "$kind" "$out"; then
     echo "  the filter '$AH_ARGS' ran no test — a typo, or a test that does not exist"

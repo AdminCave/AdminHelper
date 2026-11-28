@@ -301,7 +301,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           <code>--tree</code> and writes <code>last-verify.json</code> &ndash; the run artifact plus
           <code>component</code>, <code>args</code>, <code>tree</code>. It drops <code>AH_STEP</code>,
           <code>AH_PART</code>, <code>AH_EXCLUDE</code> and <code>AH_ONLY</code> from the environment: what the run
-          does is in its flags. When <code>-- &lt;args&gt;</code> narrows a cargo, go or vitest step to no test at
+          does is in its flags. It drops an inherited <code>AH_REQUIRED</code> and <code>AH_SCRIPT_TESTS</code>,
+          <code>AH_SCRIPT_TESTS_DIR</code>, <code>AH_SCRIPT_TESTS_ROOT</code> too; the value from
+          <code>.devenv.sh</code> applies. When <code>-- &lt;args&gt;</code> narrows a cargo, go or vitest step to no test at
           all (a typo in the filter), the step is red; a Go package among the arguments
           (<code>./internal/x/...</code>) replaces the agent&rsquo;s <code>./...</code>. The form
           <code>bash scripts/tests/run.sh &lt;layer&gt; --strict --only &lt;a&gt; &lt;b&gt;</code> is allowed as well;

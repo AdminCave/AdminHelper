@@ -43,6 +43,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 mkdir -p "$root/.ah-out"; echo "$*" > "$root/.ah-out/verify-called.txt"
 [ -z "${FIXTURE_TOUCH:-}" ] || echo x > "$root/$FIXTURE_TOUCH"
 [ -z "${FIXTURE_STAGE:-}" ] || git -C "$root" add -- "$FIXTURE_STAGE"
+[ -z "${FIXTURE_NOART:-}" ] || exit "${FIXTURE_VRC:-0}"
 th="${AH_TREE_HASH:-$(bash "$root/scripts/dev/tree-hash.sh")}" args="$*"
 printf '{"layer": "quick", "passed": 7, "failed": 0, "skipped": 2, "tree_hash": "%s", "component": "%s"}\n' \
   "$th" "${args%% --strict*}" > "$root/.ah-out/last-verify.json"
@@ -153,7 +154,7 @@ c() { OUT=$(cd "$FIX" && bash scripts/dev/task-close.sh "$@" 2>&1); rc=$?; }
 reset_repo() {
   git -C "$FIX" checkout -q feature/fixture 2>/dev/null; git -C "$FIX" reset -q --hard "$BASE"
   git -C "$FIX" clean -qfdx; mkdir -p "$FIX/scripts/tests"
-  unset FIXTURE_VRC FIXTURE_TOUCH FIXTURE_STAGE
+  unset FIXTURE_VRC FIXTURE_TOUCH FIXTURE_STAGE FIXTURE_NOART
 }
 heads() { git -C "$FIX" rev-list --count HEAD; }
 edit() { echo "echo $RANDOM" >> "$FIX/$1"; }
@@ -241,6 +242,15 @@ FIXTURE_VRC=1 c fix T1 --stage -m "test: x"; [ $rc -eq 3 ] && grep -q 'verify-re
 FIXTURE_VRC=74 c fix T1 --stage -m "test: x"; [ $rc -eq 74 ] && ok "a suite that cannot run -> 74" || bad "74: rc=$rc $OUT"
 FIXTURE_TOUCH=scripts/dev/new.txt c fix T1 --stage -m "test: x"
 [ $rc -eq 2 ] && grep -q 'tree changed while the suite ran' <<<"$OUT" && ok "the tree changed under the suite -> 2" || bad "tree: rc=$rc $OUT"
+# An artifact left by an earlier run, of this very tree, is no evidence for a
+# verify.sh that ends green without writing one (R-1819).
+reset_repo; edit scripts/dev/tool.sh; verdict fix T1 approve
+mkdir -p "$FIX/.ah-out"
+printf '{"layer": "quick", "passed": 7, "failed": 0, "skipped": 2, "tree_hash": "%s", "component": "scripts"}\n' \
+  "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" > "$FIX/.ah-out/last-verify.json"
+FIXTURE_NOART=1 c fix T1 --stage -m "test: x"
+[ $rc -eq 74 ] && grep -q 'no run artifact' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "an old artifact does not stand in for a run that wrote none -> 74" || bad "stale artifact: rc=$rc heads=$(heads) $OUT"
 # The check needs the hash the suite measures over this checkout. Client values
 # left in the environment (iter.sh passes them to a box) would be stamped
 # instead: set to the hash from before the run, they must not let a tree that

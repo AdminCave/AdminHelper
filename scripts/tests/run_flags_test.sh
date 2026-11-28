@@ -543,6 +543,15 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
   && ok "a failed install fails the ca-issuer step, with no unpinned retry and no suite" \
   || bad "ca-issuer install failure: rc=$rc $(grep -m1 -E '^  (SKIP|FAIL|PASS)' <<<"$OUT") calls: $(tr '\n' '|' < "$CALLS")"
 
+# filtered keeps its copy of the output under AH_OUT_DIR, not in the shared temp
+# directory: with TMPDIR gone it still runs, and leaves nothing behind (R-1819).
+mkdir -p "$WORK/filtered-out"
+out=$(PATH="$PYSHIM" TMPDIR="$WORK/no-such-tmp" AH_OUT_DIR="$WORK/filtered-out" AH_ARGS="TestX" \
+      "$PYSHIM/bash" -c "$(sed -n '/^filtered() {/,/^}/p; /^tests_ran() {/,/^}/p' "$RUN")"'; filtered go printf "ok\tpkg\t0.1s\n"' 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -z "$(ls -A "$WORK/filtered-out")" ] \
+  && ok "filtered writes its copy under AH_OUT_DIR and removes it" \
+  || bad "filtered: rc=$rc left=[$(ls -A "$WORK/filtered-out")] out=[$out]"
+
 # A targeted run (verify.sh … -- <test> exports AH_ARGS) leaves the fuzz suite to the
 # PR CI: the step SKIPs as AH_ARGS and, like an AH_ONLY skip, does not strict-fail,
 # while the suite the caller asked for still runs (R-0380). The check below shows the

@@ -30,8 +30,10 @@ nennt den CI-Job ca-issuer und die Datenbanktests der Suite.
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (Harness-Interna)
 
-### T3 — verify.sh, filtered, task-close: keine geerbten oder alten Zustände (R-1819 1–3)  [ ]
-Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/run.sh, scripts/dev/task-close.sh, scripts/tests/verify_test.sh, scripts/tests/task_close_test.sh
+### T3 — verify.sh, filtered, task-close: keine geerbten oder alten Zustände (R-1819 1–3)  [x]
+Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/run.sh, scripts/dev/task-close.sh, scripts/tests/verify_test.sh, scripts/tests/task_close_test.sh, scripts/tests/run_flags_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @223bc9c84 2026-11-28T06:09:48+01:00
+Review: approve (.ah-out/review/kern-harness-16/T3.verdict.json)
 Änderung:
 - `verify.sh` verwirft `AH_REQUIRED` und `AH_SCRIPT_TESTS*` vor dem Devenv.
 - `filtered` legt seine Datei unter `$AH_OUT_DIR` an.
@@ -39,8 +41,8 @@ Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/run.sh, scr
 
 Tests: ein geerbter Wert wirkt nicht, der Devenv-Wert wirkt; ein altes Artefakt bei einem verify.sh, das grün
 endet, ohne zu schreiben.
-Verify: bash scripts/dev/verify.sh scripts --strict -- verify_test task_close_test
-Doku: keine (Harness-Interna)
+Verify: bash scripts/dev/verify.sh scripts --strict -- verify_test task_close_test run_flags_test
+Doku: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
 
 ### T4 — Sperrliste und Risikoliste (R-1785, R-1819 4–5)  [ ]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/review-risk.txt, scripts/tests/review_scripts_test.sh, tasks/kern-harness-11.md

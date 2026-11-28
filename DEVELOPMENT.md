@@ -323,7 +323,8 @@ Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI. Ein cargo-, go- oder
 `-- <args>` auf keinen einzigen Test eingrenzt (ein Tippfehler im Filter: `0 passed; 291 filtered out`), ist
 rot statt gruen (R-0546); nennt `-- <args>` ein Go-Paket (`./internal/x/...`), ersetzt es das `./...` des
 Agents (R-1659). `AH_STEP`, `AH_PART`, `AH_EXCLUDE` und `AH_ONLY` aus der Umgebung verwirft `verify.sh`: was
-der Lauf tut, steht in seinen Flags (R-1362). Ein Lauf, der die Suite erreicht, hinterlaesst
+der Lauf tut, steht in seinen Flags (R-1362). Ein geerbtes `AH_REQUIRED` und `AH_SCRIPT_TESTS`,
+`AH_SCRIPT_TESTS_DIR`, `AH_SCRIPT_TESTS_ROOT` verwirft es ebenso; der Wert aus `.devenv.sh` gilt (R-1819). Ein Lauf, der die Suite erreicht, hinterlaesst
 `.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component` — bei mehreren die
 Liste —, `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und

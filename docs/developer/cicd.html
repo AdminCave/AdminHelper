@@ -306,7 +306,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           anderen Checkout und schreibt <code>last-verify.json</code> &ndash; das Lauf-Artefakt plus
           <code>component</code>, <code>args</code>, <code>tree</code>. <code>AH_STEP</code>, <code>AH_PART</code>,
           <code>AH_EXCLUDE</code> und <code>AH_ONLY</code> aus der Umgebung verwirft es: was der Lauf tut, steht in
-          seinen Flags. Grenzt <code>-- &lt;args&gt;</code> einen cargo-, go- oder vitest-Schritt auf keinen
+          seinen Flags. Ebenso verwirft es ein geerbtes <code>AH_REQUIRED</code> und
+          <code>AH_SCRIPT_TESTS</code>, <code>AH_SCRIPT_TESTS_DIR</code>, <code>AH_SCRIPT_TESTS_ROOT</code>; der
+          Wert aus <code>.devenv.sh</code> gilt. Grenzt <code>-- &lt;args&gt;</code> einen cargo-, go- oder vitest-Schritt auf keinen
           einzigen Test ein (ein Tippfehler im Filter), ist der Schritt rot; ein Go-Paket in den Argumenten
           (<code>./internal/x/...</code>) ersetzt das <code>./...</code> des Agents. Die Form
           <code>bash scripts/tests/run.sh &lt;layer&gt; --strict --only &lt;a&gt; &lt;b&gt;</code> ist ebenfalls
