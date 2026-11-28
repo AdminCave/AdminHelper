@@ -46,3 +46,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html DE+EN
 Task-Review: am Ende
+
+### T5 — Admin-Doku: Modus list unter FreeBSD ebenfalls verzögert  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-agent-26.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @85feb1ae7 2026-11-28T04:56:21+01:00
+Review: am Ende (Branch-Review)
+Änderung: Der Satz zum Modus `list` sagt richtig, dass auch dessen Namen bis zu 15 min verzögert ankommen (der Dienst wertet das Inventar aus), außer sie stehen in der eigenen Liste des Agents (`monitor init --services`); Umbruch der Spec-Zeile (Fund und Nit der zweiten Abschlussprüfung).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/monitoring.html DE+EN
+Task-Review: am Ende
