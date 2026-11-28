@@ -803,18 +803,28 @@ def record_rule_layers(db: Session, *, catalog: Catalog | None = None) -> tuple[
             if rules is None:
                 logger.warning("Module check %s keeps no rule layer: %s", row.id, why)
                 continue
-            store_layer(row, rules, {})
-            recorded += 1
-            continue
-        layer = None
-        if rules is not None:
-            layer, why = _conversion(row, rules, catalog)
-        if layer is None:
-            logger.debug("Module check %s keeps the admin's rules frozen: %s", row.id, why)
+            layer, counted = (rules, {}), "recorded"
+        else:
+            layer = None
+            if rules is not None:
+                layer, why = _conversion(row, rules, catalog)
+            if layer is None:
+                logger.debug("Module check %s keeps the admin's rules frozen: %s", row.id, why)
+                frozen += 1
+                continue
+            counted = "converted"
+        try:
+            store_layer(row, *layer)
+        except ValueError as exc:
+            # One check the layer does not hold must not cost the others theirs (R-1827);
+            # store_layer raises before it writes, so the row stays as it was.
+            logger.warning("Module check %s keeps no rule layer: %s", row.id, exc)
             frozen += 1
             continue
-        store_layer(row, *layer)
-        converted += 1
+        if counted == "recorded":
+            recorded += 1
+        else:
+            converted += 1
     db.commit()
     if recorded or converted or frozen:
         logger.info(
@@ -835,9 +845,10 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
     "changed" and open, so the admin sees it and adopting makes the new checks alert and
     writes the new definitions. A check the admin deleted is not created again. A module
     the catalog no longer has is left alone. A check bound before definitions had a hash
-    gets today's, without an update: nothing shows what it was bound from. One whose rules
-    the admin changed and that has no rule layer gets none, so record_rule_layers does not
-    take its rules for changed from today's definition at a later start."""
+    gets today's, without an update: nothing shows what it was bound from. A probe check
+    whose rules the admin changed and that has no rule layer gets none, so
+    record_rule_layers does not take its rules for changed from today's definition at a
+    later start."""
     catalog = catalog or get_catalog()
     reopened = 0
     unhashed = (
@@ -846,7 +857,9 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         .all()
     )
     for row in unhashed:
-        if row.rule_layer is None and "config" in read_overrides(row):
+        # Only a probe check gets a rule layer; a central one marked "config" takes its
+        # hash, or it never sees an update of its module (R-1828).
+        if row.check_type == "probe" and row.rule_layer is None and "config" in read_overrides(row):
             continue
         module = catalog.modules.get(row.module_id)
         check = None

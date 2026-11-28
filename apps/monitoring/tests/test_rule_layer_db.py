@@ -349,6 +349,54 @@ def test_a_frozen_check_without_a_hash_stays_frozen_after_the_sync(db, actions):
     assert web.rule_layer is None
 
 
+def test_a_check_whose_layer_cannot_be_stored_stays_frozen_and_the_others_go_on(
+    db, actions, logs, monkeypatch
+):
+    # R-1827: one check whose layer store_layer refuses must not cost the others theirs.
+    web = _before_the_layer(db, actions)
+    real = module_sync.store_layer
+
+    def refuse_web(row, *args):
+        if row.id == web.id:
+            raise ValueError("the rule 'x' does not hold: probe")
+        real(row, *args)
+
+    monkeypatch.setattr(module_sync, "store_layer", refuse_web)
+    logs.clear()
+
+    assert record_rule_layers(db, catalog=CATALOG) == (1, 0, 1)
+
+    assert web.rule_layer is None
+    broker = db.query(MonitorCheck).filter(MonitorCheck.module_check_key == "broker").one()
+    assert read_layer(broker) == {"catalog": [], "overrides": {}, "conflicts": []}
+    rows = [r.getMessage() for r in logs.records if r.getMessage().startswith("Module check ")]
+    assert rows == [f"Module check {web.id} keeps no rule layer: the rule 'x' does not hold: probe"]
+    assert [r.levelname for r in logs.records if r.getMessage() == rows[0]] == ["WARNING"]
+
+
+def test_a_marked_central_check_without_a_hash_gets_todays(db, actions):
+    # R-1828: a central check never gets a rule layer, so the exception for marked checks
+    # without one is the probe's only; the central check gets its hash and later its offers.
+    finding = _finding(db, "site", "shop.example.org", summary=SITE_SUMMARY)
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+    rows = _checks(db, finding)
+    for row in rows.values():
+        row.overridden_fields = json.dumps(["config"])
+        row.module_check_hash = None
+        # As a version before the layer left the probe check; the central ones have none.
+        row.rule_layer = None
+    db.commit()
+
+    sync_catalog(db, catalog=SITE)
+
+    checks = {c.key: c for c in SITE.modules["site"].checks}
+    assert {key: row.module_check_hash for key, row in rows.items()} == {
+        "served": None,
+        "resolves": definition_hash(checks["resolves"]),
+        "outside": definition_hash(checks["outside"]),
+    }
+
+
 def test_an_unmarked_check_without_a_hash_gets_its_layer_and_the_sync_its_hash(db, actions):
     web = _before_the_layer(db, actions)
     web.module_check_hash = None

@@ -50,3 +50,13 @@
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1612 provisioning token over stdin: GET /api/provisioning/platforms added the new `tokenStdin` enum value to the `platforms/items/commands/items/args/items/value` response property for the response status `200`
+2026-11-28 R-1792 bounded server id: POST /alerts the `match_server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: PUT /alerts/{rule_id} the `match_server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: POST /checks the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: PUT /checks/{check_id} the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1827 bounded rule value list: PUT /checks/{check_id}/rules removed `subschema #4, subschema #5` from the `overrides/additionalProperties/value` request property `anyOf` list
+2026-11-28 R-1792 bounded scope value: POST /exceptions the `scope_value/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded scope value: PUT /exceptions/{exception_id} the `scope_value/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: POST /maintenance the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: PUT /maintenance/{maintenance_id} the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: POST /templates/{template_id}/assign the `server_id` request property's maxLength was set to `255`

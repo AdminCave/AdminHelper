@@ -58,17 +58,28 @@ _INTERVAL_MAP = {
 }
 
 
-def _parse_trigger(interval: str, *, random_phase: bool = False):
+def _parse_trigger(interval: str, *, random_phase: bool = False, last_run: datetime | None = None):
     """Converts a fixed-interval string into an APScheduler trigger.
 
     With `random_phase` the first run comes at a random point of the first period
-    instead of at its end; the period itself stays exact.
+    instead of at its end; the period itself stays exact. With `last_run` (naive
+    UTC) the first run is one period after it, or at a random point of the first
+    minute when that has passed.
     """
     if interval not in _INTERVAL_MAP:
         raise ValueError(
             f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)}"
         )
     period = _INTERVAL_MAP[interval]
+    if last_run is not None:
+        now = datetime.now(timezone.utc)
+        due = last_run.replace(tzinfo=timezone.utc) + timedelta(**period)
+        if due <= now:
+            # After a long stop every overdue check would fire at the same moment; a run
+            # that waits in the pool past misfire_grace_time is dropped, and the next one
+            # comes a full period later. A minute spreads them, as for central checks.
+            due = now + timedelta(minutes=1) * random.random()
+        return IntervalTrigger(**period, start_date=due)
     if not random_phase:
         return IntervalTrigger(**period)
     # Central checks (R-1224): loaded at start-up or created together they would all
@@ -86,8 +97,12 @@ def interval_timedelta(interval: str) -> timedelta | None:
     return timedelta(**kwargs) if kwargs else None
 
 
-def add_check(check_id: str, interval: str, check_type: str | None) -> None:
-    """Registers or updates a check in the scheduler.
+def add_check(
+    check_id: str, interval: str, check_type: str | None, last_run: datetime | None = None
+) -> None:
+    """Registers or updates a check in the scheduler; a job whose period is
+    unchanged keeps its next run (R-1696). load_all_checks passes the check's
+    last run (`last_run`, naive UTC), so a restart keeps its phase as well.
 
     Push-only checks (agent_resources, service_process, ...) are skipped, since
     they are only evaluated on the agent report. check_type is mandatory (no
@@ -102,13 +117,26 @@ def add_check(check_id: str, interval: str, check_type: str | None) -> None:
         remove_check(check_id)
         return
 
-    trigger = _parse_trigger(interval, random_phase=check_type == "central")
+    trigger = _parse_trigger(interval, random_phase=check_type == "central", last_run=last_run)
+    # A new IntervalTrigger starts one period from now: replacing the job on every
+    # PUT or template sync pushed the next run out each time.
+    job = scheduler.get_job(f"mon_{check_id}")
+    if (
+        job is not None
+        and isinstance(job.trigger, IntervalTrigger)
+        and job.trigger.interval == trigger.interval
+    ):
+        return
+    # An overdue start date lies a moment in the past by the time APScheduler
+    # computes the first run, which would then come a full period later.
+    first_run = {} if last_run is None else {"next_run_time": trigger.start_date}
     scheduler.add_job(
         execute_check,
         trigger=trigger,
         id=f"mon_{check_id}",
         replace_existing=True,
         args=[check_id],
+        **first_run,
     )
 
 
@@ -123,9 +151,9 @@ def remove_check(check_id: str) -> None:
         pass
 
 
-# When load_all_checks scheduled the checks (naive UTC). An interval trigger without a start
-# date fires one full period after it is added: until then a check's last run is the one
-# before the restart, and GET /health/detail counts this moment as its run.
+# When load_all_checks scheduled the checks (naive UTC). A check without a recorded run
+# fires one full period after it is added: until then GET /health/detail counts this
+# moment as its run.
 loaded_at: datetime | None = None
 
 
@@ -133,12 +161,17 @@ def load_all_checks() -> None:
     """Loads and schedules all active checks at startup."""
     from app.core.database import SessionLocal
     from app.exception_scope import runs
-    from app.models import MonitorCheck
+    from app.models import MonitorCheck, MonitorState
 
     global loaded_at
     db = SessionLocal()
     try:
         checks = db.query(MonitorCheck).filter(runs).all()
+        last_runs = dict(
+            db.query(MonitorState.check_id, MonitorState.last_check).filter(
+                MonitorState.last_check.isnot(None)
+            )
+        )
         count = 0
         skipped = 0
         for check in checks:
@@ -146,7 +179,7 @@ def load_all_checks() -> None:
                 skipped += 1
                 continue
             try:
-                add_check(check.id, check.interval, check.check_type)
+                add_check(check.id, check.interval, check.check_type, last_runs.get(check.id))
                 count += 1
             except ValueError as exc:
                 logger.warning("Check %s (%s): %s", check.id, check.name, exc)

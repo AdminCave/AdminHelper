@@ -216,7 +216,7 @@ fi
 # the line's first field starting with "/" (checker/ignore.go,
 # api_change.go:131 @v1.32.0). So this holds two things. The file, byte for byte,
 # is the list below — date, roadmap id, reason and finding text of all
-# fifty-two lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07, 2026-11-19); a further
+# sixty-two lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07, 2026-11-19, 2026-11-28); a further
 # exception is Kevin's call and
 # changes the list. And every line, the next one too, has the form <date> <R-id>
 # <reason>: <METHOD> <path> <text>, its reason only letters, digits, blanks and
@@ -283,13 +283,23 @@ if [ -r "$IGNORE" ]; then
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1612 provisioning token over stdin: GET /api/provisioning/platforms added the new `tokenStdin` enum value to the `platforms/items/commands/items/args/items/value` response property for the response status `200`
+2026-11-28 R-1792 bounded server id: POST /alerts the `match_server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: PUT /alerts/{rule_id} the `match_server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: POST /checks the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: PUT /checks/{check_id} the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1827 bounded rule value list: PUT /checks/{check_id}/rules removed `subschema #4, subschema #5` from the `overrides/additionalProperties/value` request property `anyOf` list
+2026-11-28 R-1792 bounded scope value: POST /exceptions the `scope_value/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded scope value: PUT /exceptions/{exception_id} the `scope_value/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: POST /maintenance the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: PUT /maintenance/{maintenance_id} the `server_id/anyOf[subschema #1]/` request property's maxLength was set to `255`
+2026-11-28 R-1792 bounded server id: POST /templates/{template_id}/assign the `server_id` request property's maxLength was set to `255`
 EXPECTED_EXCEPTIONS
 )
   # diff against the file itself, not a $(…) copy of it: that would drop
   # trailing blank lines, and the comparison must see every byte. Its exit code
   # decides, not an empty output: a diff that could not run prints nothing too.
   DRIFT_RC=0; DRIFT=$(diff <(printf '%s\n' "$EXPECTED_IGNORE") "$IGNORE" 2>&1) || DRIFT_RC=$?
-  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the fifty-two expected lines, reasons included" \
+  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the sixty-two expected lines, reasons included" \
     || bad "the exception file drifted from the expected lines (diff rc=$DRIFT_RC): $DRIFT"
   # oasdiff checks no path for a component or a security change: a line with the
   # word "components" or "security" could match one of those by its text alone.

@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import scheduler as sched
 from app.alert_bundle import flush_agent_alerts
-from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck
+from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
 
 from ._helpers import standing_skip
 
@@ -256,3 +256,92 @@ def test_agent_alert_bundle_registered_again_replaces_itself(paused_scheduler):
 
     jobs = [j for j in paused_scheduler.get_jobs() if j.id == "system:agent-alert-bundle"]
     assert [j.trigger.interval for j in jobs] == [timedelta(seconds=60)]
+
+
+# --- phase of a check (R-1696) ------------------------------------------------
+
+
+def test_add_check_keeps_the_next_run_of_an_unchanged_period(paused_scheduler):
+    # Each PUT and template sync calls add_check again: a new trigger would push
+    # the next run one full period out every time.
+    sched.add_check("t-keep", "1h", "ping")
+    first = paused_scheduler.get_job("mon_t-keep").next_run_time
+
+    sched.add_check("t-keep", "1h", "http")
+
+    assert paused_scheduler.get_job("mon_t-keep").next_run_time == first
+
+
+def test_add_check_takes_a_changed_period(paused_scheduler):
+    sched.add_check("t-change", "1h", "ping")
+    sched.add_check("t-change", "5m", "ping")
+
+    job = paused_scheduler.get_job("mon_t-change")
+    assert job.trigger.interval == timedelta(minutes=5)
+    assert job.next_run_time - datetime.now(timezone.utc) <= timedelta(minutes=5)
+
+
+def test_add_check_resumes_the_phase_of_the_last_run(paused_scheduler):
+    last = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=20)
+
+    sched.add_check("t-resume", "24h", "ping", last)
+
+    nxt = paused_scheduler.get_job("mon_t-resume").next_run_time
+    want = (last + timedelta(hours=24)).replace(tzinfo=timezone.utc)
+    assert abs(nxt - want) < timedelta(seconds=1)
+
+
+def test_add_check_runs_an_overdue_check_now(monkeypatch, paused_scheduler):
+    # A host restarting more often than the period: the check must still run.
+    monkeypatch.setattr(sched.random, "random", lambda: 0.0)
+    last = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=30)
+
+    sched.add_check("t-due", "24h", "ping", last)
+
+    job = paused_scheduler.get_job("mon_t-due")
+    assert job.next_run_time - datetime.now(timezone.utc) < timedelta(seconds=5)
+    # The period after that first run is the full one.
+    second = job.trigger.get_next_fire_time(job.next_run_time, job.next_run_time)
+    assert second - job.next_run_time == timedelta(hours=24)
+
+
+def test_add_check_spreads_overdue_checks_over_a_minute(monkeypatch, paused_scheduler):
+    monkeypatch.setattr(sched.random, "random", lambda: 0.5)
+    last = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+
+    # Every type: after a long stop they would all fire at once, and a run left in
+    # the pool past misfire_grace_time is dropped for a full period.
+    for check_id, check_type in (("t-central-due", "central"), ("t-ping-due", "ping")):
+        sched.add_check(check_id, "1h", check_type, last)
+
+        delay = paused_scheduler.get_job(f"mon_{check_id}").next_run_time - datetime.now(
+            timezone.utc
+        )
+        assert timedelta(seconds=25) < delay <= timedelta(seconds=30), check_type
+
+
+def test_load_all_checks_passes_the_last_run(monkeypatch, db_engine):
+    factory = sessionmaker(bind=db_engine)
+    last = datetime(2026, 11, 27, 6, 0)
+    with factory() as db:
+        for id in ("ran", "never"):
+            db.add(MonitorCheck(id=id, name=id, check_type="ping", config="{}", interval="1h"))
+        db.flush()
+        db.add(MonitorState(check_id="ran", status="ok", last_check=last))
+        db.add(MonitorState(check_id="never", status="pending"))
+        db.commit()
+
+    import app.core.database as database
+
+    monkeypatch.setattr(database, "SessionLocal", factory)
+    monkeypatch.setattr(sched, "loaded_at", None)
+    added = {}
+    monkeypatch.setattr(
+        sched,
+        "add_check",
+        lambda check_id, _i, _t, last_run=None: added.update({check_id: last_run}),
+    )
+
+    sched.load_all_checks()
+
+    assert added == {"ran": last, "never": None}
