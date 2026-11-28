@@ -27,8 +27,7 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict
 Doku: keine (Harness-Interna)
 
 ### T3 — verify.sh, filtered, task-close: keine geerbten oder alten Zustände (R-1819 1–3)  [ ]
-Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/run.sh, scripts/dev/task-close.sh,
-scripts/tests/verify_test.sh, scripts/tests/task_close_test.sh
+Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/run.sh, scripts/dev/task-close.sh, scripts/tests/verify_test.sh, scripts/tests/task_close_test.sh
 Änderung:
 - `verify.sh` verwirft `AH_REQUIRED` und `AH_SCRIPT_TESTS*` vor dem Devenv.
 - `filtered` legt seine Datei unter `$AH_OUT_DIR` an.
@@ -40,8 +39,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- verify_test task_close_te
 Doku: keine (Harness-Interna)
 
 ### T4 — Sperrliste und Risikoliste (R-1785, R-1819 4–5)  [ ]
-Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/review-risk.txt, scripts/tests/review_scripts_test.sh,
-tasks/kern-harness-11.md
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/review-risk.txt, scripts/tests/review_scripts_test.sh, tasks/kern-harness-11.md
 Änderung:
 - `review.sh sec`: Ein Verzeichnis `tasks/private`, das nicht durchsuchbar ist, gilt als Fehler.
 - `review-risk.txt` nimmt auf: `apps/agent/internal/selfupdate/*`, `allowlist/*`, `execx/*`, `scripts/backup.sh`,
