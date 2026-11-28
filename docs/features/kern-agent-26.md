@@ -22,7 +22,7 @@ Lesen von Pidfiles (nur 5 von 31 Skripten setzen `pidfile=`).
 
 ## Betroffene Komponenten & Dateien
 `apps/agent/internal/monitor/rcservice.go`, `services_freebsd.go`, `services_linux.go`, `services_windows.go`,
-`report.go`, `reportstate.go`, `cycle.go`, Tests `rcservice_test.go`, `services_freebsd_test.go`; Doku
+`report.go`, `reportstate.go`, `cycle.go`, Tests `rcservice_test.go`, `reportstate_test.go` (der Pfad mit den echten `rcConfPaths` nur auf der FreeBSD-Box); Doku
 `docs/developer/agent.html`, `docs/en/developer/agent.html`, `changelog.d/kern-agent-26.md`.
 
 ## Datenmodell / API

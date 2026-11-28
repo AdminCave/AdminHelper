@@ -51,7 +51,8 @@ func (c *Cycle) Done(pushed bool) {
 		// refused and a bound one stays bound. The load gate counts the runs it read, so a host under
 		// load is not measured in full while the service is away. The hourly update count and the
 		// backup index stay as read, or every run would read them again until a push goes through
-		// (R-1700), and so does the FreeBSD service block (R-1706). The rest of the state stays as the last push left it.
+		// (R-1700), and so does the FreeBSD service block (R-1706). The rest of the state stays as the
+		// last push left it.
 		kept := c.prev
 		kept.Probes = c.next.Probes
 		kept.Throttle = c.next.Throttle

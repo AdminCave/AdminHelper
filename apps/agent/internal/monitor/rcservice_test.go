@@ -461,7 +461,26 @@ func TestRCConfStamp(t *testing.T) {
 	if err := os.Chtimes(conf, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if rcConfStamp(paths) == afterNew {
+	afterConf := rcConfStamp(paths)
+	if afterConf == afterNew {
 		t.Error("stamp unchanged after rc.conf changed its mtime")
+	}
+	// A file under rc.conf.d changed in place (same size, other mtime) leaves the directory's mtime
+	// alone: only a stamp that walks into the directory sees it.
+	if err := os.Chtimes(filepath.Join(d, "nginx"), time.Unix(2, 0), time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(d, time.Unix(3, 0), time.Unix(3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	afterDirOnly := rcConfStamp(paths)
+	if err := os.Chtimes(filepath.Join(d, "nginx"), time.Unix(4, 0), time.Unix(4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(d, time.Unix(3, 0), time.Unix(3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if rcConfStamp(paths) == afterDirOnly {
+		t.Error("stamp unchanged after a file in rc.conf.d changed in place")
 	}
 }

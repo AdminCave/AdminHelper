@@ -30,8 +30,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html DE+EN · changelog.d/kern-agent-26.md
 Task-Review: am Ende
 
-### T3 — Abschlussprüfung: Stempel-Test für Dateien unter rc.conf.d, Kommentare  [ ]
+### T3 — Abschlussprüfung: Stempel-Test für Dateien unter rc.conf.d, Kommentare  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/rcservice_test.go, apps/agent/internal/monitor/cycle.go, apps/agent/internal/monitor/reportstate_test.go, docs/features/kern-agent-26.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @684f37015 2026-11-28T04:49:04+01:00
+Review: am Ende (Branch-Review)
 Änderung: `TestRCConfStamp` ändert eine Datei unter rc.conf.d an Ort und Stelle (gleiche Größe, neue mtime, mtime des Verzeichnisses gleich) und verlangt einen neuen Stempel; Kommentarumbruch in cycle.go und reportstate_test.go; Spec nennt die tatsächlich geänderten Tests (Fund und Nits der Abschlussprüfung).
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Test und Kommentare)

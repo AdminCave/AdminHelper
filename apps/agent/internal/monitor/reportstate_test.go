@@ -432,9 +432,9 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 
 	// 3) A lost push (both attempts fail) leaves the state as it was, but for the self-throttle: that
 	// counts the run all the same (here the third clean one, which resets the count). The hourly
-	// update count, the backup index and the FreeBSD service block read in this run are kept too (R-1700,
-	// R-1706): read again in every
-	// run while the service is away, they would cost their full price each five minutes.
+	// update count, the backup index and the FreeBSD service block read in this run are kept too
+	// (R-1700, R-1706): read again in every run while the service is away, they would cost their full
+	// price each five minutes.
 	saved := loadReportState(statePath)
 	security := 3
 	readUpdates := &updatesCheck{CheckedUnix: 1700000000, Security: &security}
