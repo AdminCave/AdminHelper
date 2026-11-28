@@ -95,6 +95,10 @@ rm -f "$SRC" "$DST"
 # mandatory — a synced devenv would smuggle the dev box's heavy-free set onto
 # the box and let --strict pass while the heavy steps were skipped (R-0048).
 DEVENV="${AH_DEVENV:-$TREE/.devenv.sh}"
+# Before the devenv, which may set them: a value left in the session shell would
+# pick the required set or the script tests unseen, and on a box without a devenv
+# it would undo the box rule above (R-1819).
+unset AH_REQUIRED AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_SCRIPT_TESTS_ROOT
 if [ -f "$DEVENV" ]; then
   # The trap catches a devenv that calls `exit`: without it, `exit 0` there would
   # end verify.sh green without a single suite having run.

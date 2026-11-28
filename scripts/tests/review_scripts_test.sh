@@ -157,6 +157,27 @@ if [ "$(id -u)" != 0 ]; then
   chmod 600 "$FIX/tasks/private/public-deny.txt"
   reset_index
 fi
+# A tasks/private that cannot be searched hides the list from -e: exit 2 as well,
+# not "check off" (R-1819).
+if [ "$(id -u)" != 0 ]; then
+  printf 'one more line\n' >> "$FIX/docs/thing.md"
+  chmod 600 "$FIX/tasks/private"
+  stage docs/thing.md
+  r sec --staged
+  chmod 700 "$FIX/tasks/private"
+  [ $rc -eq 2 ] && ! grep -q "sec: clean" <<<"$OUT" \
+    && ok "a tasks/private that cannot be searched -> exit 2, not clean" || bad "unsearchable private: rc=$rc out=$OUT"
+  reset_index
+fi
+# A tasks/private that is a dangling link hides the list just as well.
+mv "$FIX/tasks/private" "$WORK/private-aside"; ln -s "$WORK/no-such-private" "$FIX/tasks/private"
+printf 'one more line\n' >> "$FIX/docs/thing.md"
+stage docs/thing.md
+r sec --staged
+rm -f "$FIX/tasks/private"; mv "$WORK/private-aside" "$FIX/tasks/private"
+[ $rc -eq 2 ] && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "a tasks/private that is a dangling link -> exit 2, not clean" || bad "dangling private: rc=$rc out=$OUT"
+reset_index
 # A new file whose path holds an entry: the path is not shown either.
 printf 'x\n' > "$FIX/docs/Fixture-Lab-Host.png"
 stage docs/Fixture-Lab-Host.png
@@ -171,6 +192,15 @@ git -C "$WORK/wt" add -- thing.md
 OUT=$(bash "$WORK/wt/scripts/dev/review.sh" sec --staged 2>&1); rc=$?
 [ $rc -eq 4 ] && grep -q "^  thing.md:[0-9]* (an entry of the private deny list)" <<<"$OUT" \
   && ok "in a worktree the main checkout's deny list counts" || bad "deny worktree: rc=$rc out=$OUT"
+# The worktree falls back to the main checkout's tasks/private: one that cannot
+# be searched there is exit 2 as well, not "check off".
+if [ "$(id -u)" != 0 ]; then
+  chmod 600 "$FIX/tasks/private"
+  OUT=$(bash "$WORK/wt/scripts/dev/review.sh" sec --staged 2>&1); rc=$?
+  chmod 700 "$FIX/tasks/private"
+  [ $rc -eq 2 ] && ! grep -q "sec: clean" <<<"$OUT" \
+    && ok "in a worktree an unsearchable main tasks/private -> exit 2, not clean" || bad "worktree unsearchable: rc=$rc out=$OUT"
+fi
 rm -f "$FIX/tasks/private/public-deny.txt"
 OUT=$(bash "$WORK/wt/scripts/dev/review.sh" sec --staged 2>&1); rc=$?
 [ $rc -eq 0 ] && ok "in a worktree without any deny list the same line is clean" || bad "worktree no deny: rc=$rc out=$OUT"
@@ -872,7 +902,9 @@ rreset; put apps/agent/internal/httpclient/httpclient.go; r risk --staged
   && ok "the agent's cert pinning is a risk path" || bad "httpclient: rc=$rc out=$OUT"
 # R-0479, R-0481, R-0593, R-1265: paths with a security effect that the list once missed.
 for p in apps/server/app/core/config.py scripts/agent-install.sh apps/monitoring/app/checkers/http.py \
-         apps/agent/internal/probe/x.go apps/agent/internal/discovery/x.go apps/agent/internal/credentials/x.go; do
+         apps/agent/internal/probe/x.go apps/agent/internal/discovery/x.go apps/agent/internal/credentials/x.go \
+         apps/agent/internal/selfupdate/x.go apps/agent/internal/allowlist/x.go apps/agent/internal/execx/x.go \
+         scripts/backup.sh scripts/restore.sh scripts/diagnostics.sh; do
   rreset; put "$p"; r risk --staged
   [ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qxF "  $p" <<<"$OUT" \
     && ok "$p is a risk path" || bad "$p: rc=$rc out=$OUT"

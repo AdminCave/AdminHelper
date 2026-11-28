@@ -48,6 +48,7 @@ mk_tree() {
   echo "ah_args=\${AH_ARGS-<unset>}"
   echo "devenv_marker=\${FIXTURE_DEVENV-<unset>}"
   echo "required=\${AH_REQUIRED-<unset>}"
+  echo "script_tests=\${AH_SCRIPT_TESTS-<unset>}|\${AH_SCRIPT_TESTS_DIR-<unset>}|\${AH_SCRIPT_TESTS_ROOT-<unset>}"
   echo "cwd=\$PWD"
   echo "tmpdir=\${TMPDIR-<unset>}"
   echo "inherited=\${AH_STEP-}|\${AH_PART-}|\${AH_EXCLUDE-}|\${AH_ONLY-}"
@@ -162,6 +163,19 @@ OUT=$(env -u AH_REQUIRED bash "$VERIFY" scripts --tree "$B" 2>&1); rc=$?
 [ "$(grep -m1 '^required=' "$B/called.txt" | cut -d= -f2-)" = "<unset>" ] \
   && ok "a tree without .devenv.sh leaves AH_REQUIRED unset (box rule applies)" \
   || bad "required on the devenv-less tree: $(grep -m1 '^required=' "$B/called.txt")"
+
+# A value inherited from the session shell picks nothing: the devenv's wins, and
+# without a devenv the variables stay unset (R-1819).
+OUT=$(AH_REQUIRED=inherited AH_SCRIPT_TESTS=inherited_test AH_SCRIPT_TESTS_DIR=/x AH_SCRIPT_TESTS_ROOT=/y \
+      bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
+[ "$(called required)" = "fixture-set" ] && [ "$(called script_tests)" = "<unset>|<unset>|<unset>" ] \
+  && ok "an inherited AH_REQUIRED or AH_SCRIPT_TESTS* gives way to the devenv" \
+  || bad "inherited with devenv: required=$(called required) script_tests=$(called script_tests)"
+OUT=$(AH_REQUIRED=inherited AH_SCRIPT_TESTS=inherited_test bash "$VERIFY" scripts --tree "$B" 2>&1); rc=$?
+[ "$(grep -m1 '^required=' "$B/called.txt" | cut -d= -f2-)" = "<unset>" ] \
+  && [ "$(grep -m1 '^script_tests=' "$B/called.txt" | cut -d= -f2-)" = "<unset>|<unset>|<unset>" ] \
+  && ok "an inherited AH_REQUIRED or AH_SCRIPT_TESTS does not reach a tree without devenv" \
+  || bad "inherited without devenv: $(grep -E '^(required|script_tests)=' "$B/called.txt" | tr '\n' ' ')"
 
 run_v scripts --strict --tree "$A"
 [ "$(called args)" = "quick --only scripts --strict" ] && ok "--strict is forwarded" || bad "args=$(called args)"

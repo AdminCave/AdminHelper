@@ -266,6 +266,10 @@ echo "── verify.sh $VERIFY_COMPONENTS --strict ${VERIFY_ARGS:+-- $VERIFY_ARG
 unset AH_HEAD AH_TREE_HASH
 # Word lists, not a shell line: `set -f` keeps a `*` in the ledger from being
 # expanded against the repo root, and quotes in it stay characters either way.
+ARTIFACT="${AH_OUT_DIR:-$ROOT/.ah-out}/last-verify.json"
+# An artifact of an earlier run would stand in for a verify.sh that ends green
+# without writing one (R-1819).
+rm -f "$ARTIFACT"
 set -f
 if [ -n "$VERIFY_ARGS" ]; then
   # shellcheck disable=SC2086  # the ledger's components and args are word lists on purpose
@@ -277,7 +281,6 @@ else
   VRC=$?
 fi
 set +f
-ARTIFACT="${AH_OUT_DIR:-$ROOT/.ah-out}/last-verify.json"
 case "$VRC" in
   0) ;;
   2|74) infra "verify.sh could not run (exit $VRC) — this is infrastructure, not a red test" ;;

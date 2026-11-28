@@ -64,12 +64,19 @@ if [ -n "\${FAKE_FOREIGN:-}" ] && [[ " \$* " == *" -user "* ]]; then
 fi
 exec "$REAL_FIND" "\$@"
 STUB
+# stat: with FAKE_MOUNT set, that path lies on a device of its own (a mount point).
+REAL_STAT="$(command -v stat)"
+cat > "$WORK/bin/stat" <<STUB
+#!/usr/bin/env bash
+if [ -n "\${FAKE_MOUNT:-}" ] && [ "\${!#}" = "\$FAKE_MOUNT" ]; then echo 999999; exit 0; fi
+exec "$REAL_STAT" "\$@"
+STUB
 cat > "$WORK/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf 'docker %s\n' "$*" >> "$DOCKER_LOG"
 [ -z "${FAKE_DOCKER_FAIL:-}" ] || exit 125
 host=""; prev=""
-for a in "$@"; do [ "$prev" = "-v" ] && host="${a%:/wt}"; prev="$a"; done
+for a in "$@"; do [ "$prev" = "--mount" ] && { host="${a#*source=}"; host="${host%%,*}"; }; prev="$a"; done
 rm -rf -- "$host/${a#/wt/}"
 STUB
 chmod +x "$WORK/bin/"*
@@ -515,10 +522,22 @@ rc=0; FAKE_FOREIGN=".venv/data" FAKE_DOCKER_FAIL=1 teardown ../AdminHelper-rho r
 clear_logs; : > "$DOCKER_LOG"
 rc=0; FAKE_FOREIGN=".venv/data" teardown ../AdminHelper-rho rho || rc=$?
 [ "$rc" = 0 ] && [ ! -e "$WR" ] && grep -q "^dropdb .*--if-exists .* adminhelper_test_rho$" "$PG_LOG" \
-  && grep -qxF "docker run --rm --network none -v $WR:/wt alpine rm -rf -- /wt/.venv/data" "$DOCKER_LOG" \
+  && grep -qxF "docker run --rm --network none --mount type=bind,source=$WR,target=/wt,bind-recursive=disabled alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f rm -rf -- /wt/.venv/data" "$DOCKER_LOG" \
   && [ "$(wc -l < "$DOCKER_LOG")" -eq 1 ] && grep -q "1 path(s) of another user removed: .venv/data" "$WORK/out.log" \
   && ok "the second run removes it in a throwaway container, then the worktree" \
   || bad "rho again: rc=$rc docker=$(cat "$DOCKER_LOG") $(out)"
+clear_logs; : > "$DOCKER_LOG"
+new_wt phi
+WP="$WORK/AdminHelper-phi"
+setup ../AdminHelper-phi phi || bad "setup phi: $(out)"
+mkdir -p "$WP/.venv/mnt/data"; echo keep > "$WP/.venv/mnt/data/file"
+rc=0; FAKE_FOREIGN=".venv/mnt" FAKE_MOUNT="$WP/.venv/mnt" teardown ../AdminHelper-phi phi || rc=$?
+[ "$rc" = 1 ] && [ ! -s "$DOCKER_LOG" ] && [ -f "$WP/.venv/mnt/data/file" ] \
+  && grep -qF "$WP/.venv/mnt is the mount point of another filesystem" "$WORK/out.log" \
+  && ok "a mount point of another filesystem stops the teardown before any container" \
+  || bad "phi: rc=$rc docker=$(cat "$DOCKER_LOG") $(out)"
+rc=0; teardown ../AdminHelper-phi phi || rc=$?
+[ "$rc" = 0 ] && [ ! -e "$WP" ] || bad "phi: the teardown after the unmount: rc=$rc $(out)"
 clear_logs; : > "$DOCKER_LOG"
 new_wt upsilon
 setup ../AdminHelper-upsilon upsilon || bad "setup upsilon: $(out)"
@@ -546,6 +565,14 @@ rc=0; teardown ../AdminHelper-tau tau || rc=$?
 [ "$rc" = 0 ] && g show-ref --verify --quiet refs/heads/feature/tau \
   && grep -q "branch feature/tau kept, not merged into origin/main" "$WORK/out.log" \
   && ok "one that origin/main does not hold stays" || bad "tau: rc=$rc $(out)"
+new_wt omega
+setup ../AdminHelper-omega omega || bad "setup omega: $(out)"
+git -C "$WORK/AdminHelper-omega" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "omega"
+g tag feature/omega main
+rc=0; teardown ../AdminHelper-omega omega || rc=$?
+[ "$rc" = 0 ] && g show-ref --verify --quiet refs/heads/feature/omega \
+  && grep -q "branch feature/omega kept, not merged into origin/main" "$WORK/out.log" \
+  && ok "a tag of the branch's name on a merged commit does not get the branch deleted" || bad "omega: rc=$rc $(out)"
 
 # In a variable first: under pipefail, grep -q may end the pipe before sed has written.
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh")"

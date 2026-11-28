@@ -54,6 +54,10 @@ apps/desktop/src-tauri/src/tunnel.rs
 apps/agent/internal/probe/*
 apps/agent/internal/discovery/*
 apps/agent/internal/credentials/*
+# Code that replaces the agent, decides what it may run, or runs it
+apps/agent/internal/selfupdate/*
+apps/agent/internal/allowlist/*
+apps/agent/internal/execx/*
 
 # Wire contracts: the schemas and the types on both sides of a boundary
 apps/server/app/modules/*/schemas.py
@@ -71,6 +75,10 @@ apps/monitoring/alembic/versions/*
 scripts/install.sh
 scripts/agent-install.sh
 scripts/update.sh
+# Backup, restore and the diagnostics bundle: they read and write the secrets and the database
+scripts/backup.sh
+scripts/restore.sh
+scripts/diagnostics.sh
 docker-compose*.yml
 
 # The harness: the rules, the gates and the scripts that prove a run (CLAUDE.md §4)
