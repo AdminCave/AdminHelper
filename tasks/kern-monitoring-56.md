@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 # kern-monitoring-56 — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-56 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-56 · Review: pro Task
 Spec: docs/features/kern-monitoring-56.md (Roadmap R-1690, R-1696, R-1792, R-1827, R-1828)
 Heavy: none — nur Monitoring-Logik und Schemas, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -60,8 +60,15 @@ Review: approve (.ah-out/review/kern-monitoring-56/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_schema_limits.py tests/test_openapi_snapshot.py
 Doku: diese Task
 
+### T7 — R-1792, R-1827: die neuen Grenzen als benannte oasdiff-Ausnahmen (PR-CI)  [ ]
+Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Harness-Task auf Kevins Wort: die zehn ERR-Funde von oasdiff am Monitoring-Snapshot (neun maxLength 255 an server_id, match_server_id, scope_value; das begrenzte Listen-anyOf des Regelwerts) je eine Zeile in oasdiff-err-ignore.txt, die geschlossene Liste im Test und der Absatz in cicd.html DE+EN nachgezogen.
+Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
+Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
+
 ## Entscheidungen
 - Kevin 2026-11-27: R-1690 Variante (a), R-1828 Ausnahme nur für probe.
 - Grenze 255 für Server-IDs: Server-IDs sind heute UUIDs (36), 255 lässt Importe mit eigener ID zu.
 - Texte in Regelwerten 1024 statt 255: ein Regelwert vergleicht auch mit Pfaden, und `catalog.model._ABS_PATH` lässt 1024 Zeichen zu (T3).
 - Agent-Routen erwarten ohne Key ebenfalls 401 (`require_agent`); offen bleibt nur `/health/detail`, das weder Gateway noch Server weiterreichen (T3).
+- Kevin 2026-11-28: oasdiff-Funde der neuen Grenzen je Änderung als Zeile in scripts/dev/oasdiff-err-ignore.txt (Harness-Pfad, eigene Task T7), nicht per severity-levels.
