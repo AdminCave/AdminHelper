@@ -110,19 +110,29 @@ echo "  test database $DB dropped"
 rm -rf -- "$HOME/.cache/ah-venv-$SLUG"
 echo "  venv ~/.cache/ah-venv-$SLUG removed"
 
+# Pinned by digest: a tag can be moved, and this one runs as root on the worktree.
+# The index digest of alpine:3.22.
+RM_IMAGE="alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f"
 if [ -d "$WT" ]; then
   # A stack test in the worktree leaves ./data owned by the container's UID
   # (10001), which neither git nor this user can delete. Those paths go first,
   # as root in a throwaway container, as uninstall.sh does.
+  # -xdev keeps find out of a mounted filesystem but still names its mount point:
+  # the container below would empty it as root. Such a path stops the teardown;
+  # a mount further down is not in the container's view (bind-recursive=disabled).
   me="$(id -u)"
+  wt_dev="$(stat -c %d "$WT")" || fail "cannot stat $WT"
   foreign=()
-  while IFS= read -r -d '' path; do foreign+=("${path#"$WT"/}"); done \
-    < <(find "$WT" -mindepth 1 -xdev ! -user "$me" -prune -print0)
+  while IFS= read -r -d '' path; do
+    [ "$(stat -c %d "$path")" = "$wt_dev" ] \
+      || fail "$path is the mount point of another filesystem — unmount it, then run this again"
+    foreign+=("${path#"$WT"/}")
+  done < <(find "$WT" -mindepth 1 -xdev ! -user "$me" -prune -print0)
   if [ "${#foreign[@]}" -gt 0 ]; then
     command -v docker >/dev/null 2>&1 \
       || fail "$WT holds paths of another user (${foreign[*]}) and there is no docker to remove them — remove them, then run this again"
     for rel in "${foreign[@]}"; do
-      docker run --rm --network none -v "$WT:/wt" alpine rm -rf -- "/wt/$rel" \
+      docker run --rm --network none --mount "type=bind,source=$WT,target=/wt,bind-recursive=disabled" "$RM_IMAGE" rm -rf -- "/wt/$rel" \
         || fail "could not remove $WT/$rel of another user — remove it, then run this again"
     done
     echo "  ${#foreign[@]} path(s) of another user removed: ${foreign[*]}"
@@ -136,16 +146,17 @@ fi
 # merge-queue merge until someone fast-forwards it (R-1722).
 BRANCH="feature/$SLUG"
 if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
-  BASE=main
+  BASE=refs/heads/main
   if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
     git -C "$ROOT" fetch -q origin main 2>/dev/null || echo "  note: git fetch origin failed — checking against the last known origin/main"
-    git -C "$ROOT" show-ref --verify --quiet refs/remotes/origin/main && BASE=origin/main
+    git -C "$ROOT" show-ref --verify --quiet refs/remotes/origin/main && BASE=refs/remotes/origin/main
   fi
-  if git -C "$ROOT" merge-base --is-ancestor "$BRANCH" "$BASE"; then
+  # Full refs: a tag of the same name would win over the branch (gitrevisions).
+  if git -C "$ROOT" merge-base --is-ancestor "refs/heads/$BRANCH" "$BASE"; then
     git -C "$ROOT" branch -qD "$BRANCH"
-    echo "  branch $BRANCH deleted (merged into $BASE)"
+    echo "  branch $BRANCH deleted (merged into ${BASE#refs/*/})"
   else
-    echo "  note: branch $BRANCH kept, not merged into $BASE (git branch -D $BRANCH if you mean it)"
+    echo "  note: branch $BRANCH kept, not merged into ${BASE#refs/*/} (git branch -D $BRANCH if you mean it)"
   fi
 fi
 echo "worktree $SLUG taken down"

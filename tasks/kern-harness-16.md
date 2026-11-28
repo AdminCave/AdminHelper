@@ -8,8 +8,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - Kevin 2026-11-27: alle drei Zeilen angenommen, die Harness-Pfade ändern sich auf Kevins Wort.
 
-### T1 — Teardown: Branch-Ref, Mountpunkte, gepinntes alpine (R-1785)  [ ]
+### T1 — Teardown: Branch-Ref, Mountpunkte, gepinntes alpine (R-1785)  [x]
 Komponente: scripts · Dateien: scripts/dev/worktree-teardown.sh, scripts/tests/worktree_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1fc33a2e7 2026-11-28T05:17:09+01:00
+Review: approve (.ah-out/review/kern-harness-16/T1.verdict.json)
 Änderung:
 - `merge-base` prüft gegen `refs/heads/$BRANCH`.
 - Ein fremder Pfad auf einem anderen Gerät als WT bricht mit einer Meldung ab.
