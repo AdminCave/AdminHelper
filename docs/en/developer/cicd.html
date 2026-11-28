@@ -470,7 +470,7 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <code>PUT /api/servers/{server_id}</code> is only one of <code>linux</code>, <code>windows</code>,
           <code>freebsd</code>, <code>opnsense</code> and <code>other</code> instead of free text (R-1594, Kevin 2026-11-19), and the one of the token over standard input: the new
           value type <code>tokenStdin</code> of a command argument in the response of
-          <code>GET /api/provisioning/platforms</code> (R-1612, Kevin 2026-11-19).</p>
+          <code>GET /api/provisioning/platforms</code> (R-1612, Kevin 2026-11-19), plus the ten of the bounded monitoring inputs: <code>server_id</code>, <code>match_server_id</code> and <code>scope_value</code> at the routes under <code>/alerts</code>, <code>/checks</code>, <code>/exceptions</code>, <code>/maintenance</code> and <code>POST /templates/{template_id}/assign</code> at most 255 characters (R-1792), and the list of a rule value at <code>PUT /checks/{check_id}/rules</code> with at most as many values as the catalog has fields (R-1827, both Kevin 2026-11-28).</p>
           <p><code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
           SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
           <code>go 1.26</code> and the workflows run with <code>GOTOOLCHAIN=local</code>, so a source build
