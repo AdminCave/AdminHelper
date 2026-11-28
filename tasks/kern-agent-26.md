@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-26 — FreeBSD-Dienste: Liste gecacht, Abfrage alle 15 min — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-26 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-26 · Review: am Ende
 Spec: docs/features/kern-agent-26.md (Roadmap R-1706)
 Heavy: linux-full — apps/agent (Sammellauf); dazu vor dem Merge ein Agent-Lauf auf einer FreeBSD-Pool-Box: zwei Läufe, der zweite ohne service-Aufrufe für den Block (self.collectors.services.cpu_ms)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
