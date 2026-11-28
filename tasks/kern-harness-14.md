@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-harness-14 — Box-Bootstrap mit Pins, OPNsense-Vorlage, Ledger-Feld — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-14 · Review: pro Task
+Status: erledigt · Branch: feature/kern-harness-14 · Review: pro Task
 Spec: docs/features/kern-harness-14.md (Roadmap R-1364, R-1824, R-1803, R-1796, R-1800)
 Heavy: linux-full — frische Box bootstrappt mit dem geänderten bootstrap_linux.sh (warm.sh desktop) und Bake base-opnsense mit Lease daraus, vor dem Merge (Kevin 2026-11-27)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
