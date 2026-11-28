@@ -33,6 +33,7 @@
       "bootstrap": "opnsense",
       "base": "base-freebsd",
       "shell": "sh",
+      "disk_grow": {"disk": "virtio0", "by": "+16G"},
       "note": "OPNsense on top of base-freebsd (scripts/vm/opnsense/bootstrap.sh) — the os-adminhelper plugin's box; no bash there"
     }
   },

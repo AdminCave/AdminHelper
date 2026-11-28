@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-harness-14 — Box-Bootstrap mit Pins, OPNsense-Vorlage, Ledger-Feld — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-14 · Review: pro Task
 Spec: docs/features/kern-harness-14.md (Roadmap R-1364, R-1824, R-1803, R-1796, R-1800)
 Heavy: linux-full — frische Box bootstrappt mit dem geänderten bootstrap_linux.sh (warm.sh desktop) und Bake base-opnsense mit Lease daraus, vor dem Merge (Kevin 2026-11-27)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -48,9 +48,11 @@ Review: approve (.ah-out/review/kern-harness-14/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Harness-intern)
 
-### T5 — R-1853: Bake base-opnsense: Platte vor dem ersten Boot vergrößern  [ ]
+### T5 — R-1853: Bake base-opnsense: Platte vor dem ersten Boot vergrößern  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/profiles.json, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @10679aab9 2026-11-28T04:13:22+01:00
+Review: approve (.ah-out/review/kern-harness-14/T5.verdict.json)
 Änderung: ein Profil kann `disk_grow` tragen (Platte und `+<Größe>`); `create_vm` ruft vor dem Start `PUT /nodes/<node>/qemu/<id>/resize` (PVE-API, Rückgabe Task-ID) und wartet auf den Task; `growfs` (rc.d, KEYWORD firstboot, `growfs_enable` aus dem Image) zieht das Dateisystem beim ersten Boot nach. base-opnsense bekommt `virtio0` `+16G`.
-Verify: bash scripts/dev/verify.sh scripts --strict -- vm.py
+Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Harness-intern)
 

@@ -1118,6 +1118,7 @@ def create_vm(
     key: str,
     ciuser: str | None = None,
     upgrade: bool = False,
+    disk_grow: dict | None = None,
 ) -> None:
     """Clone, tag, key and start one VM — and leave nothing behind if it fails.
 
@@ -1163,6 +1164,14 @@ def create_vm(
         if ciuser:
             config["ciuser"] = ciuser
         api.request("PUT", "/nodes/%s/qemu/%d/config" % (node, newid), body=config, lock_retry=True)
+        if disk_grow:
+            # Before the first boot: growfs runs only then (rc.d KEYWORD firstboot)
+            # and takes the root partition up to the end of the bigger disk (R-1853).
+            api.task(
+                "PUT",
+                "/nodes/%s/qemu/%d/resize" % (node, newid),
+                body={"disk": disk_grow["disk"], "size": disk_grow["by"]},
+            )
         api.task("POST", "/nodes/%s/qemu/%d/status/start" % (node, newid))
     except BaseException as exc:
         # BaseException, not VmError: a Ctrl-C between the clone and the tags
@@ -2221,6 +2230,7 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         # boots without an upgrade of its own. OPNsense deletes every package
         # of the base image anyway.
         upgrade=not opnsense,
+        disk_grow=meta.get("disk_grow"),
     )
     print("baking %s from %d in VM %d" % (args.profile, source["vmid"], newid))
 
