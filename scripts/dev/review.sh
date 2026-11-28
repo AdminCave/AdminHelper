@@ -218,10 +218,21 @@ case "$VERB" in
     # ignored, `#` starts a comment. A worktree has no tasks/private of its own, so
     # the main checkout's list counts there. Without the file (CI) the check is off;
     # a file that is there but cannot be read fails closed.
+    # A tasks/private that is there but no directory one can search (no x bit, a
+    # dangling link, a file) hides the list from -e: that is a list that cannot be
+    # read, not a missing one (R-1819).
+    deny_dir_searchable() {
+      local d; d="$(dirname "$1")"
+      if [ -e "$d" ] || [ -L "$d" ]; then
+        { [ -d "$d" ] && [ -x "$d" ]; } || die "sec: could not search the directory of the deny list"
+      fi
+    }
     DENY_FILE="$ROOT/tasks/private/public-deny.txt"
+    deny_dir_searchable "$DENY_FILE"
     if [ ! -e "$DENY_FILE" ] && [ ! -L "$DENY_FILE" ]; then
       COMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
         && DENY_FILE="$(dirname "$COMMON")/tasks/private/public-deny.txt"
+      deny_dir_searchable "$DENY_FILE"
     fi
     AH_SEC_DENY=""
     # A dangling link is a list that cannot be read, not a missing one.

@@ -1,5 +1,5 @@
 # kern-harness-16 — Nachlese der Harness-Prüfungen — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-16 · Review: pro Task
+Status: bereit · Branch: feature/kern-harness-16 · Review: pro Task
 Spec: docs/features/kern-harness-16.md (Roadmap R-1785, R-1819, R-1822)
 Heavy: none — nur Harness-Skripte und ihre hermetischen Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,8 +44,10 @@ endet, ohne zu schreiben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- verify_test task_close_test run_flags_test
 Doku: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
 
-### T4 — Sperrliste und Risikoliste (R-1785, R-1819 4–5)  [ ]
+### T4 — Sperrliste und Risikoliste (R-1785, R-1819 4–5)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/review-risk.txt, scripts/tests/review_scripts_test.sh, tasks/kern-harness-11.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b6eebc292 2026-11-28T06:22:20+01:00
+Review: approve (.ah-out/review/kern-harness-16/T4.verdict.json)
 Änderung:
 - `review.sh sec`: Ein Verzeichnis `tasks/private`, das nicht durchsuchbar ist, gilt als Fehler.
 - `review-risk.txt` nimmt auf: `apps/agent/internal/selfupdate/*`, `allowlist/*`, `execx/*`, `scripts/backup.sh`,

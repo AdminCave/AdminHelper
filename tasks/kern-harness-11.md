@@ -12,9 +12,8 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - R-1315 auf main behoben durch 1c35ba5de (T8 `[~]`).
 - R-0375 als private Sperrliste (Spec, Trade-off a): die Liste liegt nur in `tasks/private/`, nie im Repo.
 
-- T2: Ein Wechsel aus `zurückgestellt`/`abgelehnt` ohne `--note` leert die Notiz (Review: deren Kevin-Marke ist keine
-  Annahme und passierte sonst `approve`). `KEVIN_MARK` bleibt, die Annahmeformen variieren: Frage an Kevin; `blockiert`
-  und `status … freigegeben` in R-1814 (zurückgestellt).
+- T2: Ein Wechsel aus `zurückgestellt`/`abgelehnt` ohne `--note` leert die Notiz (Review-Fund). `KEVIN_MARK` bleibt,
+  die Annahmeformen variieren: Frage an Kevin; `blockiert` und `status … freigegeben` in R-1814 (zurückgestellt).
 ### T1 — sec sperrt Namen und Netze des Labs aus einer privaten Liste (R-0375)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c777bd0b8 2026-11-26T14:47:39+01:00
