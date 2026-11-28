@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 ## Entscheidungen
 - Kevin 2026-11-28 R-1706: Liste aus `service -e` cachen, bis sich rc.conf oder rc.conf.d ändert (mtime), Intervall für Dienste 15 min.
 
-### T1 — R-1706: FreeBSD-Dienstblock aus dem Cache, Liste bis zur rc.conf-Änderung  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/rcservice.go, apps/agent/internal/monitor/services_freebsd.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/cycle.go, apps/agent/internal/monitor/rcservice_test.go
+### T1 — R-1706: FreeBSD-Dienstblock aus dem Cache, Liste bis zur rc.conf-Änderung  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/rcservice.go, apps/agent/internal/monitor/services_freebsd.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/cycle.go, apps/agent/internal/monitor/rcservice_test.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/servicelogs_windows_test.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8ef8ff1cb 2026-11-28T04:26:01+01:00
+Review: am Ende (Branch-Review)
 Änderung: `rcServiceHealth` nimmt den gespeicherten Cache und die Zeit: vor 15 min Alter liefert er den letzten Block ohne service-Aufruf; danach fragt er die Status ab, `service -e` nur bei geändertem Stempel (Spec). Der Cache liegt im Report-State, bleibt nach verlorenem Push erhalten, ein Fehler setzt keinen. Tests mit gefälschtem service(8) zählen die Aufrufe: zweiter Lauf binnen 15 min null, nach 15 min ohne `-e`, nach Stempeländerung mit `-e`, nach Fehler neu.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T2

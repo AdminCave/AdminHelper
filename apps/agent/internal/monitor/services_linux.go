@@ -19,6 +19,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// collectServiceHealthCached is collectServiceHealth: one call costs little here, nothing is cached.
+func collectServiceHealthCached(ctx context.Context, _ *serviceCache, _ time.Time) (*ServiceHealth, *serviceCache) {
+	return collectServiceHealth(ctx), nil
+}
+
 // collectServiceHealth collects systemd service status (port of collect_systemd_health). ctx ends
 // every systemctl call.
 func collectServiceHealth(ctx context.Context) *ServiceHealth {

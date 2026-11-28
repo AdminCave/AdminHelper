@@ -22,8 +22,8 @@ func TestBuildReportSendsTheLinesOfStoppedAutomaticServicesOncePerFailure(t *tes
 		{"unit": "Manual", "active_state": "inactive", "enabled_state": "manual", "exit": "1"},
 		{"unit": "W32Time", "active_state": "active", "enabled_state": "enabled"},
 	}
-	serviceHealthCollector = func(context.Context) *ServiceHealth {
-		return &ServiceHealth{AllServices: append([]ServiceEntry{}, services...)}
+	serviceHealthCollector = func(context.Context, *serviceCache, time.Time) (*ServiceHealth, *serviceCache) {
+		return &ServiceHealth{AllServices: append([]ServiceEntry{}, services...)}, nil
 	}
 	old := serviceLogReader
 	t.Cleanup(func() { serviceLogReader = old })

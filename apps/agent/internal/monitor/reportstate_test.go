@@ -432,7 +432,8 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 
 	// 3) A lost push (both attempts fail) leaves the state as it was, but for the self-throttle: that
 	// counts the run all the same (here the third clean one, which resets the count). The hourly
-	// update count and the backup index read in this run are kept too (R-1700): read again in every
+	// update count, the backup index and the FreeBSD service block read in this run are kept too (R-1700,
+	// R-1706): read again in every
 	// run while the service is away, they would cost their full price each five minutes.
 	saved := loadReportState(statePath)
 	security := 3
@@ -444,6 +445,11 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	}
 	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (*ProxmoxBlock, *backupIndexCheck) {
 		return nil, readBackups
+	}
+	readServices := &serviceCache{CheckedUnix: 1700000000, Stamp: "s", Enabled: []string{"/etc/rc.d/cron"},
+		Health: &ServiceHealth{Failed: []string{}, EnabledInactive: []string{}, AllServices: []ServiceEntry{}}}
+	serviceHealthCollector = func(context.Context, *serviceCache, time.Time) (*ServiceHealth, *serviceCache) {
+		return &ServiceHealth{}, readServices
 	}
 	status.Store(http.StatusBadGateway)
 	if _, err := push(900, 1500); err == nil {
@@ -459,9 +465,13 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	if !reflect.DeepEqual(after.ProxmoxBackups, readBackups) {
 		t.Errorf("backup index after a failed push = %+v, want the one read in that run %+v", after.ProxmoxBackups, readBackups)
 	}
+	if !reflect.DeepEqual(after.Services, readServices) {
+		t.Errorf("service block after a failed push = %+v, want the one read in that run %+v", after.Services, readServices)
+	}
 	after.Throttle, saved.Throttle = nil, nil
 	after.Updates, saved.Updates = nil, nil
 	after.ProxmoxBackups, saved.ProxmoxBackups = nil, nil
+	after.Services, saved.Services = nil, nil
 	if !reflect.DeepEqual(after, saved) {
 		t.Fatalf("state after a failed push = %+v, want it unchanged %+v", after, saved)
 	}

@@ -28,7 +28,7 @@ import (
 // ("" leaves it out of failed_details); details false sends no failed_details at all.
 func stubFailedUnits(t *testing.T, failed *[]string, since map[string]string, details *bool) {
 	t.Helper()
-	serviceHealthCollector = func(context.Context) *ServiceHealth {
+	serviceHealthCollector = func(context.Context, *serviceCache, time.Time) (*ServiceHealth, *serviceCache) {
 		health := &ServiceHealth{Failed: append([]string{}, *failed...)}
 		if *details {
 			d := []FailedDetail{}
@@ -37,7 +37,7 @@ func stubFailedUnits(t *testing.T, failed *[]string, since map[string]string, de
 			}
 			health.FailedDetails = d
 		}
-		return health
+		return health, nil
 	}
 }
 
