@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-26 — FreeBSD-Dienste: Liste gecacht, Abfrage alle 15 min — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-26 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-26 · Review: am Ende
 Spec: docs/features/kern-agent-26.md (Roadmap R-1706)
 Heavy: linux-full — apps/agent (Sammellauf); dazu vor dem Merge ein Agent-Lauf auf einer FreeBSD-Pool-Box: zwei Läufe, der zweite ohne service-Aufrufe für den Block (self.collectors.services.cpu_ms)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,4 +28,17 @@ Review: am Ende (Branch-Review)
 Änderung: FreeBSD-Spalte von `collectServiceHealth` nennt Cache, Stempel und 15 min; Fragment unter `### Changed`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html DE+EN · changelog.d/kern-agent-26.md
+Task-Review: am Ende
+
+### T3 — Abschlussprüfung: Stempel-Test für Dateien unter rc.conf.d, Kommentare  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/rcservice_test.go, apps/agent/internal/monitor/cycle.go, apps/agent/internal/monitor/reportstate_test.go, docs/features/kern-agent-26.md
+Änderung: `TestRCConfStamp` ändert eine Datei unter rc.conf.d an Ort und Stelle (gleiche Größe, neue mtime, mtime des Verzeichnisses gleich) und verlangt einen neuen Stempel; Kommentarumbruch in cycle.go und reportstate_test.go; Spec nennt die tatsächlich geänderten Tests (Fund und Nits der Abschlussprüfung).
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (Test und Kommentare)
+
+### T4 — Admin-Doku: Dienste unter FreeBSD höchstens alle 15 min  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Dienste-Check `auto` und Liste aller Dienste nennen für FreeBSD die Abfrage höchstens alle 15 min, `service -e` nur nach Änderung an rc.conf/rc.conf.d/rc.d, die Dienste aus `list` jeden Lauf (Fund der Abschlussprüfung).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/monitoring.html DE+EN
 Task-Review: am Ende
