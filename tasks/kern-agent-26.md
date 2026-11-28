@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-26 — FreeBSD-Dienste: Liste gecacht, Abfrage alle 15 min — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-26 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-26 · Review: am Ende
 Spec: docs/features/kern-agent-26.md (Roadmap R-1706)
 Heavy: linux-full — apps/agent (Sammellauf); dazu vor dem Merge ein Agent-Lauf auf einer FreeBSD-Pool-Box: zwei Läufe, der zweite ohne service-Aufrufe für den Block (self.collectors.services.cpu_ms)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,8 +38,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Test und Kommentare)
 
-### T4 — Admin-Doku: Dienste unter FreeBSD höchstens alle 15 min  [ ]
+### T4 — Admin-Doku: Dienste unter FreeBSD höchstens alle 15 min  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f8ab7045f 2026-11-28T04:51:35+01:00
+Review: am Ende (Branch-Review)
 Änderung: Dienste-Check `auto` und Liste aller Dienste nennen für FreeBSD die Abfrage höchstens alle 15 min, `service -e` nur nach Änderung an rc.conf/rc.conf.d/rc.d, die Dienste aus `list` jeden Lauf (Fund der Abschlussprüfung).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html DE+EN
