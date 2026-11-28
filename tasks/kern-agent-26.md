@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-26 — FreeBSD-Dienste: Liste gecacht, Abfrage alle 15 min — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-26 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-26 · Review: am Ende
 Spec: docs/features/kern-agent-26.md (Roadmap R-1706)
 Heavy: linux-full — apps/agent (Sammellauf); dazu vor dem Merge ein Agent-Lauf auf einer FreeBSD-Pool-Box: zwei Läufe, der zweite ohne service-Aufrufe für den Block (self.collectors.services.cpu_ms)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,8 +21,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T2
 
-### T2 — Doku und Changelog  [ ]
+### T2 — Doku und Changelog  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-agent-26.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7029b5480 2026-11-28T04:29:49+01:00
+Review: am Ende (Branch-Review)
 Änderung: FreeBSD-Spalte von `collectServiceHealth` nennt Cache, Stempel und 15 min; Fragment unter `### Changed`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html DE+EN · changelog.d/kern-agent-26.md
