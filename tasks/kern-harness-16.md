@@ -1,5 +1,5 @@
 # kern-harness-16 — Nachlese der Harness-Prüfungen — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-16 · Review: pro Task
+Status: erledigt · Branch: feature/kern-harness-16 · Review: pro Task
 Spec: docs/features/kern-harness-16.md (Roadmap R-1785, R-1819, R-1822)
 Heavy: none — nur Harness-Skripte und ihre hermetischen Tests, kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
