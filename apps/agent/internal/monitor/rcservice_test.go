@@ -7,11 +7,14 @@ package monitor
 import (
 	"context"
 	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The outputs below are rc.subr's (releng/14.3 and 15.0) and service.sh's; the script fixtures are
@@ -334,5 +337,150 @@ func TestRCWatchedServicesStopsAfterAHang(t *testing.T) {
 	}
 	if !reflect.DeepEqual(*calls, []string{"cron status"}) {
 		t.Errorf("calls = %q, want cron only", *calls)
+	}
+}
+
+// rcCachedHost is a host with cron running and nginx stopped, for rcServiceHealthCached.
+func rcCachedHost(t *testing.T) map[string]rcCall {
+	t.Helper()
+	exit1 := smartctlExit(t, 1)
+	return map[string]rcCall{
+		"-e":           {"/etc/rc.d/cron\n/usr/local/etc/rc.d/nginx\n", nil},
+		"cron status":  {rcCronRunning, nil},
+		"nginx status": {rcNginxStopped, exit1},
+	}
+}
+
+func TestRCServiceHealthCached(t *testing.T) {
+	t0 := time.Unix(1700000000, 0)
+	files := rcFiles(nil)
+	stamp := "a"
+	stamps := func() string { return stamp }
+	run, calls := fakeService(t, rcCachedHost(t))
+	first, cache := rcServiceHealthCached(context.Background(), run, files, stamps, nil, t0)
+	if cache == nil || first.Counts == nil || *first.Counts != (ServiceCounts{Active: 1, Total: 2}) {
+		t.Fatalf("first run: health %+v, cache %+v; want 1/2 and a cache", first, cache)
+	}
+	want := []string{"-e", "cron status", "nginx status"}
+	if !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("first run calls = %q, want %q", *calls, want)
+	}
+	// The report adds the watched services to the block it sends; the cache must not see them.
+	first.Watched = []WatchedService{{Name: "sshd", Running: true}}
+
+	t.Run("within 15 min no call", func(t *testing.T) {
+		*calls = nil
+		got, next := rcServiceHealthCached(context.Background(), run, files, stamps, cache, t0.Add(14*time.Minute))
+		if len(*calls) != 0 {
+			t.Errorf("calls = %q, want none", *calls)
+		}
+		if next != cache || got.Watched != nil || !reflect.DeepEqual(got.AllServices, first.AllServices) {
+			t.Errorf("got %+v (cache %p, want %p), want the cached block without watched", got, next, cache)
+		}
+	})
+	t.Run("after 15 min status only", func(t *testing.T) {
+		*calls = nil
+		_, next := rcServiceHealthCached(context.Background(), run, files, stamps, cache, t0.Add(15*time.Minute))
+		if want := []string{"cron status", "nginx status"}; !reflect.DeepEqual(*calls, want) {
+			t.Errorf("calls = %q, want %q", *calls, want)
+		}
+		if next == nil || next.CheckedUnix != t0.Add(15*time.Minute).Unix() {
+			t.Errorf("cache = %+v, want one checked now", next)
+		}
+	})
+	t.Run("changed stamp lists again", func(t *testing.T) {
+		*calls = nil
+		stamp = "b"
+		t.Cleanup(func() { stamp = "a" })
+		_, next := rcServiceHealthCached(context.Background(), run, files, stamps, cache, t0.Add(20*time.Minute))
+		if !reflect.DeepEqual(*calls, want) {
+			t.Errorf("calls = %q, want %q", *calls, want)
+		}
+		if next == nil || next.Stamp != "b" {
+			t.Errorf("cache = %+v, want stamp b", next)
+		}
+	})
+	t.Run("clock set back asks anew", func(t *testing.T) {
+		*calls = nil
+		rcServiceHealthCached(context.Background(), run, files, stamps, cache, t0.Add(-time.Minute))
+		if len(*calls) == 0 {
+			t.Error("no call, want the status asked again")
+		}
+	})
+}
+
+func TestRCServiceHealthCachedError(t *testing.T) {
+	// A failed call keeps no cache: the next run asks again, `service -e` included.
+	t0 := time.Unix(1700000000, 0)
+	stamps := func() string { return "a" }
+	for name, answers := range map[string]map[string]rcCall{
+		"list fails":   {"-e": {"", smartctlExit(t, 1)}},
+		"status fails": {"-e": {"/etc/rc.d/cron\n", nil}, "cron status": {"", context.DeadlineExceeded}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run, calls := fakeService(t, answers)
+			got, cache := rcServiceHealthCached(context.Background(), run, rcFiles(nil), stamps, nil, t0)
+			if got.Error == "" || cache != nil {
+				t.Fatalf("health %+v, cache %+v; want the error and no cache", got, cache)
+			}
+			*calls = nil
+			rcServiceHealthCached(context.Background(), run, rcFiles(nil), stamps, cache, t0.Add(time.Minute))
+			if len(*calls) == 0 || (*calls)[0] != "-e" {
+				t.Errorf("next run calls = %q, want service -e first", *calls)
+			}
+		})
+	}
+}
+
+func TestRCConfStamp(t *testing.T) {
+	dir := t.TempDir()
+	conf, d := filepath.Join(dir, "rc.conf"), filepath.Join(dir, "rc.conf.d")
+	if err := os.WriteFile(conf, []byte("sshd_enable=\"YES\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{conf, d, filepath.Join(dir, "missing")}
+	before := rcConfStamp(paths)
+	if before != rcConfStamp(paths) {
+		t.Fatal("stamp differs between two reads of the same files")
+	}
+	if !strings.Contains(before, filepath.Join(dir, "missing")+":-") {
+		t.Errorf("stamp %q: want the missing path as a value of its own", before)
+	}
+	// A new file in rc.conf.d enables a script without touching rc.conf.
+	if err := os.WriteFile(filepath.Join(d, "nginx"), []byte("nginx_enable=\"YES\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	afterNew := rcConfStamp(paths)
+	if afterNew == before {
+		t.Error("stamp unchanged after a new file in rc.conf.d")
+	}
+	// Same size, other mtime.
+	if err := os.Chtimes(conf, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	afterConf := rcConfStamp(paths)
+	if afterConf == afterNew {
+		t.Error("stamp unchanged after rc.conf changed its mtime")
+	}
+	// A file under rc.conf.d changed in place (same size, other mtime) leaves the directory's mtime
+	// alone: only a stamp that walks into the directory sees it.
+	if err := os.Chtimes(filepath.Join(d, "nginx"), time.Unix(2, 0), time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(d, time.Unix(3, 0), time.Unix(3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	afterDirOnly := rcConfStamp(paths)
+	if err := os.Chtimes(filepath.Join(d, "nginx"), time.Unix(4, 0), time.Unix(4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(d, time.Unix(3, 0), time.Unix(3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if rcConfStamp(paths) == afterDirOnly {
+		t.Error("stamp unchanged after a file in rc.conf.d changed in place")
 	}
 }

@@ -1430,9 +1430,9 @@ func TestBuildReportPassesItsContextToTheServiceCollectors(t *testing.T) {
 	type ctxKey struct{}
 	stubReportHost(t)
 	var health, watched context.Context
-	serviceHealthCollector = func(ctx context.Context) *ServiceHealth {
+	serviceHealthCollector = func(ctx context.Context, _ *serviceCache, _ time.Time) (*ServiceHealth, *serviceCache) {
 		health = ctx
-		return &ServiceHealth{}
+		return &ServiceHealth{}, nil
 	}
 	old := runSystemctl
 	t.Cleanup(func() { runSystemctl = old })

@@ -46,6 +46,9 @@ type reportState struct {
 	// ServiceLogs is the failures whose error lines went out (unit → since of failed_details): each
 	// once per failure. A push that fails keeps the last state, so its lines go out again.
 	ServiceLogs map[string]string `json:"service_logs,omitempty"`
+	// Services is the last service-health block of a FreeBSD host (serviceCache); nil elsewhere and
+	// in a state saved by an older agent, which asks at once.
+	Services *serviceCache `json:"services,omitempty"`
 	// LoadShed is the load gate's state (loadgate.go). A state without it sheds nothing.
 	LoadShed loadShed `json:"load_shed,omitzero"`
 }

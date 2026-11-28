@@ -31,7 +31,9 @@ func stubReportHost(t *testing.T) {
 	pluginCollectors.zfs = func(context.Context) *ZFSBlock { return nil }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
-	serviceHealthCollector = func(context.Context) *ServiceHealth { return &ServiceHealth{} }
+	serviceHealthCollector = func(context.Context, *serviceCache, time.Time) (*ServiceHealth, *serviceCache) {
+		return &ServiceHealth{}, nil
+	}
 	oldSystemState := systemStateCollector
 	systemStateCollector = func(_ context.Context, st reportState) (*SystemState, reportState) { return nil, st }
 	oldHostFacts := hostFactsCalls

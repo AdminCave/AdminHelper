@@ -10,6 +10,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -21,6 +22,11 @@ import (
 // change the command's behaviour — the dangerous characters are `=` and whitespace,
 // which this class excludes (3.44).
 var reWinServiceName = regexp.MustCompile(`^[A-Za-z0-9._$-]+$`)
+
+// collectServiceHealthCached is collectServiceHealth: one call costs little here, nothing is cached.
+func collectServiceHealthCached(ctx context.Context, _ *serviceCache, _ time.Time) (*ServiceHealth, *serviceCache) {
+	return collectServiceHealth(ctx), nil
+}
 
 // collectServiceHealth collects Windows service status; ctx ends the sc call.
 // The format is compatible with the systemd format for the monitoring server.

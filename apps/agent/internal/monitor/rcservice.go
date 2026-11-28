@@ -6,10 +6,14 @@ package monitor
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The FreeBSD service collectors live here without a build tag, so they are tested on any platform
@@ -87,14 +91,29 @@ func parseRCEnabled(out []byte) []rcScript {
 // answer (it hung or was killed), sets error and leaves the counts out; after the latter no script is
 // asked further, since each such call waits pluginTimeout.
 func rcServiceHealth(ctx context.Context, run rcRun, readFile func(string) ([]byte, error)) *ServiceHealth {
+	scripts, result := rcEnabled(ctx, run)
+	if result.Error != "" {
+		return result
+	}
+	return rcStatus(ctx, run, readFile, scripts, result)
+}
+
+// rcEnabled lists the enabled scripts with `service -e`, and returns the block rcStatus fills: on a
+// failed call it carries the error.
+func rcEnabled(ctx context.Context, run rcRun) ([]rcScript, *ServiceHealth) {
 	result := &ServiceHealth{Failed: []string{}, EnabledInactive: []string{}, AllServices: []ServiceEntry{}}
 	out, err := run(ctx, "-e")
 	if err != nil {
 		result.Error = "service -e failed: " + commandFailure("service", pluginTimeout, err)
-		return result
+		return nil, result
 	}
+	return parseRCEnabled(out), result
+}
+
+// rcStatus asks `service <name> status` for each of scripts and fills result (rcServiceHealth).
+func rcStatus(ctx context.Context, run rcRun, readFile func(string) ([]byte, error), scripts []rcScript, result *ServiceHealth) *ServiceHealth {
 	services, enabledInactive := []ServiceEntry{}, []string{}
-	for _, s := range parseRCEnabled(out) {
+	for _, s := range scripts {
 		out, err := run(ctx, s.name, "status")
 		if err != nil && !answered(err) {
 			result.Error = "service " + s.name + " status failed: " +
@@ -119,6 +138,88 @@ func rcServiceHealth(ctx context.Context, run rcRun, readFile func(string) ([]by
 		result.Counts = serviceCounts(services)
 	}
 	return result
+}
+
+// rcServicesEvery spaces the status calls of the service-health block: on FreeBSD they are one
+// process per enabled script, about 2 CPU seconds a run on a small host (R-1706). The watched
+// services are asked every run all the same.
+const rcServicesEvery = 15 * time.Minute
+
+// rcConfPaths are the files and directories `service -e` reads whether a script is enabled
+// (rc.subr's load_rc_config) and where it finds the scripts (/etc/rc.d, local_startup).
+var rcConfPaths = []string{
+	"/etc/defaults/rc.conf", "/etc/rc.conf", "/etc/rc.conf.local", "/etc/rc.conf.d",
+	"/usr/local/etc/rc.conf.d", "/etc/rc.d", "/usr/local/etc/rc.d",
+}
+
+// serviceCache is the last service-health block of a FreeBSD host, kept in the report state: Health as
+// read at CheckedUnix, and Enabled, the script files `service -e` listed while the rc.conf files bore
+// Stamp (rcConfStamp).
+type serviceCache struct {
+	CheckedUnix int64          `json:"checked_unix"`
+	Stamp       string         `json:"stamp"`
+	Enabled     []string       `json:"enabled"`
+	Health      *ServiceHealth `json:"health"`
+}
+
+// rcConfStamp is what changes when a script is enabled, disabled, installed or removed: path, mtime
+// and size of every entry under paths. A missing path counts as one value of its own.
+func rcConfStamp(paths []string) string {
+	var b strings.Builder
+	for _, root := range paths {
+		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				fmt.Fprintf(&b, "%s:-\n", p)
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				fmt.Fprintf(&b, "%s:-\n", p)
+				return nil
+			}
+			fmt.Fprintf(&b, "%s:%d:%d\n", p, info.ModTime().UnixNano(), info.Size())
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintf(&b, "%s:-\n", root)
+		}
+	}
+	return b.String()
+}
+
+// rcServiceHealthCached is rcServiceHealth against saved, the cache the last run left: younger than
+// rcServicesEvery its block comes back without a call; older, the status calls run again, over its
+// list of scripts while stamp still gives its Stamp. It returns the cache to keep, nil after a
+// failed `service -e` or a status call that did not answer, so the next run asks again.
+func rcServiceHealthCached(ctx context.Context, run rcRun, readFile func(string) ([]byte, error),
+	stamp func() string, saved *serviceCache, now time.Time) (*ServiceHealth, *serviceCache) {
+	if saved != nil && saved.Health != nil {
+		if age := now.Sub(time.Unix(saved.CheckedUnix, 0)); age >= 0 && age < rcServicesEvery {
+			health := *saved.Health
+			return &health, saved
+		}
+	}
+	st := stamp()
+	var scripts []rcScript
+	result := &ServiceHealth{Failed: []string{}, EnabledInactive: []string{}, AllServices: []ServiceEntry{}}
+	if saved != nil && saved.Enabled != nil && saved.Stamp == st {
+		for _, file := range saved.Enabled {
+			scripts = append(scripts, rcScript{path.Base(file), file})
+		}
+	} else if scripts, result = rcEnabled(ctx, run); result.Error != "" {
+		return result, nil
+	}
+	result = rcStatus(ctx, run, readFile, scripts, result)
+	if result.Error != "" {
+		return result, nil
+	}
+	enabled := make([]string, 0, len(scripts))
+	for _, s := range scripts {
+		enabled = append(enabled, s.file)
+	}
+	// A copy: the report adds the watched services and the service logs to the block it sends.
+	kept := *result
+	return result, &serviceCache{CheckedUnix: now.Unix(), Stamp: st, Enabled: enabled, Health: &kept}
 }
 
 // rcWatchedServices asks `service <name> status` for each watched name, in the entry form of the other

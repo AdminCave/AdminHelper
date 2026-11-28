@@ -101,7 +101,8 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// Service health (platform-specific)
 	var svc *ServiceHealth
 	m.core(ctx, "services", func(ctx context.Context) {
-		svcHealth := serviceHealthCollector(ctx)
+		var svcHealth *ServiceHealth
+		svcHealth, next.Services = serviceHealthCollector(ctx, prev.Services, now)
 		if len(serviceNames) > 0 {
 			// Collect once and reuse for both the "watched" sub-key and the legacy
 			// top-level "services" key: avoids double systemctl/sc subprocess spawns
@@ -269,7 +270,7 @@ var pluginCollectors = struct {
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 
 // serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).
-var serviceHealthCollector = collectServiceHealth
+var serviceHealthCollector = collectServiceHealthCached
 
 // systemStateCollector indirects the system state probe for the same reason (6.18).
 var systemStateCollector = collectSystemState
